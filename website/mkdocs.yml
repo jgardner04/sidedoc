@@ -12,10 +12,14 @@ theme:
   name: material
   palette:
     - scheme: sidedoc
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: sidedoc-dark
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
