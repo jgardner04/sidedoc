@@ -31,6 +31,8 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Build documentation
         run: mkdocs build --strict --config-file website/mkdocs.yml
