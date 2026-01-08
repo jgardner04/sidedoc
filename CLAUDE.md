@@ -4,14 +4,68 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. Think of it as a sidecar that travels with your .docx files.
+Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
 
-**Status:** Specification in development
+**Status:** MVP in development
 
-## Development Commands
+## Specifications
 
-<!-- TODO: Add build, test, and lint commands once package.json is created -->
+- [Product Requirements Document](docs/slidedoc-prd.md) — Full PRD with format specification, CLI interface, sync algorithm, and implementation phases
 
 ## Architecture
 
-<!-- TODO: Document the high-level architecture once the codebase is established -->
+Planned package structure:
+
+```
+src/sidedoc/
+├── __init__.py
+├── cli.py              # CLI entry points (click)
+├── extract.py          # docx → sidedoc
+├── reconstruct.py      # sidedoc → docx
+├── sync.py             # edited content → updated docx
+├── validate.py         # verify sidedoc integrity
+├── models.py           # data structures
+└── utils.py            # shared utilities
+```
+
+## Key Concepts
+
+- **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
+- **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
+- **Sync:** After editing content.md, update the .docx while preserving original formatting
+
+## Sidedoc Format
+
+A `.sidedoc` file is a ZIP archive containing:
+
+| File | Purpose |
+|------|---------|
+| `content.md` | Clean markdown that AI reads/writes |
+| `structure.json` | Block structure and mappings to docx paragraphs |
+| `styles.json` | Formatting information per block |
+| `manifest.json` | Metadata and version info |
+| `assets/` | Images and embedded files |
+
+## Development Commands
+
+```bash
+# Run tests
+pytest
+
+# Run tests with coverage
+pytest --cov=sidedoc
+
+# CLI commands (once installed)
+sidedoc extract document.docx
+sidedoc build document.sidedoc
+sidedoc sync document.sidedoc
+sidedoc validate document.sidedoc
+```
+
+## Tech Stack
+
+- Python 3.11+
+- python-docx — Document handling
+- mistune or marko — Markdown parsing
+- click — CLI framework
+- pytest — Testing
