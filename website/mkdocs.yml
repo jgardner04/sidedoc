@@ -1,0 +1,55 @@
+site_name: Sidedoc
+site_description: AI-native document format that separates content from formatting
+site_author: Jonathan Gardner
+site_url: https://jgardner04.github.io/sidedoc/
+repo_url: https://github.com/jgardner04/sidedoc
+repo_name: jgardner04/sidedoc
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: sidedoc
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: sidedoc-dark
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Format Specification: format-specification.md

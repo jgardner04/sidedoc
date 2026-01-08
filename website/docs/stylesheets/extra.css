@@ -1,0 +1,70 @@
+/* Sidedoc Light Theme */
+[data-md-color-scheme="sidedoc"] {
+  /* Primary colors */
+  --md-primary-fg-color: #2C3E50;
+  --md-primary-fg-color--light: #4A6785;
+  --md-primary-fg-color--dark: #1A252F;
+
+  /* Accent color - burnt orange */
+  --md-accent-fg-color: #E67E22;
+  --md-accent-fg-color--transparent: rgba(230, 126, 34, 0.1);
+
+  /* Background */
+  --md-default-bg-color: #F8F9FA;
+  --md-default-bg-color--light: #FFFFFF;
+  --md-default-bg-color--lighter: #FFFFFF;
+  --md-default-bg-color--lightest: #FFFFFF;
+
+  /* Text */
+  --md-default-fg-color: #2C3E50;
+  --md-default-fg-color--light: #4A6785;
+  --md-default-fg-color--lighter: #6C8EAD;
+  --md-default-fg-color--lightest: #8EAAC4;
+
+  /* Typeset links */
+  --md-typeset-a-color: #E67E22;
+
+  /* Code */
+  --md-code-bg-color: #EBEDEF;
+  --md-code-fg-color: #2C3E50;
+}
+
+/* Sidedoc Dark Theme */
+[data-md-color-scheme="sidedoc-dark"] {
+  /* Primary colors */
+  --md-primary-fg-color: #E8E8E8;
+  --md-primary-fg-color--light: #B0B0B0;
+  --md-primary-fg-color--dark: #FFFFFF;
+
+  /* Accent color - burnt orange (same in dark mode) */
+  --md-accent-fg-color: #E67E22;
+  --md-accent-fg-color--transparent: rgba(230, 126, 34, 0.1);
+
+  /* Background */
+  --md-default-bg-color: #1A1A1A;
+  --md-default-bg-color--light: #242424;
+  --md-default-bg-color--lighter: #2E2E2E;
+  --md-default-bg-color--lightest: #383838;
+
+  /* Text */
+  --md-default-fg-color: #E8E8E8;
+  --md-default-fg-color--light: #B0B0B0;
+  --md-default-fg-color--lighter: #909090;
+  --md-default-fg-color--lightest: #707070;
+
+  /* Typeset links */
+  --md-typeset-a-color: #E67E22;
+
+  /* Code */
+  --md-code-bg-color: #2E2E2E;
+  --md-code-fg-color: #E8E8E8;
+}
+
+/* Additional styling */
+.md-header {
+  background-color: var(--md-primary-fg-color);
+}
+
+.md-tabs {
+  background-color: var(--md-primary-fg-color);
+}
