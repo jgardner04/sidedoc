@@ -1,55 +1,37 @@
-# Sidedoc: Product Requirements Document
+# PRD: Sidedoc - AI-Native Document Format
 
-## Overview
+## Introduction
 
-Sidedoc is an AI-native document format that separates content from formatting, enabling efficient AI interaction with documents while preserving rich formatting for human consumption.
+Sidedoc is an AI-native document format that separates content from formatting, enabling efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original Word document.
 
-**Project Repository:** `sidedoc` (Python package)
-**Target Completion:** 4 weeks (MVP/POC)
-**Author:** Jonathan Gardner
-
----
-
-## Problem Statement
-
-Current document workflows force a tradeoff between AI efficiency and human usability:
-
-1. **Reading documents:** Tools like Document Intelligence extract content for AI reasoning, but this is expensive (high token cost for XML parsing) and loses the connection to the original formatting.
-
-2. **Creating documents:** Tools like Pandoc generate docx from markdown, but this is one-way—there's no maintained link between the AI-friendly representation and the formatted output.
-
-3. **Iterative collaboration:** When AI and humans work on the same document over time, the current model requires repeated extraction and regeneration, which is lossy and expensive.
+Current document workflows force a tradeoff between AI efficiency and human usability. Tools like Document Intelligence extract content for AI reasoning but lose formatting connections. Tools like Pandoc generate docx from markdown but provide no maintained link back. When AI and humans collaborate iteratively on documents, repeated extraction and regeneration is lossy and expensive.
 
 **The core insight:** Documents should have two representations that stay in sync—one optimized for AI (markdown), one optimized for humans (formatted docx). Changes to either should propagate to the other.
 
----
+**Project Repository:** `sidedoc` (Python package)
+**Author:** Jonathan Gardner
+**Status:** MVP in development
 
 ## Goals
 
-### Primary Goals (MVP)
+- Enable AI agents to read document content efficiently via clean markdown
+- Preserve rich Word formatting (fonts, styles, colors) during AI editing
+- Provide round-trip fidelity: extract → reconstruct produces visually identical documents
+- Support iterative AI-human collaboration on documents without format loss
+- Deliver a command-line tool for document workflows
+- Support core document elements: headings, paragraphs, lists, images, inline formatting
 
-1. **Extract:** Convert a .docx file into a Sidedoc container that separates content (markdown) from formatting metadata.
+## Non-Goals (Out of Scope for MVP)
 
-2. **Reconstruct:** Rebuild the original .docx from the Sidedoc container with formatting intact.
-
-3. **Sync:** After editing the markdown content layer, update the .docx while preserving original formatting.
-
-4. **Round-trip fidelity:** A document that goes through extract → reconstruct should be visually identical to the original.
-
-### Non-Goals (Out of Scope for MVP)
-
-- Tables
-- Track changes
-- Comments
-- Headers/footers
-- Footnotes/endnotes
+- Tables, charts, shapes, text boxes
+- Track changes and comments
+- Headers/footers, footnotes/endnotes
 - Nested lists beyond 2 levels
 - Custom styles (preserve opaquely, don't interpret)
 - Real-time sync or file watching
 - GUI or editor integration
 - Cloud storage integration
-
----
+- Hyperlinks (deferred to post-MVP)
 
 ## Target Users
 
@@ -57,7 +39,177 @@ Current document workflows force a tradeoff between AI efficiency and human usab
 2. **Enterprise architects** evaluating AI-document integration patterns
 3. **Developers using Claude Code / Copilot** who want to work with documents efficiently
 
----
+## User Stories
+
+### US-001: Extract docx to sidedoc format
+**Description:** As an AI developer, I want to extract a Word document into a sidedoc archive so that I can access its content as clean markdown while preserving formatting.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc extract document.docx` creates `document.sidedoc` ZIP archive
+- [ ] Archive contains: content.md, structure.json, styles.json, manifest.json, assets/
+- [ ] content.md contains clean markdown with headings (H1-H6), paragraphs, lists, images
+- [ ] structure.json maps content blocks to docx paragraph indices with content hashes
+- [ ] styles.json stores formatting (fonts, sizes, colors, alignment) per block
+- [ ] Images are copied to assets/ directory with proper references
+- [ ] manifest.json includes version, timestamps, source file info
+- [ ] Typecheck passes
+- [ ] Round-trip test: extract → build produces visually identical docx
+
+### US-002: Build docx from sidedoc
+**Description:** As a user, I want to reconstruct a Word document from a sidedoc archive so that humans can view and edit the document with formatting intact.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc build document.sidedoc` creates `document.docx`
+- [ ] All headings (H1-H6) render with correct styles
+- [ ] Paragraphs preserve original formatting (fonts, sizes, alignment)
+- [ ] Inline formatting (bold, italic, underline) applied correctly
+- [ ] Bulleted and numbered lists render properly
+- [ ] Images embedded at correct positions
+- [ ] Generated docx opens successfully in Microsoft Word
+- [ ] Typecheck passes
+- [ ] Visual comparison with original confirms formatting fidelity
+
+### US-003: Sync edited markdown to docx
+**Description:** As an AI agent, I want to edit content.md and sync changes back to docx so that content updates preserve existing formatting.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc sync document.sidedoc` detects changes in content.md
+- [ ] Modified blocks update docx while preserving their original formatting
+- [ ] New blocks receive sensible default formatting based on type
+- [ ] Deleted blocks are removed from docx
+- [ ] structure.json and manifest.json updated with new mappings and timestamps
+- [ ] Inline formatting (bold, italic) from markdown applied correctly
+- [ ] Images added/removed in markdown sync to assets/ and docx
+- [ ] Typecheck passes
+- [ ] Integration test confirms content changes without format loss
+
+### US-004: Validate sidedoc integrity
+**Description:** As a user, I want to validate a sidedoc archive to ensure it's well-formed and complete.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc validate document.sidedoc` checks ZIP structure
+- [ ] Verifies presence of required files (content.md, structure.json, styles.json, manifest.json)
+- [ ] Validates JSON schema compliance
+- [ ] Checks content hashes match actual content
+- [ ] Verifies all referenced assets exist in assets/
+- [ ] Returns exit code 0 for valid sidedoc, non-zero with error messages for invalid
+- [ ] Typecheck passes
+- [ ] Test with corrupted sidedoc files confirms error detection
+
+### US-005: Display sidedoc metadata
+**Description:** As a user, I want to view sidedoc metadata to understand the document version, source, and modification history.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc info document.sidedoc` displays manifest.json contents
+- [ ] Shows sidedoc version, created/modified timestamps
+- [ ] Shows source file name and hash
+- [ ] Shows content hash and generator version
+- [ ] Output is human-readable and well-formatted
+- [ ] Typecheck passes
+- [ ] Test with sample sidedoc confirms accurate display
+
+### US-006: Unpack sidedoc for debugging
+**Description:** As a developer, I want to extract sidedoc contents to a directory so I can inspect and debug the internal structure.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc unpack document.sidedoc -o ./unpacked/` extracts all files
+- [ ] Creates output directory if it doesn't exist
+- [ ] Preserves directory structure (assets/ subfolder)
+- [ ] All files are readable and valid
+- [ ] Typecheck passes
+- [ ] Test confirms unpacked contents match ZIP contents
+
+### US-007: Pack directory into sidedoc
+**Description:** As a developer, I want to create a sidedoc archive from an unpacked directory so I can test manual edits to internal files.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc pack ./unpacked/ -o document.sidedoc` creates valid ZIP archive
+- [ ] Validates directory structure before packing
+- [ ] Includes all required files
+- [ ] Resulting sidedoc passes validation
+- [ ] Typecheck passes
+- [ ] Test confirms pack → unpack roundtrip preserves contents
+
+### US-008: Show changes between versions
+**Description:** As a user, I want to see what changed in content.md since the last sync so I can review edits before applying them.
+
+**Acceptance Criteria:**
+- [ ] `sidedoc diff document.sidedoc` shows markdown diff
+- [ ] Displays added, removed, and modified blocks
+- [ ] Uses clear formatting (colors, +/- markers)
+- [ ] Works even if content.md was edited externally
+- [ ] Typecheck passes
+- [ ] Test with various edit scenarios confirms accurate diff
+
+### US-009: Handle extraction of inline formatting
+**Description:** As a developer, I need bold, italic, and underline runs extracted correctly so formatting is preserved during round-trip.
+
+**Acceptance Criteria:**
+- [ ] Bold text in docx becomes `**bold**` in markdown
+- [ ] Italic text becomes `*italic*` in markdown
+- [ ] Underline preserved in styles.json (not in markdown)
+- [ ] Mixed formatting (bold+italic) handled correctly
+- [ ] structure.json records inline formatting positions
+- [ ] Typecheck passes
+- [ ] Test with various inline formatting combinations
+
+### US-010: Handle images in documents
+**Description:** As a user, I want images from my Word document included in sidedoc so they appear in the reconstructed docx.
+
+**Acceptance Criteria:**
+- [ ] Images extracted to assets/ directory with unique names
+- [ ] content.md includes `![alt text](assets/imagename.png)` references
+- [ ] structure.json maps image blocks to docx paragraph indices
+- [ ] Build embeds images at correct positions
+- [ ] Supports common formats (PNG, JPG, GIF)
+- [ ] Typecheck passes
+- [ ] Test with documents containing multiple images
+
+### US-011: Set up project structure and dependencies
+**Description:** As a developer, I need the Python package properly structured so development can proceed efficiently.
+
+**Acceptance Criteria:**
+- [ ] pyproject.toml configured with Python 3.11+ requirement
+- [ ] Dependencies: python-docx, mistune (or marko), PyYAML, click, pytest
+- [ ] Package structure matches specification (src/sidedoc/ layout)
+- [ ] README.md with project overview and installation instructions
+- [ ] LICENSE file (MIT)
+- [ ] .gitignore configured for Python projects
+- [ ] Typecheck passes with mypy configuration
+- [ ] `pip install -e .` installs package in development mode
+
+### US-012: Implement CLI framework
+**Description:** As a developer, I need a click-based CLI framework so all commands are accessible via the sidedoc command.
+
+**Acceptance Criteria:**
+- [ ] cli.py implements click command group
+- [ ] `sidedoc --help` shows all available commands
+- [ ] `sidedoc --version` shows package version
+- [ ] Each command accepts appropriate arguments and options
+- [ ] Exit codes follow specification (0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict)
+- [ ] Error messages are clear and actionable
+- [ ] Typecheck passes
+- [ ] Test confirms all commands are registered
+
+## Functional Requirements
+
+- **FR-1:** Extract .docx files into .sidedoc ZIP archives containing content.md, structure.json, styles.json, manifest.json, and assets/
+- **FR-2:** Parse docx paragraphs into markdown with headings (H1-H6), paragraphs, bulleted lists, numbered lists, and images
+- **FR-3:** Preserve inline formatting (bold, italic, underline) through markdown and styles.json
+- **FR-4:** Extract images to assets/ directory and reference them in markdown as `![alt](assets/image.png)`
+- **FR-5:** Generate structure.json mapping content blocks to docx paragraph indices with content hashes
+- **FR-6:** Generate styles.json storing fonts, sizes, colors, alignment per block
+- **FR-7:** Reconstruct .docx from .sidedoc with visually identical formatting to original
+- **FR-8:** Apply stored styles from styles.json when building docx paragraphs
+- **FR-9:** Detect content.md changes and sync to updated docx while preserving formatting
+- **FR-10:** Match edited blocks to original blocks using content hashes and similarity
+- **FR-11:** Apply default formatting to new blocks based on block type (heading, paragraph, list)
+- **FR-12:** Validate .sidedoc archives for structural integrity, JSON schema compliance, and content hash consistency
+- **FR-13:** Display sidedoc metadata including version, timestamps, source file, and hashes
+- **FR-14:** Unpack .sidedoc archives to directories for inspection and debugging
+- **FR-15:** Pack directories into .sidedoc archives with validation
+- **FR-16:** Show diffs between current content.md and last synced state
+- **FR-17:** Provide clear error messages with appropriate exit codes (0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict)
 
 ## Technical Requirements
 
@@ -69,6 +221,7 @@ Current document workflows force a tradeoff between AI efficiency and human usab
 - **Configuration/metadata:** PyYAML
 - **CLI framework:** click
 - **Testing:** pytest
+- **Type checking:** mypy
 
 ### Package Structure
 
@@ -96,6 +249,44 @@ sidedoc/
 └── docs/
     └── specification.md        # format specification
 ```
+
+### CLI Interface
+
+```bash
+# Extract: Create sidedoc from docx
+sidedoc extract document.docx
+sidedoc extract document.docx -o /path/to/output.sidedoc
+
+# Build: Generate docx from sidedoc
+sidedoc build document.sidedoc
+sidedoc build document.sidedoc -o /path/to/output.docx
+
+# Sync: Update docx after editing content.md
+sidedoc sync document.sidedoc
+
+# Validate: Check sidedoc integrity
+sidedoc validate document.sidedoc
+
+# Diff: Show changes between content.md and last synced state
+sidedoc diff document.sidedoc
+
+# Info: Display sidedoc metadata
+sidedoc info document.sidedoc
+
+# Unpack: Extract sidedoc contents to directory
+sidedoc unpack document.sidedoc -o ./unpacked/
+
+# Pack: Create sidedoc from unpacked directory
+sidedoc pack ./unpacked/ -o document.sidedoc
+```
+
+### Exit Codes
+
+- `0`: Success
+- `1`: General error
+- `2`: File not found
+- `3`: Invalid sidedoc format
+- `4`: Sync conflict (content changed in incompatible way)
 
 ---
 
@@ -337,8 +528,6 @@ sidedoc pack ./unpacked/ -o document.sidedoc
 - `3`: Invalid sidedoc format
 - `4`: Sync conflict (content changed in incompatible way)
 
----
-
 ## Supported Document Elements
 
 ### Fully Supported (MVP)
@@ -427,8 +616,6 @@ Conflict examples:
 - Markdown syntax error in content.md
 - Referenced image missing from assets/
 
----
-
 ## Testing Requirements
 
 ### Unit Tests
@@ -453,86 +640,39 @@ Create sample docx files covering:
 4. Document with images
 5. Complex document (all supported elements)
 
-### Success Criteria
+## Success Metrics
 
-1. **Round-trip fidelity**: A document that goes through `extract` → `build` should be visually identical to the original when opened in Word.
-
-2. **Sync correctness**: After editing content.md (adding/removing/modifying blocks), `sync` should produce a docx that:
+1. **Functional completeness**: All CLI commands work as specified, all user stories pass acceptance criteria
+2. **Round-trip fidelity**: A document that goes through `extract` → `build` is visually identical to the original when opened in Word (100% match for supported elements)
+3. **Sync correctness**: After editing content.md (adding/removing/modifying blocks), `sync` produces a docx that:
    - Reflects all content changes
    - Preserves formatting on unchanged blocks
    - Applies sensible defaults to new blocks
+4. **Performance**: Extract and build complete in under 2 seconds for a 10-page document
+5. **Test coverage**: >80% code coverage, all tests passing
+6. **Type safety**: All code passes mypy type checking
+7. **Documentation**: README with usage examples, format specification document
 
-3. **Performance**: Extract and build should complete in under 2 seconds for a 10-page document.
+## Design Considerations
 
----
+### Architecture Philosophy
+- Separation of concerns: extraction, reconstruction, and sync are independent modules
+- Immutable data structures where possible for content representation
+- Block-level sync algorithm (not character-level) for simplicity and maintainability
+- Content hashes for efficient block matching during sync
 
-## Implementation Phases
+### User Experience
+- Clear, actionable error messages with helpful suggestions
+- Predictable command behavior: extract/build are pure functions, sync modifies in place
+- Progress indication for operations on large documents
+- Verbose mode for debugging (--verbose flag)
 
-### Phase 1: Extraction (Week 1)
-
-**Goal:** `sidedoc extract` works for all supported elements.
-
-Tasks:
-1. Set up project structure and dependencies
-2. Implement docx parsing (python-docx)
-3. Generate content.md from paragraphs and headings
-4. Generate structure.json with block mappings
-5. Generate styles.json with formatting data
-6. Handle images (copy to assets/)
-7. Package as ZIP with .sidedoc extension
-8. Implement `sidedoc extract` CLI command
-9. Write extraction tests
-
-**Deliverable:** Can extract any docx with supported elements into a valid sidedoc.
-
-### Phase 2: Reconstruction (Week 2)
-
-**Goal:** `sidedoc build` produces valid docx from sidedoc.
-
-Tasks:
-1. Implement sidedoc unpacking/reading
-2. Parse content.md to blocks
-3. Create docx document structure
-4. Apply styles from styles.json
-5. Handle inline formatting (bold, italic)
-6. Embed images from assets/
-7. Implement `sidedoc build` CLI command
-8. Write reconstruction tests
-9. Implement round-trip tests
-
-**Deliverable:** Can rebuild docx from sidedoc with formatting intact.
-
-### Phase 3: Sync (Week 3)
-
-**Goal:** `sidedoc sync` handles content edits correctly.
-
-Tasks:
-1. Implement block matching algorithm
-2. Detect added/removed/modified blocks
-3. Generate updated docx preserving formatting
-4. Update structure.json and manifest.json
-5. Implement `sidedoc sync` CLI command
-6. Implement `sidedoc diff` CLI command
-7. Write sync tests with various edit scenarios
-
-**Deliverable:** Can edit content.md and sync changes back to docx.
-
-### Phase 4: Polish (Week 4)
-
-**Goal:** Production-ready POC.
-
-Tasks:
-1. Implement `sidedoc validate` command
-2. Implement `sidedoc info` command
-3. Implement `sidedoc unpack` and `sidedoc pack` commands
-4. Error handling and edge cases
-5. Documentation (README, specification.md)
-6. Package for PyPI (optional)
-7. Create example documents and usage guide
-
-**Deliverable:** Complete, documented POC ready for public release.
-
----
+### Edge Cases to Handle
+- Malformed docx files (partial parsing, graceful degradation)
+- Markdown syntax errors in edited content.md (validation before sync)
+- Missing images referenced in content.md (clear error message)
+- Concurrent modifications (file locking or clear error)
+- Very large documents (streaming/chunked processing if needed)
 
 ## Open Questions
 
@@ -554,17 +694,6 @@ Tasks:
 4. **Image positioning**: Docx images can be inline or floating. How to handle?
    
    **Current decision:** Treat all as inline for MVP.
-
----
-
-## Success Metrics
-
-1. **Functional completeness**: All CLI commands work as specified
-2. **Round-trip fidelity**: 100% visual match for supported elements
-3. **Test coverage**: >80% code coverage
-4. **Documentation**: README with usage examples, format specification
-
----
 
 ## References
 
