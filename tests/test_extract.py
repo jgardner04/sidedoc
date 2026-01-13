@@ -2,7 +2,10 @@
 
 import tempfile
 from pathlib import Path
+import struct
+import zlib
 from docx import Document
+from docx.shared import Inches
 from sidedoc.extract import extract_blocks
 from sidedoc.models import Block
 
@@ -395,3 +398,154 @@ def test_extract_list_with_paragraphs():
         assert blocks[3].content == "Conclusion paragraph"
     finally:
         Path(temp_file.name).unlink()
+
+
+def create_minimal_png() -> bytes:
+    """Create a minimal valid 1x1 PNG image.
+
+    Returns:
+        PNG file bytes
+    """
+    # PNG signature
+    signature = b'\x89PNG\r\n\x1a\n'
+
+    # IHDR chunk (1x1 RGBA image)
+    ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
+    ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', 0x7f5a9b42)
+
+    # IDAT chunk (compressed image data)
+    idat_data = zlib.compress(b'\x00\x00\x00\x00\x00')
+    idat = struct.pack('>I', len(idat_data)) + b'IDAT' + idat_data + struct.pack('>I', 0x57bef5f5)
+
+    # IEND chunk
+    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', 0xae426082)
+
+    return signature + ihdr + idat + iend
+
+
+def create_docx_with_image() -> tuple[str, str]:
+    """Create a test docx file with an embedded image.
+
+    Returns:
+        Tuple of (docx_path, temp_image_path)
+    """
+    # Create temp image file
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_img.write(create_minimal_png())
+    temp_img.close()
+
+    # Create docx with image
+    doc = Document()
+    doc.add_paragraph('Before image')
+    doc.add_picture(temp_img.name, width=Inches(1.0))
+    doc.add_paragraph('After image')
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
+    doc.save(temp_doc.name)
+    temp_doc.close()
+
+    return temp_doc.name, temp_img.name
+
+
+def test_extract_single_image():
+    """Test extracting a document with a single image."""
+    docx_path, img_path = create_docx_with_image()
+
+    try:
+        blocks = extract_blocks(docx_path)
+
+        # Should have 3 blocks: paragraph, image, paragraph
+        assert len(blocks) == 3
+        assert blocks[0].type == "paragraph"
+        assert blocks[0].content == "Before image"
+
+        assert blocks[1].type == "image"
+        assert blocks[1].content.startswith("![")
+        assert "assets/" in blocks[1].content
+        assert blocks[1].image_path is not None
+
+        assert blocks[2].type == "paragraph"
+        assert blocks[2].content == "After image"
+    finally:
+        Path(docx_path).unlink()
+        Path(img_path).unlink()
+
+
+def test_extract_multiple_images():
+    """Test extracting a document with multiple images."""
+    temp_img1 = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_img1.write(create_minimal_png())
+    temp_img1.close()
+
+    temp_img2 = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_img2.write(create_minimal_png())
+    temp_img2.close()
+
+    # Create docx with two images
+    doc = Document()
+    doc.add_paragraph('First image:')
+    doc.add_picture(temp_img1.name, width=Inches(1.0))
+    doc.add_paragraph('Second image:')
+    doc.add_picture(temp_img2.name, width=Inches(1.0))
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
+    doc.save(temp_doc.name)
+    temp_doc.close()
+
+    try:
+        blocks = extract_blocks(temp_doc.name)
+
+        # Should have 4 blocks
+        assert len(blocks) == 4
+
+        # First paragraph
+        assert blocks[0].type == "paragraph"
+
+        # First image
+        assert blocks[1].type == "image"
+        assert blocks[1].content.startswith("![")
+
+        # Second paragraph
+        assert blocks[2].type == "paragraph"
+
+        # Second image
+        assert blocks[3].type == "image"
+        assert blocks[3].content.startswith("![")
+
+        # Images should have different paths
+        assert blocks[1].image_path != blocks[3].image_path
+    finally:
+        Path(temp_doc.name).unlink()
+        Path(temp_img1.name).unlink()
+        Path(temp_img2.name).unlink()
+
+
+def test_extract_image_markdown_format():
+    """Test that image blocks generate correct markdown format."""
+    docx_path, img_path = create_docx_with_image()
+
+    try:
+        blocks = extract_blocks(docx_path)
+        image_block = blocks[1]
+
+        # Check markdown format: ![alt text](assets/filename.ext)
+        assert image_block.content.startswith("![")
+        assert "](assets/" in image_block.content
+        assert image_block.content.endswith(")")
+
+        # Extract filename from markdown
+        import re
+        match = re.search(r'!\[(.*?)\]\((.*?)\)', image_block.content)
+        assert match is not None
+        alt_text = match.group(1)
+        image_path = match.group(2)
+
+        # Check alt text (can be empty or descriptive)
+        assert isinstance(alt_text, str)
+
+        # Check path format
+        assert image_path.startswith("assets/")
+        assert image_path.endswith(".png")
+    finally:
+        Path(docx_path).unlink()
+        Path(img_path).unlink()

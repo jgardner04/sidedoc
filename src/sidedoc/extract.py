@@ -2,7 +2,7 @@
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from docx import Document
 from docx.shared import Pt
 from sidedoc.models import Block, Style
@@ -30,6 +30,39 @@ def compute_content_hash(content: str) -> str:
         Hex digest of content hash
     """
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: int) -> Optional[tuple[str, str, bytes]]:
+    """Check if paragraph contains an image and extract it.
+
+    Args:
+        paragraph: python-docx paragraph object
+        doc_part: Document part for accessing relationships
+        image_counter: Counter for generating unique image names
+
+    Returns:
+        Tuple of (image_filename, image_extension, image_bytes) if image found, None otherwise
+    """
+    # Check for drawing elements (images) in paragraph runs
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        for drawing in drawing_elems:
+            # Find blip element (contains image reference)
+            blips = drawing.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+            for blip in blips:
+                # Get relationship ID
+                r_embed = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                if r_embed and r_embed in doc_part.rels:
+                    # Get image part
+                    image_part = doc_part.rels[r_embed].target_part
+                    # Get extension from content type or part name
+                    extension = image_part.partname.split('.')[-1]
+                    # Generate unique filename
+                    image_filename = f"image{image_counter}.{extension}"
+                    # Return image data
+                    return (image_filename, extension, image_part.blob)
+
+    return None
 
 
 def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]] | None]:
@@ -97,54 +130,70 @@ def extract_blocks(docx_path: str) -> list[Block]:
     content_position = 0
     list_number_counter = 0  # Track numbered list position
     previous_list_type = None  # Track list type changes
+    image_counter = 1  # Track image numbering
 
     for para_index, paragraph in enumerate(doc.paragraphs):
         style_name = paragraph.style.name if paragraph.style else "Normal"
 
-        # Extract inline formatting (bold, italic, underline)
-        text_content, inline_formatting = extract_inline_formatting(paragraph)
-
-        # Determine block type and content
-        if style_name.startswith("Heading"):
-            # Extract heading level (e.g., "Heading 1" -> 1)
-            try:
-                level = int(style_name.split()[-1])
-            except (ValueError, IndexError):
-                level = 1
-
-            markdown_content = "#" * level + " " + text_content
-            block_type = "heading"
-            level_value = level
-            # Reset list counter when encountering non-list content
+        # Check if paragraph contains an image
+        image_info = extract_image_from_paragraph(paragraph, doc.part, image_counter)
+        if image_info:
+            # This is an image paragraph
+            image_filename, image_extension, image_bytes = image_info
+            image_path = f"assets/{image_filename}"
+            markdown_content = f"![Image {image_counter}]({image_path})"
+            block_type = "image"
+            level_value = None
+            inline_formatting = None
+            image_counter += 1
+            # Reset list counters
             list_number_counter = 0
             previous_list_type = None
-        elif style_name == "List Bullet":
-            # Bulleted list item
-            markdown_content = "- " + text_content
-            block_type = "list"
-            level_value = None
-            # Reset numbered list counter when switching to bullets
-            if previous_list_type != "bullet":
-                list_number_counter = 0
-            previous_list_type = "bullet"
-        elif style_name == "List Number":
-            # Numbered list item
-            # Reset counter when switching from bullets or starting new list
-            if previous_list_type != "number":
-                list_number_counter = 0
-            list_number_counter += 1
-            markdown_content = f"{list_number_counter}. " + text_content
-            block_type = "list"
-            level_value = None
-            previous_list_type = "number"
         else:
-            # Normal paragraph
-            markdown_content = text_content
-            block_type = "paragraph"
-            level_value = None
-            # Reset list counter when encountering non-list content
-            list_number_counter = 0
-            previous_list_type = None
+            # Extract inline formatting (bold, italic, underline)
+            text_content, inline_formatting = extract_inline_formatting(paragraph)
+
+            # Determine block type and content
+            if style_name.startswith("Heading"):
+                # Extract heading level (e.g., "Heading 1" -> 1)
+                try:
+                    level = int(style_name.split()[-1])
+                except (ValueError, IndexError):
+                    level = 1
+
+                markdown_content = "#" * level + " " + text_content
+                block_type = "heading"
+                level_value = level
+                # Reset list counter when encountering non-list content
+                list_number_counter = 0
+                previous_list_type = None
+            elif style_name == "List Bullet":
+                # Bulleted list item
+                markdown_content = "- " + text_content
+                block_type = "list"
+                level_value = None
+                # Reset numbered list counter when switching to bullets
+                if previous_list_type != "bullet":
+                    list_number_counter = 0
+                previous_list_type = "bullet"
+            elif style_name == "List Number":
+                # Numbered list item
+                # Reset counter when switching from bullets or starting new list
+                if previous_list_type != "number":
+                    list_number_counter = 0
+                list_number_counter += 1
+                markdown_content = f"{list_number_counter}. " + text_content
+                block_type = "list"
+                level_value = None
+                previous_list_type = "number"
+            else:
+                # Normal paragraph
+                markdown_content = text_content
+                block_type = "paragraph"
+                level_value = None
+                # Reset list counter when encountering non-list content
+                list_number_counter = 0
+                previous_list_type = None
 
         # Calculate content positions
         content_start = content_position
@@ -160,7 +209,8 @@ def extract_blocks(docx_path: str) -> list[Block]:
             content_end=content_end,
             content_hash=compute_content_hash(markdown_content),
             level=level_value,
-            inline_formatting=inline_formatting
+            inline_formatting=inline_formatting,
+            image_path=image_path if image_info else None
         )
 
         blocks.append(block)
