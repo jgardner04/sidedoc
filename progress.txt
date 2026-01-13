@@ -12,6 +12,8 @@
 - When processing runs, use `run.bold is True` (not just truthy check) to avoid false positives
 - List detection: check for "List Bullet" and "List Number" style names
 - Track list_number_counter to auto-number consecutive numbered list items
+- Image detection: check for drawing elements in paragraph runs, access via doc.part.rels[rId]
+- Track image_counter to generate unique filenames (image1.png, image2.png, etc.)
 
 ---
 
@@ -60,5 +62,32 @@
   - Context: List items are stored as separate Block objects with type="list"
   - Gotcha: Numbered lists need manual counter tracking - docx doesn't provide the number
   - Testing: create_list_docx helper simplifies creating test documents with list styles
+
+---
+
+## 2026-01-13 - US-007
+- What was implemented:
+  - Image extraction from docx paragraphs
+  - Detect images via drawing elements in paragraph runs
+  - Extract image data from document relationships (rId references)
+  - Generate unique filenames (image1.png, image2.png, etc.)
+  - Create markdown image references: ![Image N](assets/imagename.ext)
+  - Store image path in Block.image_path field
+  - Auto-number images with image_counter
+  - 3 new tests covering single image, multiple images, and markdown format
+
+- Files changed:
+  - src/sidedoc/extract.py: Added extract_image_from_paragraph() and image handling logic
+  - tests/test_extract.py: Added 3 test cases and create_minimal_png() helper
+
+- **Learnings for future iterations:**
+  - Pattern: Images detected by checking for drawing elements in paragraph runs
+  - Pattern: Access image data via doc.part.rels[rId].target_part.blob
+  - Pattern: Image extension from target_part.partname.split('.')[-1]
+  - Pattern: Images appear as paragraphs with empty text but containing drawing elements
+  - Gotcha: Image paragraphs have paragraph.text == "" but contain runs with drawings
+  - Testing: create_minimal_png() generates valid minimal PNG for testing
+  - Context: Each image becomes a separate Block with type="image" and image_path set
+  - Pattern: Use image_counter to ensure unique filenames across document
 
 ---

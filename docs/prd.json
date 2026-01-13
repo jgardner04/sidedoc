@@ -118,7 +118,7 @@
         "Unit test with document containing multiple images"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
