@@ -1,0 +1,12 @@
+# Sidedoc TDD Progress Log
+
+## Codebase Patterns
+- Use python-docx for all docx file operations
+- pytest for testing with fixtures in tests/fixtures/
+- All modules should have proper type hints and pass mypy typecheck
+- Use dataclasses for models (defined in models.py)
+- Click framework for CLI with proper exit codes (0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict)
+- Block types: heading, paragraph, list, image
+- Structure.json maps content.md blocks to docx paragraph indices
+
+---

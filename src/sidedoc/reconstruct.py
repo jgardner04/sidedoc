@@ -3,9 +3,11 @@
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.document import Document as DocumentType
 import mistune
 from sidedoc.models import Block, Style
 
@@ -65,7 +67,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     return blocks
 
 
-def create_docx_from_blocks(blocks: list[Block], styles: dict) -> Document:
+def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any]) -> DocumentType:
     """Create a Word document from Block objects.
 
     Args:
@@ -92,7 +94,7 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict) -> Document:
 
         # Apply styling if available
         block_style = styles.get("block_styles", {}).get(block.id, {})
-        if block_style:
+        if block_style and para.style:
             if "font_name" in block_style:
                 para.style.font.name = block_style["font_name"]
             if "font_size" in block_style:

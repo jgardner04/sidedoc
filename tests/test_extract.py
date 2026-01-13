@@ -163,3 +163,126 @@ def test_extract_all_heading_levels():
             assert block.content == "#" * (i + 1) + f" H{i + 1}"
     finally:
         Path(docx_path).unlink()
+
+
+def create_formatted_docx(text_runs: list[tuple[str, bool, bool, bool]]) -> str:
+    """Create a test docx file with inline formatting.
+
+    Args:
+        text_runs: List of (text, bold, italic, underline) tuples
+
+    Returns:
+        Path to temporary docx file
+    """
+    doc = Document()
+    para = doc.add_paragraph()
+
+    for text, bold, italic, underline in text_runs:
+        run = para.add_run(text)
+        run.bold = bold
+        run.italic = italic
+        run.underline = underline
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_file.name)
+    temp_file.close()
+    return temp_file.name
+
+
+def test_extract_bold_text():
+    """Test extracting bold text as markdown."""
+    docx_path = create_formatted_docx([
+        ("This is ", False, False, False),
+        ("bold", True, False, False),
+        (" text", False, False, False)
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "This is **bold** text"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_italic_text():
+    """Test extracting italic text as markdown."""
+    docx_path = create_formatted_docx([
+        ("This is ", False, False, False),
+        ("italic", False, True, False),
+        (" text", False, False, False)
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "This is *italic* text"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_bold_italic_text():
+    """Test extracting bold and italic text as markdown."""
+    docx_path = create_formatted_docx([
+        ("This is ", False, False, False),
+        ("bold and italic", True, True, False),
+        (" text", False, False, False)
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "This is ***bold and italic*** text"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_underline_preserved_in_formatting():
+    """Test that underline is preserved in inline_formatting, not markdown."""
+    docx_path = create_formatted_docx([
+        ("This is ", False, False, False),
+        ("underlined", False, False, True),
+        (" text", False, False, False)
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Underline should not appear in markdown content
+        assert blocks[0].content == "This is underlined text"
+        # But should be recorded in inline_formatting
+        assert blocks[0].inline_formatting is not None
+        assert len(blocks[0].inline_formatting) > 0
+        # Find the underline formatting entry
+        underline_format = next(
+            (fmt for fmt in blocks[0].inline_formatting if fmt.get("underline")),
+            None
+        )
+        assert underline_format is not None
+        assert underline_format["start"] == 8  # "This is " = 8 chars
+        assert underline_format["end"] == 18  # + "underlined" = 10 chars
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_mixed_inline_formatting():
+    """Test extracting multiple inline formatting in one paragraph."""
+    docx_path = create_formatted_docx([
+        ("Normal ", False, False, False),
+        ("bold", True, False, False),
+        (" and ", False, False, False),
+        ("italic", False, True, False),
+        (" and ", False, False, False),
+        ("both", True, True, False)
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "Normal **bold** and *italic* and ***both***"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
