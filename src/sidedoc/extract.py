@@ -95,6 +95,8 @@ def extract_blocks(docx_path: str) -> list[Block]:
     doc = Document(docx_path)
     blocks: list[Block] = []
     content_position = 0
+    list_number_counter = 0  # Track numbered list position
+    previous_list_type = None  # Track list type changes
 
     for para_index, paragraph in enumerate(doc.paragraphs):
         style_name = paragraph.style.name if paragraph.style else "Normal"
@@ -112,11 +114,37 @@ def extract_blocks(docx_path: str) -> list[Block]:
 
             markdown_content = "#" * level + " " + text_content
             block_type = "heading"
+            level_value = level
+            # Reset list counter when encountering non-list content
+            list_number_counter = 0
+            previous_list_type = None
+        elif style_name == "List Bullet":
+            # Bulleted list item
+            markdown_content = "- " + text_content
+            block_type = "list"
+            level_value = None
+            # Reset numbered list counter when switching to bullets
+            if previous_list_type != "bullet":
+                list_number_counter = 0
+            previous_list_type = "bullet"
+        elif style_name == "List Number":
+            # Numbered list item
+            # Reset counter when switching from bullets or starting new list
+            if previous_list_type != "number":
+                list_number_counter = 0
+            list_number_counter += 1
+            markdown_content = f"{list_number_counter}. " + text_content
+            block_type = "list"
+            level_value = None
+            previous_list_type = "number"
         else:
             # Normal paragraph
             markdown_content = text_content
             block_type = "paragraph"
-            level = None
+            level_value = None
+            # Reset list counter when encountering non-list content
+            list_number_counter = 0
+            previous_list_type = None
 
         # Calculate content positions
         content_start = content_position
@@ -131,7 +159,7 @@ def extract_blocks(docx_path: str) -> list[Block]:
             content_start=content_start,
             content_end=content_end,
             content_hash=compute_content_hash(markdown_content),
-            level=level,
+            level=level_value,
             inline_formatting=inline_formatting
         )
 

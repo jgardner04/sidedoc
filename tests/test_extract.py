@@ -286,3 +286,112 @@ def test_extract_mixed_inline_formatting():
         assert blocks[0].type == "paragraph"
     finally:
         Path(docx_path).unlink()
+
+
+def create_list_docx(list_items: list[tuple[str, str]]) -> str:
+    """Create a test docx file with list items.
+
+    Args:
+        list_items: List of (style, text) tuples where style is 'List Bullet' or 'List Number'
+
+    Returns:
+        Path to temporary docx file
+    """
+    doc = Document()
+    for style, text in list_items:
+        doc.add_paragraph(text, style=style)
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_file.name)
+    temp_file.close()
+    return temp_file.name
+
+
+def test_extract_bulleted_list():
+    """Test extracting bulleted list items."""
+    docx_path = create_list_docx([
+        ("List Bullet", "First item"),
+        ("List Bullet", "Second item"),
+        ("List Bullet", "Third item")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 3
+        assert blocks[0].type == "list"
+        assert blocks[0].content == "- First item"
+        assert blocks[1].type == "list"
+        assert blocks[1].content == "- Second item"
+        assert blocks[2].type == "list"
+        assert blocks[2].content == "- Third item"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_numbered_list():
+    """Test extracting numbered list items."""
+    docx_path = create_list_docx([
+        ("List Number", "First item"),
+        ("List Number", "Second item"),
+        ("List Number", "Third item")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 3
+        assert blocks[0].type == "list"
+        assert blocks[0].content == "1. First item"
+        assert blocks[1].type == "list"
+        assert blocks[1].content == "2. Second item"
+        assert blocks[2].type == "list"
+        assert blocks[2].content == "3. Third item"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_mixed_list_types():
+    """Test extracting both bulleted and numbered lists."""
+    docx_path = create_list_docx([
+        ("List Bullet", "Bulleted item 1"),
+        ("List Bullet", "Bulleted item 2"),
+        ("List Number", "Numbered item 1"),
+        ("List Number", "Numbered item 2")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 4
+        assert blocks[0].content == "- Bulleted item 1"
+        assert blocks[1].content == "- Bulleted item 2"
+        assert blocks[2].content == "1. Numbered item 1"
+        assert blocks[3].content == "2. Numbered item 2"
+        assert all(b.type == "list" for b in blocks)
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_list_with_paragraphs():
+    """Test extracting lists mixed with regular paragraphs."""
+    doc = Document()
+    doc.add_paragraph("Introduction paragraph")
+    doc.add_paragraph("First item", style="List Bullet")
+    doc.add_paragraph("Second item", style="List Bullet")
+    doc.add_paragraph("Conclusion paragraph")
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_file.name)
+    temp_file.close()
+
+    try:
+        blocks = extract_blocks(temp_file.name)
+        assert len(blocks) == 4
+        assert blocks[0].type == "paragraph"
+        assert blocks[0].content == "Introduction paragraph"
+        assert blocks[1].type == "list"
+        assert blocks[1].content == "- First item"
+        assert blocks[2].type == "list"
+        assert blocks[2].content == "- Second item"
+        assert blocks[3].type == "paragraph"
+        assert blocks[3].content == "Conclusion paragraph"
+    finally:
+        Path(temp_file.name).unlink()
