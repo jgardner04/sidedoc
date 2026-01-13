@@ -14,6 +14,8 @@
 - Track list_number_counter to auto-number consecutive numbered list items
 - Image detection: check for drawing elements in paragraph runs, access via doc.part.rels[rId]
 - Track image_counter to generate unique filenames (image1.png, image2.png, etc.)
+- extract_blocks() returns tuple: (blocks list, image_data dict) - always unpack both values
+- Image roundtrip: extract saves to assets/ in ZIP, build extracts to temp dir and embeds
 
 ---
 
@@ -89,5 +91,35 @@
   - Testing: create_minimal_png() generates valid minimal PNG for testing
   - Context: Each image becomes a separate Block with type="image" and image_path set
   - Pattern: Use image_counter to ensure unique filenames across document
+
+---
+
+## 2026-01-13 - US-017
+- What was implemented:
+  - Complete image roundtrip: extract → save to assets → embed in rebuilt docx
+  - Modified extract_blocks() to return (blocks, image_data) tuple
+  - Store image bytes in dict during extraction, save to assets/ in ZIP
+  - Updated parse_markdown_to_blocks() to recognize ![alt](path) syntax
+  - Created image blocks with image_path from markdown
+  - Embed images in docx using doc.add_picture() from temp assets directory
+  - Handle missing images with placeholder text
+  - End-to-end test validates image roundtrip
+
+- Files changed:
+  - src/sidedoc/extract.py: Return tuple with image_data dict
+  - src/sidedoc/package.py: Accept and write image files to assets/
+  - src/sidedoc/cli.py: Pass image_data to create_sidedoc_archive
+  - src/sidedoc/reconstruct.py: Parse image markdown, embed images from assets
+  - tests/test_build_command.py: Added image embedding integration test
+  - tests/test_extract.py: Updated all calls to unpack tuple
+
+- **Learnings for future iterations:**
+  - Pattern: extract_blocks returns (blocks, image_data) tuple - always unpack
+  - Pattern: Save images to assets/ in ZIP, extract to temp dir during build
+  - Pattern: Detect image markdown: line.startswith("![") and "](" in line
+  - Pattern: Use tempfile.TemporaryDirectory for assets during build
+  - Gotcha: parse_markdown_to_blocks must handle image blocks, not just paragraphs
+  - Context: Images embedded inline with default width of 3.0 inches
+  - Testing: End-to-end test extracts→builds→verifies image presence
 
 ---

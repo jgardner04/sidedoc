@@ -286,7 +286,7 @@
         "Integration test: build docx with images, verify images present"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
