@@ -10,6 +10,8 @@
 - Structure.json maps content.md blocks to docx paragraph indices
 - Inline formatting: bold/italic converted to markdown, underline stored in Block.inline_formatting metadata
 - When processing runs, use `run.bold is True` (not just truthy check) to avoid false positives
+- List detection: check for "List Bullet" and "List Number" style names
+- Track list_number_counter to auto-number consecutive numbered list items
 
 ---
 
@@ -36,5 +38,27 @@
   - Context: Inline formatting positions in Block.inline_formatting use plain text offsets,
     not markdown with formatting markers
   - Testing: create_formatted_docx helper makes it easy to test various formatting combinations
+
+---
+
+## 2026-01-13 - US-006
+- What was implemented:
+  - List extraction for bulleted lists (- item format)
+  - List extraction for numbered lists (1. item format)
+  - Auto-numbering for consecutive numbered list items
+  - List type tracking to reset numbering when switching between bullets/numbers
+  - 4 new tests covering bulleted, numbered, mixed lists, and lists with paragraphs
+
+- Files changed:
+  - src/sidedoc/extract.py: Added list detection logic in extract_blocks()
+  - tests/test_extract.py: Added 4 new test cases with create_list_docx helper
+
+- **Learnings for future iterations:**
+  - Pattern: python-docx identifies list items by style name: "List Bullet" and "List Number"
+  - Pattern: Track list_number_counter and previous_list_type to maintain proper numbering
+  - Pattern: Reset numbering when encountering non-list content or switching list types
+  - Context: List items are stored as separate Block objects with type="list"
+  - Gotcha: Numbered lists need manual counter tracking - docx doesn't provide the number
+  - Testing: create_list_docx helper simplifies creating test documents with list styles
 
 ---
