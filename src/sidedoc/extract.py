@@ -114,7 +114,7 @@ def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]]
     return markdown_content, inline_formatting if inline_formatting else None
 
 
-def extract_blocks(docx_path: str) -> list[Block]:
+def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
     Converts paragraphs and headings to Block objects with markdown content.
@@ -123,10 +123,11 @@ def extract_blocks(docx_path: str) -> list[Block]:
         docx_path: Path to .docx file
 
     Returns:
-        List of Block objects
+        Tuple of (blocks, image_data) where image_data maps filenames to image bytes
     """
     doc = Document(docx_path)
     blocks: list[Block] = []
+    image_data: dict[str, bytes] = {}  # Map image filenames to image bytes
     content_position = 0
     list_number_counter = 0  # Track numbered list position
     previous_list_type = None  # Track list type changes
@@ -145,6 +146,8 @@ def extract_blocks(docx_path: str) -> list[Block]:
             block_type = "image"
             level_value = None
             inline_formatting = None
+            # Store image data
+            image_data[image_filename] = image_bytes
             image_counter += 1
             # Reset list counters
             list_number_counter = 0
@@ -218,7 +221,7 @@ def extract_blocks(docx_path: str) -> list[Block]:
         # Update position for next block (including newline)
         content_position = content_end + 1
 
-    return blocks
+    return blocks, image_data
 
 
 def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:

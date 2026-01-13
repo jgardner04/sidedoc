@@ -44,14 +44,14 @@ def extract(input_file: str, output: str | None) -> None:
             output = ensure_sidedoc_extension(output)
 
         # Extract blocks and styles
-        blocks = extract_blocks(input_file)
+        blocks, image_data = extract_blocks(input_file)
         styles = extract_styles(input_file, blocks)
 
         # Convert to markdown
         content_md = blocks_to_markdown(blocks)
 
         # Create archive
-        create_sidedoc_archive(output, content_md, blocks, styles, input_file)
+        create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data)
 
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)

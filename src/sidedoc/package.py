@@ -14,6 +14,7 @@ def create_sidedoc_archive(
     blocks: list[Block],
     styles: list[Style],
     source_file: str,
+    image_data: dict[str, bytes] | None = None,
 ) -> None:
     """Create a .sidedoc ZIP archive.
 
@@ -23,6 +24,7 @@ def create_sidedoc_archive(
         blocks: List of Block objects
         styles: List of Style objects
         source_file: Original source file path
+        image_data: Optional dict mapping image filenames to image bytes
     """
     # Create structure.json
     structure_data = {
@@ -92,3 +94,8 @@ def create_sidedoc_archive(
         zf.writestr("structure.json", json.dumps(structure_data, indent=2))
         zf.writestr("styles.json", json.dumps(styles_data, indent=2))
         zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+
+        # Write image files to assets/ directory
+        if image_data:
+            for filename, image_bytes in image_data.items():
+                zf.writestr(f"assets/{filename}", image_bytes)

@@ -39,7 +39,7 @@ def test_extract_single_paragraph():
     docx_path = create_test_docx([("Normal", "Hello world")])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].type == "paragraph"
         assert blocks[0].content == "Hello world"
@@ -53,7 +53,7 @@ def test_extract_heading_1():
     docx_path = create_test_docx([("Heading 1", "Title")])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].type == "heading"
         assert blocks[0].content == "# Title"
@@ -67,7 +67,7 @@ def test_extract_heading_2():
     docx_path = create_test_docx([("Heading 2", "Subtitle")])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].type == "heading"
         assert blocks[0].content == "## Subtitle"
@@ -85,7 +85,7 @@ def test_extract_multiple_paragraphs():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 3
         assert blocks[0].content == "First paragraph"
         assert blocks[1].content == "Second paragraph"
@@ -107,7 +107,7 @@ def test_extract_mixed_content():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 4
         assert blocks[0].type == "heading"
         assert blocks[0].level == 1
@@ -127,7 +127,7 @@ def test_blocks_have_unique_ids():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         ids = [block.id for block in blocks]
         assert len(ids) == len(set(ids)), "Block IDs must be unique"
     finally:
@@ -139,7 +139,7 @@ def test_blocks_have_content_hashes():
     docx_path = create_test_docx([("Normal", "Test content")])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert blocks[0].content_hash is not None
         assert len(blocks[0].content_hash) > 0
     finally:
@@ -158,7 +158,7 @@ def test_extract_all_heading_levels():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 6
         for i, block in enumerate(blocks):
             assert block.type == "heading"
@@ -201,7 +201,7 @@ def test_extract_bold_text():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].content == "This is **bold** text"
         assert blocks[0].type == "paragraph"
@@ -218,7 +218,7 @@ def test_extract_italic_text():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].content == "This is *italic* text"
         assert blocks[0].type == "paragraph"
@@ -235,7 +235,7 @@ def test_extract_bold_italic_text():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].content == "This is ***bold and italic*** text"
         assert blocks[0].type == "paragraph"
@@ -252,7 +252,7 @@ def test_extract_underline_preserved_in_formatting():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         # Underline should not appear in markdown content
         assert blocks[0].content == "This is underlined text"
@@ -283,7 +283,7 @@ def test_extract_mixed_inline_formatting():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
         assert blocks[0].content == "Normal **bold** and *italic* and ***both***"
         assert blocks[0].type == "paragraph"
@@ -319,7 +319,7 @@ def test_extract_bulleted_list():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 3
         assert blocks[0].type == "list"
         assert blocks[0].content == "- First item"
@@ -340,7 +340,7 @@ def test_extract_numbered_list():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 3
         assert blocks[0].type == "list"
         assert blocks[0].content == "1. First item"
@@ -362,7 +362,7 @@ def test_extract_mixed_list_types():
     ])
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 4
         assert blocks[0].content == "- Bulleted item 1"
         assert blocks[1].content == "- Bulleted item 2"
@@ -386,7 +386,7 @@ def test_extract_list_with_paragraphs():
     temp_file.close()
 
     try:
-        blocks = extract_blocks(temp_file.name)
+        blocks, _ = extract_blocks(temp_file.name)
         assert len(blocks) == 4
         assert blocks[0].type == "paragraph"
         assert blocks[0].content == "Introduction paragraph"
@@ -452,7 +452,7 @@ def test_extract_single_image():
     docx_path, img_path = create_docx_with_image()
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
 
         # Should have 3 blocks: paragraph, image, paragraph
         assert len(blocks) == 3
@@ -493,7 +493,7 @@ def test_extract_multiple_images():
     temp_doc.close()
 
     try:
-        blocks = extract_blocks(temp_doc.name)
+        blocks, _ = extract_blocks(temp_doc.name)
 
         # Should have 4 blocks
         assert len(blocks) == 4
@@ -525,7 +525,7 @@ def test_extract_image_markdown_format():
     docx_path, img_path = create_docx_with_image()
 
     try:
-        blocks = extract_blocks(docx_path)
+        blocks, _ = extract_blocks(docx_path)
         image_block = blocks[1]
 
         # Check markdown format: ![alt text](assets/filename.ext)
