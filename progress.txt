@@ -8,5 +8,33 @@
 - Click framework for CLI with proper exit codes (0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict)
 - Block types: heading, paragraph, list, image
 - Structure.json maps content.md blocks to docx paragraph indices
+- Inline formatting: bold/italic converted to markdown, underline stored in Block.inline_formatting metadata
+- When processing runs, use `run.bold is True` (not just truthy check) to avoid false positives
+
+---
+
+## 2026-01-13 - US-005
+- What was implemented:
+  - Inline formatting extraction from docx paragraphs
+  - Bold text converted to **bold** markdown
+  - Italic text converted to *italic* markdown
+  - Bold+italic converted to ***bold italic*** markdown
+  - Underline preserved in Block.inline_formatting metadata (not in markdown)
+  - 5 new tests covering bold, italic, mixed formatting, and underline handling
+
+- Files changed:
+  - src/sidedoc/extract.py: Added extract_inline_formatting() function
+  - src/sidedoc/reconstruct.py: Fixed type hints for mypy
+  - tests/test_extract.py: Added 5 new test cases with helper function
+  - progress.txt: Created initial file with codebase patterns
+
+- **Learnings for future iterations:**
+  - Pattern: When checking run formatting, use `run.bold is True` not `run.bold is not None`
+    because False is a valid value that shouldn't trigger formatting
+  - Pattern: Track plain text position separately from markdown position for inline_formatting metadata
+  - Gotcha: python-docx paragraph.style can be None, always add null checks
+  - Context: Inline formatting positions in Block.inline_formatting use plain text offsets,
+    not markdown with formatting markers
+  - Testing: create_formatted_docx helper makes it easy to test various formatting combinations
 
 ---

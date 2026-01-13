@@ -84,7 +84,7 @@
         "Unit test with various inline formatting combinations"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
