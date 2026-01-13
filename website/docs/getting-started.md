@@ -2,8 +2,18 @@
 
 ## Installation
 
+Currently, install from source (PyPI package coming soon):
+
 ```bash
-pip install sidedoc
+git clone https://github.com/jgardner04/sidedoc.git
+cd sidedoc
+pip install -e ".[dev]"
+```
+
+Or install directly from GitHub:
+
+```bash
+pip install git+https://github.com/jgardner04/sidedoc.git
 ```
 
 ## Basic Usage
@@ -34,9 +44,19 @@ sidedoc build document.sidedoc
 # Creates: document.docx
 ```
 
-### Sync After Editing
+### Unpack for Editing (Current)
 
-After editing `content.md`, sync changes back:
+Extract the archive to edit the markdown:
+
+```bash
+sidedoc unpack document.sidedoc -o unpacked
+# Edit unpacked/content.md
+sidedoc pack unpacked -o document.sidedoc
+```
+
+### Sync After Editing (Coming Soon)
+
+Future versions will support direct sync without unpacking:
 
 ```bash
 sidedoc sync document.sidedoc
@@ -44,16 +64,27 @@ sidedoc sync document.sidedoc
 
 ## CLI Commands
 
+### ✅ Implemented
+
 | Command | Description |
 |---------|-------------|
 | `sidedoc extract <docx>` | Create sidedoc from docx |
 | `sidedoc build <sidedoc>` | Generate docx from sidedoc |
-| `sidedoc sync <sidedoc>` | Sync edited content back to docx |
 | `sidedoc validate <sidedoc>` | Check sidedoc integrity |
-| `sidedoc diff <sidedoc>` | Show changes since last sync |
 | `sidedoc info <sidedoc>` | Display sidedoc metadata |
+| `sidedoc unpack <sidedoc> -o <dir>` | Extract sidedoc contents to directory |
+| `sidedoc pack <dir> -o <sidedoc>` | Create sidedoc from directory |
+
+### 🚧 Coming Soon
+
+| Command | Description |
+|---------|-------------|
+| `sidedoc sync <sidedoc>` | Sync edited content back to docx |
+| `sidedoc diff <sidedoc>` | Show changes since last sync |
 
 ## Example Workflow
+
+### Current MVP Workflow
 
 ```bash
 # 1. Start with a formatted Word document
@@ -62,18 +93,40 @@ ls
 
 # 2. Extract for AI processing
 sidedoc extract quarterly_report.docx
-# Created: quarterly_report.sidedoc
+# ✓ Extracted to quarterly_report.sidedoc
 
-# 3. AI reads and edits the markdown content
-# ... AI adds sections, modifies text ...
+# 3. Unpack to edit the markdown
+sidedoc unpack quarterly_report.sidedoc -o unpacked
+# ✓ Unpacked to unpacked
 
-# 4. Sync changes back
-sidedoc sync quarterly_report.sidedoc
-# Synced: 3 blocks modified, 1 block added
+# 4. AI/human edits the markdown content
+# Edit: unpacked/content.md
+# ... Add sections, modify text ...
 
-# 5. Rebuild for human consumption
+# 5. Pack back into sidedoc
+sidedoc pack unpacked -o quarterly_report.sidedoc
+# ✓ Packed to quarterly_report.sidedoc
+
+# 6. Rebuild for human consumption
 sidedoc build quarterly_report.sidedoc -o quarterly_report_updated.docx
-# Created: quarterly_report_updated.docx
+# ✓ Built document: quarterly_report_updated.docx
 
-# 6. Open in Word - formatting preserved, content updated
+# 7. Open in Word - formatting preserved, content updated
+```
+
+### Future Workflow (with sync)
+
+```bash
+# Extract once
+sidedoc extract document.docx
+
+# Edit content.md inside the archive
+# ... make changes ...
+
+# Sync updates the docx automatically
+sidedoc sync document.sidedoc
+# ✓ Synced: 3 blocks modified, 1 block added
+
+# Build updated docx
+sidedoc build document.sidedoc
 ```
