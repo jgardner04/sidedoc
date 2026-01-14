@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
 
-**Status:** MVP in development
+**Status:** MVP complete - all 30 user stories implemented and passing
 
 ## Specifications
 
@@ -14,7 +14,7 @@ Sidedoc is an AI-native document format that separates content from formatting. 
 
 ## Architecture
 
-Planned package structure:
+Package structure:
 
 ```
 src/sidedoc/
@@ -55,11 +55,18 @@ pytest
 # Run tests with coverage
 pytest --cov=sidedoc
 
-# CLI commands (once installed)
-sidedoc extract document.docx
-sidedoc build document.sidedoc
-sidedoc sync document.sidedoc
-sidedoc validate document.sidedoc
+# Type checking
+mypy src/
+
+# CLI commands (all implemented)
+sidedoc extract document.docx           # Extract docx to sidedoc
+sidedoc build document.sidedoc          # Build docx from sidedoc
+sidedoc sync document.sidedoc           # Sync edited content.md
+sidedoc validate document.sidedoc       # Validate sidedoc integrity
+sidedoc info document.sidedoc           # Show metadata
+sidedoc unpack document.sidedoc -o dir/ # Extract to directory
+sidedoc pack dir/ -o document.sidedoc   # Create from directory
+sidedoc diff document.sidedoc           # Show content changes
 ```
 
 ## Tech Stack
