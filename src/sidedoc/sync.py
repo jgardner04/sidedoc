@@ -1,6 +1,10 @@
 """Sync module for matching blocks and updating documents."""
 
-from typing import Optional
+import re
+from typing import Optional, Any
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from sidedoc.models import Block
 
 
@@ -55,3 +59,146 @@ def match_blocks(
                 remaining_new_indices.remove(old_idx)
 
     return matches
+
+
+def apply_inline_formatting(paragraph: Any, content: str) -> None:
+    """Apply inline formatting from markdown to a paragraph.
+
+    Parses markdown formatting (bold, italic) and creates runs with appropriate formatting.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        content: Text content with markdown formatting
+    """
+    # Pattern to match **bold**, *italic*, and plain text
+    # This is a simplified implementation - full markdown parsing would be more complex
+    parts = []
+    current_pos = 0
+
+    # Match **bold**
+    for match in re.finditer(r'\*\*([^*]+)\*\*', content):
+        # Add plain text before bold
+        if match.start() > current_pos:
+            parts.append(("plain", content[current_pos:match.start()]))
+        parts.append(("bold", match.group(1)))
+        current_pos = match.end()
+
+    # Add remaining text
+    if current_pos < len(content):
+        remaining = content[current_pos:]
+        # Now check for *italic* in remaining
+        parts.extend(_parse_italic(remaining))
+    else:
+        # Check for italic in the parts we already have
+        new_parts = []
+        for style, text in parts:
+            if style == "plain":
+                new_parts.extend(_parse_italic(text))
+            else:
+                new_parts.append((style, text))
+        parts = new_parts
+
+    # Apply formatting to runs
+    if not parts:
+        paragraph.add_run(content)
+    else:
+        for style, text in parts:
+            run = paragraph.add_run(text)
+            if style == "bold":
+                run.bold = True
+            elif style == "italic":
+                run.italic = True
+            elif style == "bold_italic":
+                run.bold = True
+                run.italic = True
+
+
+def _parse_italic(text: str) -> list[tuple[str, str]]:
+    """Parse italic formatting from text."""
+    parts = []
+    current_pos = 0
+
+    for match in re.finditer(r'\*([^*]+)\*', text):
+        if match.start() > current_pos:
+            parts.append(("plain", text[current_pos:match.start()]))
+        parts.append(("italic", match.group(1)))
+        current_pos = match.end()
+
+    if current_pos < len(text):
+        parts.append(("plain", text[current_pos:]))
+
+    return parts if parts else [("plain", text)]
+
+
+def generate_updated_docx(
+    new_blocks: list[Block],
+    matches: dict[str, Block],
+    styles: dict[str, Any],
+    output_path: str,
+) -> None:
+    """Generate an updated docx file from new blocks.
+
+    This function creates a new docx with content from new_blocks.
+    - Matched blocks preserve their formatting from styles
+    - New blocks receive default formatting based on type
+    - Deleted blocks are omitted (not in new_blocks)
+    - Inline formatting from markdown is applied
+
+    Args:
+        new_blocks: List of new Block objects from edited content.md
+        matches: Dictionary mapping old block IDs to new blocks
+        styles: Style information dictionary with block_styles
+        output_path: Path where docx should be saved
+    """
+    doc = Document()
+
+    # Create reverse mapping: new block -> old block ID (for style lookup)
+    new_to_old: dict[str, str] = {}
+    for old_id, new_block in matches.items():
+        new_to_old[new_block.id] = old_id
+
+    for block in new_blocks:
+        # Determine which style to use
+        old_block_id = new_to_old.get(block.id)
+        block_style = {}
+        if old_block_id:
+            # Matched block - use its old style
+            block_style = styles.get("block_styles", {}).get(old_block_id, {})
+
+        # Create paragraph based on block type
+        if block.type == "heading" and block.level:
+            # Remove markdown markers from heading
+            text = block.content.lstrip("#").strip()
+            style_name = f"Heading {block.level}"
+            para = doc.add_paragraph(text, style=style_name)
+        elif block.type == "paragraph":
+            # Check if content has inline formatting
+            if "**" in block.content or "*" in block.content:
+                para = doc.add_paragraph()
+                apply_inline_formatting(para, block.content)
+            else:
+                para = doc.add_paragraph(block.content)
+        else:
+            # Default to paragraph for other types
+            para = doc.add_paragraph(block.content)
+
+        # Apply formatting if available
+        if block_style:
+            if "font_name" in block_style and para.style:
+                para.style.font.name = block_style["font_name"]
+            if "font_size" in block_style and para.style:
+                para.style.font.size = Pt(block_style["font_size"])
+
+            # Apply alignment
+            alignment = block_style.get("alignment", "left")
+            alignment_map = {
+                "left": WD_ALIGN_PARAGRAPH.LEFT,
+                "center": WD_ALIGN_PARAGRAPH.CENTER,
+                "right": WD_ALIGN_PARAGRAPH.RIGHT,
+                "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+            }
+            if alignment in alignment_map:
+                para.alignment = alignment_map[alignment]
+
+    # Save document
+    doc.save(output_path)
