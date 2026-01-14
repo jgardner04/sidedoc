@@ -1,11 +1,17 @@
 """Sync module for matching blocks and updating documents."""
 
+import hashlib
+import json
 import re
+import tempfile
+import zipfile
+from pathlib import Path
 from typing import Optional, Any
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from sidedoc.models import Block
+from sidedoc.utils import get_iso_timestamp
 
 
 def match_blocks(
@@ -202,3 +208,88 @@ def generate_updated_docx(
 
     # Save document
     doc.save(output_path)
+
+
+def update_sidedoc_metadata(
+    sidedoc_path: str,
+    new_blocks: list[Block],
+    new_content: str,
+) -> None:
+    """Update metadata files in sidedoc archive after sync.
+
+    Regenerates structure.json and updates manifest.json, then repackages the archive.
+
+    Args:
+        sidedoc_path: Path to .sidedoc file
+        new_blocks: Updated list of Block objects from edited content
+        new_content: New markdown content
+    """
+    # Read existing files from archive
+    with zipfile.ZipFile(sidedoc_path, "r") as zf:
+        # Read styles.json (preserve it)
+        styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+
+        # Read old manifest to preserve some fields
+        old_manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+
+        # Collect any assets (images) to preserve
+        assets = {}
+        for file_info in zf.filelist:
+            if file_info.filename.startswith("assets/"):
+                assets[file_info.filename] = zf.read(file_info.filename)
+
+    # Generate new structure.json
+    structure_data = {
+        "blocks": [
+            {
+                "id": block.id,
+                "type": block.type,
+                "docx_paragraph_index": block.docx_paragraph_index,
+                "content_start": block.content_start,
+                "content_end": block.content_end,
+                "content_hash": block.content_hash,
+                "level": block.level,
+                "image_path": block.image_path,
+                "inline_formatting": block.inline_formatting,
+            }
+            for block in new_blocks
+        ]
+    }
+
+    # Compute new content hash
+    content_hash = hashlib.sha256(new_content.encode()).hexdigest()
+
+    # Update manifest.json
+    manifest_data = {
+        "sidedoc_version": old_manifest["sidedoc_version"],
+        "created_at": old_manifest["created_at"],  # Preserve original
+        "modified_at": get_iso_timestamp(),  # Update to now
+        "source_file": old_manifest["source_file"],
+        "source_hash": old_manifest["source_hash"],
+        "content_hash": content_hash,  # Update with new hash
+        "generator": old_manifest["generator"],
+    }
+
+    # Repackage archive with updated files
+    # Write to temp file first, then replace original
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".sidedoc") as tmp:
+        tmp_path = tmp.name
+
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Write updated content and metadata
+            zf.writestr("content.md", new_content)
+            zf.writestr("structure.json", json.dumps(structure_data, indent=2))
+            zf.writestr("styles.json", json.dumps(styles_data, indent=2))
+            zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+
+            # Preserve assets
+            for asset_path, asset_data in assets.items():
+                zf.writestr(asset_path, asset_data)
+
+        # Replace original file with updated one
+        Path(tmp_path).replace(sidedoc_path)
+    finally:
+        # Clean up temp file if it still exists
+        if Path(tmp_path).exists():
+            Path(tmp_path).unlink()

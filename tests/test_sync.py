@@ -1,11 +1,13 @@
 """Tests for sync module - block matching algorithm."""
 
 import hashlib
+import json
 import tempfile
+import zipfile
 from pathlib import Path
 from docx import Document
 from sidedoc.models import Block
-from sidedoc.sync import match_blocks, generate_updated_docx
+from sidedoc.sync import match_blocks, generate_updated_docx, update_sidedoc_metadata
 
 
 def compute_hash(content: str) -> str:
@@ -551,3 +553,223 @@ def test_generate_updated_docx_with_inline_formatting() -> None:
         assert len(doc.paragraphs) == 1
         # Note: Detailed inline formatting verification would require
         # checking runs, but basic content check is sufficient for now
+
+
+# Tests for update_sidedoc_metadata
+
+
+def test_update_sidedoc_metadata_regenerates_structure() -> None:
+    """Test that structure.json is regenerated with new block info."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc archive
+        old_content = "# Old Title\n\nOld paragraph."
+        old_structure = {
+            "blocks": [
+                {
+                    "id": "block-1",
+                    "type": "heading",
+                    "docx_paragraph_index": 0,
+                    "content_start": 0,
+                    "content_end": 11,
+                    "content_hash": compute_hash("# Old Title"),
+                    "level": 1,
+                    "image_path": None,
+                    "inline_formatting": None,
+                }
+            ]
+        }
+        old_styles = {"block_styles": {}, "document_defaults": {"font_name": "Arial", "font_size": 11}}
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", old_content)
+            zf.writestr("structure.json", json.dumps(old_structure))
+            zf.writestr("styles.json", json.dumps(old_styles))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+
+        # New content with edited blocks
+        new_content = "# New Title\n\nNew paragraph."
+        new_blocks = [
+            Block(
+                id="block-new-1",
+                type="heading",
+                content="# New Title",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("# New Title"),
+                level=1,
+            ),
+            Block(
+                id="block-new-2",
+                type="paragraph",
+                content="New paragraph.",
+                docx_paragraph_index=1,
+                content_start=13,
+                content_end=27,
+                content_hash=compute_hash("New paragraph."),
+            ),
+        ]
+
+        # Update metadata
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
+
+        # Verify structure.json was updated
+        with zipfile.ZipFile(sidedoc_path, "r") as zf:
+            structure_data = json.loads(zf.read("structure.json"))
+            assert len(structure_data["blocks"]) == 2
+            assert structure_data["blocks"][0]["content_hash"] == compute_hash("# New Title")
+            assert structure_data["blocks"][1]["content_hash"] == compute_hash("New paragraph.")
+
+
+def test_update_sidedoc_metadata_updates_manifest_timestamp() -> None:
+    """Test that manifest.json modified_at is updated."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc
+        old_content = "Old content"
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", old_content)
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+
+        # Update with new content
+        new_content = "New content"
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
+
+        # Verify manifest was updated
+        with zipfile.ZipFile(sidedoc_path, "r") as zf:
+            manifest_data = json.loads(zf.read("manifest.json"))
+            # modified_at should be different from original
+            assert manifest_data["modified_at"] != "2024-01-01T00:00:00+00:00"
+            # created_at should remain unchanged
+            assert manifest_data["created_at"] == "2024-01-01T00:00:00+00:00"
+
+
+def test_update_sidedoc_metadata_updates_content_hash() -> None:
+    """Test that manifest.json content_hash is updated."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        old_content = "Old content"
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": compute_hash("Old content"),
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", old_content)
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+
+        new_content = "New content here"
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content here",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=16,
+                content_hash=compute_hash("New content here"),
+            )
+        ]
+
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
+
+        # Verify content_hash was updated
+        with zipfile.ZipFile(sidedoc_path, "r") as zf:
+            manifest_data = json.loads(zf.read("manifest.json"))
+            expected_hash = compute_hash("New content here")
+            assert manifest_data["content_hash"] == expected_hash
+            assert manifest_data["content_hash"] != compute_hash("Old content")
+
+
+def test_update_sidedoc_metadata_preserves_styles() -> None:
+    """Test that styles.json is preserved in repackaged archive."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        old_styles = {
+            "block_styles": {
+                "block-1": {
+                    "font_name": "Times New Roman",
+                    "font_size": 14,
+                    "alignment": "center",
+                }
+            },
+            "document_defaults": {"font_name": "Arial", "font_size": 11},
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", "Old content")
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps(old_styles))
+            zf.writestr("manifest.json", json.dumps({
+                "sidedoc_version": "1.0.0",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "modified_at": "2024-01-01T00:00:00+00:00",
+                "source_file": "test.docx",
+                "source_hash": "abc123",
+                "content_hash": "old_hash",
+                "generator": "sidedoc-cli/0.1.0",
+            }))
+
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
+
+        # Verify styles were preserved
+        with zipfile.ZipFile(sidedoc_path, "r") as zf:
+            styles_data = json.loads(zf.read("styles.json"))
+            assert styles_data == old_styles
