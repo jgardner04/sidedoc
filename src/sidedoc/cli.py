@@ -6,7 +6,8 @@ import click
 from sidedoc import __version__
 from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.package import create_sidedoc_archive
-from sidedoc.reconstruct import build_docx_from_sidedoc
+from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_blocks
+from sidedoc.sync import update_sidedoc_metadata, generate_updated_docx
 from sidedoc.utils import ensure_sidedoc_extension
 
 
@@ -96,9 +97,88 @@ def sync(input_file: str, output: str | None) -> None:
     """Sync changes from edited content.md back to the document.
 
     Updates the internal docx representation in the sidedoc archive.
+    Optionally builds the updated docx to a specified path.
     """
-    click.echo(f"Sync command - input: {input_file}, output: {output}")
-    sys.exit(EXIT_SUCCESS)
+    import zipfile
+    import json
+
+    try:
+        # Read sidedoc archive
+        with zipfile.ZipFile(input_file, "r") as zf:
+            # Read content.md
+            try:
+                content_md = zf.read("content.md").decode("utf-8")
+            except KeyError:
+                click.echo("Error: content.md not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+            # Read styles.json for formatting
+            try:
+                styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+            except KeyError:
+                click.echo("Error: styles.json not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+            except json.JSONDecodeError as e:
+                click.echo(f"Error: Invalid JSON in styles.json: {e}", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+            # Read old structure.json for block history
+            try:
+                old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+            except KeyError:
+                click.echo("Error: structure.json not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+        # Parse edited content.md into new blocks
+        new_blocks = parse_markdown_to_blocks(content_md)
+
+        # Update metadata in sidedoc archive
+        update_sidedoc_metadata(input_file, new_blocks, content_md)
+
+        click.echo(f"✓ Synced changes in {input_file}")
+
+        # If output path specified, build the docx
+        if output:
+            # Generate updated docx
+            from sidedoc.sync import match_blocks
+            from sidedoc.models import Block
+
+            # Convert old structure to Block objects for matching
+            old_blocks = []
+            for block_data in old_structure.get("blocks", []):
+                old_blocks.append(
+                    Block(
+                        id=block_data["id"],
+                        type=block_data["type"],
+                        content="",  # We don't have old content, but that's OK for matching
+                        docx_paragraph_index=block_data["docx_paragraph_index"],
+                        content_start=block_data["content_start"],
+                        content_end=block_data["content_end"],
+                        content_hash=block_data["content_hash"],
+                        level=block_data.get("level"),
+                        image_path=block_data.get("image_path"),
+                        inline_formatting=block_data.get("inline_formatting"),
+                    )
+                )
+
+            # Match old blocks to new blocks
+            matches = match_blocks(old_blocks, new_blocks)
+
+            # Generate updated docx
+            generate_updated_docx(new_blocks, matches, styles_data, output)
+            click.echo(f"✓ Built updated document: {output}")
+
+        sys.exit(EXIT_SUCCESS)
+
+    except FileNotFoundError:
+        click.echo(f"Error: File not found: {input_file}", err=True)
+        sys.exit(EXIT_NOT_FOUND)
+    except zipfile.BadZipFile:
+        click.echo(f"Error: Invalid sidedoc file: {input_file}", err=True)
+        sys.exit(EXIT_INVALID_FORMAT)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(EXIT_ERROR)
 
 
 @main.command()
