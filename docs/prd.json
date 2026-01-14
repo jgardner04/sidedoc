@@ -373,7 +373,7 @@
         "Integration test: sync updates metadata correctly"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

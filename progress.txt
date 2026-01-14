@@ -181,3 +181,32 @@
   - Gotcha: Font/size styling requires para.style to exist (check before applying)
 
 ---
+
+## 2026-01-13 19:17 - US-022
+- What was implemented:
+  - update_sidedoc_metadata() function for updating archive metadata after sync
+  - Regenerates structure.json with new block mappings and content hashes
+  - Updates manifest.json modified_at timestamp (preserves created_at)
+  - Updates manifest.json content_hash from new markdown content
+  - Preserves styles.json and assets during repackaging
+  - Atomic file replacement using temp file for safety
+  - 4 comprehensive tests covering metadata updates
+
+- Files changed:
+  - src/sidedoc/sync.py: Added update_sidedoc_metadata function
+  - tests/test_sync.py: Added 4 test cases for metadata updates
+
+- **Learnings for future iterations:**
+  - Pattern: Read entire archive first, preserve styles and assets, write new archive
+  - Pattern: Use tempfile.NamedTemporaryFile for atomic file replacement
+  - Pattern: Path.replace() for atomic move/replace on same filesystem
+  - Pattern: Compute content hash with hashlib.sha256(content.encode()).hexdigest()
+  - Context: Modified manifest fields: modified_at (updated), content_hash (updated)
+  - Context: Preserved manifest fields: created_at, source_file, source_hash, generator
+  - Design decision: Write to temp file first, then replace to avoid corruption
+  - Design decision: Preserve all assets (images) automatically during repackaging
+  - Testing: Create test archives with zipfile.ZipFile in tests
+  - Gotcha: Must preserve assets directory structure when repackaging
+  - Gotcha: Use try/finally to clean up temp files even if replacement fails
+
+---
