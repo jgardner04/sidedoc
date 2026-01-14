@@ -391,7 +391,7 @@
         "End-to-end test: extract, edit content.md, sync, verify changes"
       ],
       "priority": 23,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

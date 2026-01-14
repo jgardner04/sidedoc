@@ -210,3 +210,33 @@
   - Gotcha: Use try/finally to clean up temp files even if replacement fails
 
 ---
+
+## 2026-01-13 19:20 - US-023
+- What was implemented:
+  - Complete sidedoc sync CLI command implementation
+  - Reads sidedoc archive and parses edited content.md
+  - Updates metadata (structure.json, manifest.json) in archive
+  - Optional -o flag to build updated docx file
+  - Block matching to preserve formatting from old blocks
+  - Comprehensive error handling with proper exit codes
+  - 4 end-to-end integration tests
+
+- Files changed:
+  - src/sidedoc/cli.py: Implemented sync command with full functionality
+  - tests/test_sync_command.py: Created 4 integration tests
+
+- **Learnings for future iterations:**
+  - Pattern: CLI command reads archive, processes, updates archive, optionally builds output
+  - Pattern: Convert JSON block data back to Block objects for matching algorithm
+  - Pattern: Use click.echo with err=True for error messages
+  - Pattern: Validate required files exist in archive before processing
+  - Context: Exit codes - 0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict
+  - Context: Sync command workflow: read → parse → update metadata → optionally build docx
+  - Design decision: Update metadata first, then optionally build (separate concerns)
+  - Design decision: Reuse existing functions (parse_markdown_to_blocks, match_blocks, etc.)
+  - Testing: Use CliRunner from click.testing for CLI integration tests
+  - Testing: Create sidedoc archives with zipfile in tests for realistic scenarios
+  - Gotcha: Must catch KeyError for missing files in ZIP archive
+  - Gotcha: JSON validation errors need specific error messages for debugging
+
+---
