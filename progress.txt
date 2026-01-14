@@ -240,3 +240,35 @@
   - Gotcha: JSON validation errors need specific error messages for debugging
 
 ---
+
+## 2026-01-13 19:23 - US-027
+- What was implemented:
+  - Complete sidedoc diff CLI command implementation
+  - Reads archive and compares current content.md with structure.json
+  - Identifies and displays added blocks (green with + marker)
+  - Identifies and displays removed blocks (red with - marker)
+  - Identifies and displays modified blocks (yellow with ~ marker)
+  - Color-coded terminal output using click.style
+  - Handles no-changes case gracefully
+  - Computes content hashes for accurate comparison
+  - 4 comprehensive tests covering all diff scenarios
+
+- Files changed:
+  - src/sidedoc/cli.py: Implemented diff command with full functionality
+  - tests/test_diff_command.py: Created 4 integration tests
+
+- **Learnings for future iterations:**
+  - Pattern: Diff workflow: read archive → parse new blocks → compute hashes → match → identify changes
+  - Pattern: Use click.style(text, fg=color, bold=True) for colored terminal output
+  - Pattern: Block objects aren't hashable - use set comprehension on IDs instead
+  - Pattern: parse_markdown_to_blocks creates blocks with empty content_hash - compute after parsing
+  - Pattern: Compute hash: hashlib.sha256(content.encode()).hexdigest()
+  - Context: Diff output shows block type, level, and content preview (50 chars)
+  - Context: Three categories: removed (old not matched), added (new not matched), modified (matched but hash differs)
+  - Design decision: Show content preview for added/modified but not removed (no content available)
+  - Design decision: Use colors for visual clarity (red/green/yellow) with markers (+/-/~)
+  - Testing: Use real computed hashes in tests for accurate matching behavior
+  - Gotcha: Can't use `set(matches.values())` because Block is unhashable dataclass
+  - Gotcha: Must compute content hashes after parsing for accurate comparison
+
+---
