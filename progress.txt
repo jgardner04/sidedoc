@@ -123,3 +123,32 @@
   - Testing: End-to-end test extracts→builds→verifies image presence
 
 ---
+
+## 2026-01-13 17:14 - US-020
+- What was implemented:
+  - Block matching algorithm for sync operations
+  - Two-pass matching: first by content hash (unchanged), then by type and position (edited)
+  - Identifies unchanged blocks (matched by content hash)
+  - Identifies edited blocks (matched by type and exact position)
+  - Identifies new blocks (no match in old blocks)
+  - Identifies deleted blocks (in old blocks but no match in new)
+  - Returns mapping dictionary: old block IDs → new Block objects
+  - 7 comprehensive tests covering all scenarios
+
+- Files changed:
+  - src/sidedoc/sync.py: Created new module with match_blocks() function
+  - tests/test_sync.py: Created 7 test cases covering all matching scenarios
+
+- **Learnings for future iterations:**
+  - Pattern: Block matching uses two-pass algorithm for accuracy
+  - Pattern: First pass matches by content_hash (unchanged blocks)
+  - Pattern: Second pass matches by type AND exact position (edited blocks)
+  - Pattern: Return value is dict[str, Block] mapping old IDs to new blocks
+  - Context: Unmatched old blocks = deletions, unmatched new blocks = additions
+  - Design decision: Only match by position if type is identical (prevents false matches)
+  - Design decision: Position matching requires exact index match (not fuzzy/nearest)
+  - Testing: Need tests for unchanged, edited, new, deleted, and mixed scenarios
+  - Gotcha: When block count stays same but content changes, algorithm treats as edits
+  - Gotcha: True deletions only visible when total block count decreases
+
+---
