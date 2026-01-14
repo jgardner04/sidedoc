@@ -479,7 +479,7 @@
         "All fixture files open successfully in Word"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
