@@ -8,6 +8,76 @@ Sidedoc is an AI-native document format that separates content from formatting. 
 
 **Status:** MVP in development
 
+## Development Philosophy
+
+### Test-Driven Development (TDD) — MANDATORY
+
+**All code in this project MUST be developed using Test-Driven Development.**
+
+This is a non-negotiable requirement for all contributions, whether from human developers or AI agents.
+
+#### TDD Workflow
+
+1. **Red** — Write a failing test first
+   - Write a test that describes the behavior you want to implement
+   - Run the test and verify it fails
+   - The test should fail because the feature doesn't exist yet
+
+2. **Green** — Write minimal code to make the test pass
+   - Implement only enough code to make the test pass
+   - Don't worry about perfection or edge cases yet
+   - Run the test and verify it passes
+
+3. **Refactor** — Improve the code while keeping tests green
+   - Clean up the implementation
+   - Remove duplication
+   - Improve naming and structure
+   - Run tests after each change to ensure they still pass
+
+#### TDD Rules for This Project
+
+- **Never write production code without a failing test first**
+- **Never write more production code than needed to pass the test**
+- **Never commit code without passing tests**
+- Tests should be:
+  - Clear and readable (they serve as documentation)
+  - Focused on one behavior per test
+  - Independent (can run in any order)
+  - Fast (no unnecessary I/O or sleeps)
+
+#### Example TDD Workflow
+
+```bash
+# 1. Write a failing test
+# Edit tests/test_extract.py to add a test for parsing headings
+
+# 2. Run the test and see it fail
+pytest tests/test_extract.py::test_extract_heading -v
+
+# 3. Implement minimal code to pass the test
+# Edit src/sidedoc/extract.py
+
+# 4. Run the test and see it pass
+pytest tests/test_extract.py::test_extract_heading -v
+
+# 5. Refactor if needed, keeping tests green
+pytest tests/test_extract.py::test_extract_heading -v
+
+# 6. Move to next test
+```
+
+#### When Working on Features
+
+For any new feature or bug fix:
+
+1. **Start with a test** — Always begin by writing a test that fails
+2. **Implement incrementally** — Make the test pass with minimal code
+3. **Add more tests** — Cover edge cases and error conditions
+4. **Refactor** — Clean up the implementation while keeping all tests passing
+5. **Verify coverage** — Run `pytest --cov=sidedoc` to ensure adequate coverage
+
+**If you're an AI agent:** Before writing any implementation code, you must first write the test. If a user asks you to implement something, your first response should be to write the failing test.
+
 ## Specifications
 
 - [Product Requirements Document](docs/slidedoc-prd.md) — Full PRD with format specification, CLI interface, sync algorithm, and implementation phases
