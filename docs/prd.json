@@ -357,7 +357,7 @@
         "Integration test: edit content.md, sync, verify docx updated"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

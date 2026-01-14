@@ -152,3 +152,32 @@
   - Gotcha: True deletions only visible when total block count decreases
 
 ---
+
+## 2026-01-13 19:15 - US-021
+- What was implemented:
+  - generate_updated_docx() function for creating docx from edited blocks
+  - Matched blocks preserve formatting from styles.json (font, size, alignment)
+  - New blocks receive default formatting based on block type
+  - Deleted blocks omitted from output (not in new_blocks list)
+  - Inline formatting parser for markdown bold (**text**) and italic (*text*)
+  - apply_inline_formatting() creates runs with proper formatting
+  - _parse_italic() helper for parsing italic syntax
+  - 5 comprehensive tests covering all sync scenarios
+
+- Files changed:
+  - src/sidedoc/sync.py: Added generate_updated_docx, apply_inline_formatting, _parse_italic
+  - tests/test_sync.py: Added 5 test cases for docx generation
+
+- **Learnings for future iterations:**
+  - Pattern: generate_updated_docx creates reverse mapping (new block -> old block ID) for style lookup
+  - Pattern: Matched blocks get styles from old block ID via matches dict
+  - Pattern: New blocks (not in matches) get default formatting for their type
+  - Pattern: Inline formatting parsed via regex for **bold** and *italic*
+  - Pattern: Create empty paragraph first, then add formatted runs for inline formatting
+  - Context: Headings strip markdown markers (#) and use "Heading N" styles
+  - Context: Alignment applied via WD_ALIGN_PARAGRAPH enum
+  - Design decision: Simplified inline parsing (doesn't handle all edge cases)
+  - Testing: Use tempfile.TemporaryDirectory for output files in tests
+  - Gotcha: Font/size styling requires para.style to exist (check before applying)
+
+---
