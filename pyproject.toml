@@ -1,17 +1,18 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sidedoc"
 version = "0.1.0"
-description = "An AI-native document format that separates content from formatting"
+description = "AI-native document format that separates content from formatting"
 readme = "README.md"
-requires-python = ">=3.11"
 license = {text = "MIT"}
+requires-python = ">=3.11"
 authors = [
-    {name = "Jonathan Gardner", email = "jogardn@gmail.com"}
+    {name = "Sidedoc Contributors"}
 ]
+keywords = ["document", "ai", "markdown", "docx"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -20,34 +21,22 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-
 dependencies = [
     "python-docx>=1.1.0",
-    "click>=8.1.7",
-    "mistune>=3.0.2",
+    "mistune>=3.0.0",
+    "PyYAML>=6.0",
+    "click>=8.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "pytest-watch>=4.2.0",
-    "black>=23.7.0",
-    "ruff>=0.0.286",
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "mypy>=1.11.0",
 ]
 
 [project.scripts]
-sidedoc = "sidedoc.cli:cli"
-
-[project.urls]
-Homepage = "https://github.com/jogardn/sidedoc"
-Documentation = "https://jogardn.github.io/sidedoc/"
-Repository = "https://github.com/jogardn/sidedoc"
-Issues = "https://github.com/jogardn/sidedoc/issues"
-
-[tool.setuptools]
-packages = ["sidedoc"]
-package-dir = {"" = "src"}
+sidedoc = "sidedoc.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -56,26 +45,23 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --strict-markers"
 
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
 [tool.coverage.run]
-source = ["sidedoc"]
-omit = ["*/tests/*", "*/test_*.py"]
+source = ["src"]
+branch = true
 
 [tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-]
-
-[tool.black]
-line-length = 100
-target-version = ["py311", "py312"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-select = ["E", "F", "I", "N", "W"]
-ignore = []
+show_missing = true
+skip_covered = false

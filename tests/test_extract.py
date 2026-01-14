@@ -1,70 +1,165 @@
-"""Tests for extraction functionality.
+"""Test document extraction functionality."""
 
-Following TDD: Write tests first, then implement.
-"""
-
-import pytest
+import tempfile
 from pathlib import Path
 from docx import Document
+from sidedoc.extract import extract_blocks
+from sidedoc.models import Block
 
-from sidedoc.extract import extract_paragraphs
+
+def create_test_docx(content_items: list[tuple[str, str]]) -> str:
+    """Create a test docx file with specified content.
+
+    Args:
+        content_items: List of (style, text) tuples
+
+    Returns:
+        Path to temporary docx file
+    """
+    doc = Document()
+    for style, text in content_items:
+        doc.add_paragraph(text, style=style)
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_file.name)
+    temp_file.close()
+    return temp_file.name
 
 
-class TestExtraction:
-    """Tests for extracting .docx to .sidedoc."""
+def test_extract_blocks_function_exists():
+    """Test that extract_blocks function exists."""
+    assert callable(extract_blocks)
 
-    def test_extract_simple_paragraph(self, tmp_path):
-        """Test extracting a single paragraph from a docx file.
 
-        TDD Phase: RED - This test should fail because extract_paragraphs doesn't exist yet.
-        """
-        # Arrange: Create a simple docx with one paragraph
-        docx_path = tmp_path / "test.docx"
-        doc = Document()
-        doc.add_paragraph("Hello, world!")
-        doc.save(str(docx_path))
+def test_extract_single_paragraph():
+    """Test extracting a simple paragraph."""
+    docx_path = create_test_docx([("Normal", "Hello world")])
 
-        # Act: Extract paragraphs from the docx
-        paragraphs = extract_paragraphs(str(docx_path))
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].type == "paragraph"
+        assert blocks[0].content == "Hello world"
+        assert blocks[0].docx_paragraph_index == 0
+    finally:
+        Path(docx_path).unlink()
 
-        # Assert: We should get one paragraph with the correct text
-        assert len(paragraphs) == 1
-        assert paragraphs[0] == "Hello, world!"
 
-    def test_extract_multiple_paragraphs(self, tmp_path):
-        """Test extracting multiple paragraphs from a docx file.
+def test_extract_heading_1():
+    """Test extracting Heading 1."""
+    docx_path = create_test_docx([("Heading 1", "Title")])
 
-        TDD Phase: RED - This test should fail because extract_paragraphs doesn't exist yet.
-        """
-        # Arrange: Create a docx with multiple paragraphs
-        docx_path = tmp_path / "test.docx"
-        doc = Document()
-        doc.add_paragraph("First paragraph.")
-        doc.add_paragraph("Second paragraph.")
-        doc.add_paragraph("Third paragraph.")
-        doc.save(str(docx_path))
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].type == "heading"
+        assert blocks[0].content == "# Title"
+        assert blocks[0].level == 1
+    finally:
+        Path(docx_path).unlink()
 
-        # Act: Extract paragraphs
-        paragraphs = extract_paragraphs(str(docx_path))
 
-        # Assert: We should get three paragraphs in order
-        assert len(paragraphs) == 3
-        assert paragraphs[0] == "First paragraph."
-        assert paragraphs[1] == "Second paragraph."
-        assert paragraphs[2] == "Third paragraph."
+def test_extract_heading_2():
+    """Test extracting Heading 2."""
+    docx_path = create_test_docx([("Heading 2", "Subtitle")])
 
-    def test_extract_empty_docx(self, tmp_path):
-        """Test extracting from an empty docx file.
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].type == "heading"
+        assert blocks[0].content == "## Subtitle"
+        assert blocks[0].level == 2
+    finally:
+        Path(docx_path).unlink()
 
-        TDD Phase: RED - This test should fail because extract_paragraphs doesn't exist yet.
-        """
-        # Arrange: Create an empty docx
-        docx_path = tmp_path / "test.docx"
-        doc = Document()
-        doc.save(str(docx_path))
 
-        # Act: Extract paragraphs
-        paragraphs = extract_paragraphs(str(docx_path))
+def test_extract_multiple_paragraphs():
+    """Test extracting multiple paragraphs in order."""
+    docx_path = create_test_docx([
+        ("Normal", "First paragraph"),
+        ("Normal", "Second paragraph"),
+        ("Normal", "Third paragraph")
+    ])
 
-        # Assert: We should get an empty list
-        assert len(paragraphs) == 0
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 3
+        assert blocks[0].content == "First paragraph"
+        assert blocks[1].content == "Second paragraph"
+        assert blocks[2].content == "Third paragraph"
+        assert blocks[0].docx_paragraph_index == 0
+        assert blocks[1].docx_paragraph_index == 1
+        assert blocks[2].docx_paragraph_index == 2
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_mixed_content():
+    """Test extracting headings and paragraphs together."""
+    docx_path = create_test_docx([
+        ("Heading 1", "Main Title"),
+        ("Normal", "Introduction paragraph"),
+        ("Heading 2", "Section"),
+        ("Normal", "Section content")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 4
+        assert blocks[0].type == "heading"
+        assert blocks[0].level == 1
+        assert blocks[1].type == "paragraph"
+        assert blocks[2].type == "heading"
+        assert blocks[2].level == 2
+        assert blocks[3].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_blocks_have_unique_ids():
+    """Test that each block gets a unique ID."""
+    docx_path = create_test_docx([
+        ("Normal", "First"),
+        ("Normal", "Second")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        ids = [block.id for block in blocks]
+        assert len(ids) == len(set(ids)), "Block IDs must be unique"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_blocks_have_content_hashes():
+    """Test that blocks have content hashes."""
+    docx_path = create_test_docx([("Normal", "Test content")])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert blocks[0].content_hash is not None
+        assert len(blocks[0].content_hash) > 0
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_all_heading_levels():
+    """Test extracting all heading levels (1-6)."""
+    docx_path = create_test_docx([
+        ("Heading 1", "H1"),
+        ("Heading 2", "H2"),
+        ("Heading 3", "H3"),
+        ("Heading 4", "H4"),
+        ("Heading 5", "H5"),
+        ("Heading 6", "H6")
+    ])
+
+    try:
+        blocks = extract_blocks(docx_path)
+        assert len(blocks) == 6
+        for i, block in enumerate(blocks):
+            assert block.type == "heading"
+            assert block.level == i + 1
+            assert block.content == "#" * (i + 1) + f" H{i + 1}"
+    finally:
+        Path(docx_path).unlink()
