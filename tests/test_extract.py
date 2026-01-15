@@ -544,27 +544,103 @@ def test_extract_image_markdown_format():
         Path(img_path).unlink()
 
 
+def test_validate_image_boundary_cases():
+    """Test validate_image() with boundary cases around MAX_IMAGE_SIZE."""
+    from sidedoc.extract import validate_image, MAX_IMAGE_SIZE
+    from PIL import Image
+    import io
+
+    # Test 1: Image exactly at MAX_IMAGE_SIZE limit (should pass)
+    # Create a small valid image and pad to exact size
+    img = Image.new('RGB', (1, 1), color='white')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='PNG')
+    base_size = len(img_bytes.getvalue())
+
+    # Pad to exactly MAX_IMAGE_SIZE
+    exactly_max = img_bytes.getvalue() + b'\x00' * (MAX_IMAGE_SIZE - base_size)
+    # This will fail validation because padding corrupts the image, but tests size check
+    is_valid, error = validate_image(exactly_max, 'png')
+    # Should fail due to corruption, not size
+    assert "exceeds maximum size" not in error.lower()
+
+    # Test 2: Image at MAX_IMAGE_SIZE + 1 (should fail with size error)
+    just_over_max = b'x' * (MAX_IMAGE_SIZE + 1)
+    is_valid, error = validate_image(just_over_max, 'png')
+    assert is_valid is False
+    assert "exceeds maximum size" in error.lower()
+
+    # Test 3: Image at MAX_IMAGE_SIZE - 1 (should pass size check, may fail format check)
+    just_under_max = b'x' * (MAX_IMAGE_SIZE - 1)
+    is_valid, error = validate_image(just_under_max, 'png')
+    # Should not fail on size
+    if not is_valid:
+        assert "exceeds maximum size" not in error.lower()
+
+
+def test_validate_image_function():
+    """Test the validate_image() function directly with various inputs."""
+    from sidedoc.extract import validate_image, MAX_IMAGE_SIZE
+    from PIL import Image
+    import io
+
+    # Test 1: Valid PNG image
+    img = Image.new('RGB', (10, 10), color='red')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='PNG')
+    is_valid, error = validate_image(img_bytes.getvalue(), 'png')
+    assert is_valid is True
+    assert error == ""
+
+    # Test 2: Format mismatch (JPEG with PNG extension)
+    img = Image.new('RGB', (10, 10), color='green')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='JPEG')
+    is_valid, error = validate_image(img_bytes.getvalue(), 'png')
+    assert is_valid is False
+    assert "format mismatch" in error.lower()
+
+    # Test 3: Oversized image
+    oversized_data = b'fake image data' * (MAX_IMAGE_SIZE // 10)
+    is_valid, error = validate_image(oversized_data, 'png')
+    assert is_valid is False
+    assert "exceeds maximum size" in error.lower()
+
+    # Test 4: Corrupted image data
+    corrupted_data = b'this is not a valid image'
+    is_valid, error = validate_image(corrupted_data, 'png')
+    assert is_valid is False
+    assert "invalid or corrupted" in error.lower()
+
+    # Test 5: Valid JPEG image
+    img = Image.new('RGB', (10, 10), color='blue')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='JPEG')
+    is_valid, error = validate_image(img_bytes.getvalue(), 'jpg')
+    assert is_valid is True
+    assert error == ""
+
+    # Test 6: Empty image data
+    is_valid, error = validate_image(b'', 'png')
+    assert is_valid is False
+    assert "invalid or corrupted" in error.lower()
+
+
 def test_extract_rejects_oversized_image():
     """Test that extraction rejects images exceeding MAX_IMAGE_SIZE."""
-    # Create a large valid PNG image (10MB + some bytes)
+    # Create a large valid BMP image (BMP format has no compression)
+    # This is fast and deterministic compared to creating random PNG data
     from sidedoc.extract import MAX_IMAGE_SIZE
     from PIL import Image
-    import random
 
-    # Create a large image with random noise (doesn't compress well)
-    # ~10368 x 10368 pixels with random data will be > 10MB
-    # But that's huge, so let's use uncompressed BMP or save with compression=0
-    img_size = 2100
-    img = Image.new('RGB', (img_size, img_size))
-    # Fill with random pixels so it doesn't compress well
-    pixels = img.load()
-    for i in range(img_size):
-        for j in range(img_size):
-            pixels[i, j] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    # Calculate image size needed to exceed MAX_IMAGE_SIZE
+    # BMP stores 3 bytes per pixel (RGB) + small header
+    # For 10MB limit, need about 1875x1875 pixels (10.5MB uncompressed)
+    img_size = 1875
+    img = Image.new('RGB', (img_size, img_size), color='blue')
 
-    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-    # Save with no compression to make it large
-    img.save(temp_img.name, format='PNG', compress_level=0)
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.bmp')
+    img.save(temp_img.name, format='BMP')
     temp_img.close()
 
     # Verify the image is actually larger than MAX_IMAGE_SIZE
@@ -592,7 +668,7 @@ def test_extract_rejects_oversized_image():
 
         # The middle block should be a paragraph with error message, not an image
         assert blocks[1].type == "paragraph"
-        assert "skipped" in blocks[1].content.lower() or "size" in blocks[1].content.lower()
+        assert "image 1 skipped" in blocks[1].content.lower() or "image" in blocks[1].content.lower() and "skipped" in blocks[1].content.lower()
 
         # No image data should be stored
         assert len(image_data) == 0
@@ -632,7 +708,7 @@ def test_extract_rejects_format_mismatch():
 
         # The middle block should be a paragraph with error message
         assert blocks[1].type == "paragraph"
-        assert "skipped" in blocks[1].content.lower() or "format" in blocks[1].content.lower()
+        assert "image 1 skipped" in blocks[1].content.lower() and "format" in blocks[1].content.lower()
 
         # No image data should be stored
         assert len(image_data) == 0
@@ -678,9 +754,9 @@ def test_extract_rejects_corrupted_image():
         # Otherwise it should be converted to paragraph with warning
         image_blocks = [b for b in blocks if b.type == "image"]
         if len(image_blocks) == 0:
-            # Image was skipped, should have warning paragraph
+            # Image was skipped, should have warning paragraph with image number
             para_contents = [b.content.lower() for b in blocks if b.type == "paragraph"]
-            assert any("skipped" in c or "invalid" in c or "corrupted" in c for c in para_contents)
+            assert any("image" in c and "skipped" in c for c in para_contents)
     finally:
         Path(temp_doc.name).unlink()
         Path(temp_img.name).unlink()

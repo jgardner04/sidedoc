@@ -56,6 +56,11 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
     # Validate image data and format using PIL
     try:
         # First pass: verify image integrity
+        # Note: We must load the image twice because PIL's verify() method makes
+        # the image object unusable for further operations. This is a known PIL
+        # limitation. For large images near the 10MB limit, this doubles memory
+        # usage temporarily, but it's necessary to ensure both integrity and
+        # format validation.
         img = Image.open(io.BytesIO(image_bytes))
         img.verify()  # Verify that it's a valid image
 
@@ -79,7 +84,10 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
 
         return True, ""
 
-    except Exception as e:
+    except (Image.UnidentifiedImageError, OSError, ValueError) as e:
+        # UnidentifiedImageError: PIL cannot identify the image format
+        # OSError: File-related errors (truncated file, etc.)
+        # ValueError: Invalid image data
         return False, f"Invalid or corrupted image data: {str(e)}"
 
 
@@ -205,7 +213,7 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
 
             if error_message:
                 # Image validation failed - create a paragraph with error message
-                markdown_content = f"[Image skipped: {error_message}]"
+                markdown_content = f"[Image {image_counter} skipped: {error_message}]"
                 block_type = "paragraph"
                 level_value = None
                 inline_formatting = None
@@ -219,7 +227,9 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
                 inline_formatting = None
                 # Store image data
                 image_data[image_filename] = image_bytes
-                image_counter += 1
+
+            # Increment counter for both valid and invalid images to maintain consistent numbering
+            image_counter += 1
 
             # Reset list counters
             list_number_counter = 0
