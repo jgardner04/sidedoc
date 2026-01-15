@@ -1330,6 +1330,114 @@ To innovate and deliver exceptional value.
 4. Paragraph indices are resequenced to match new document order
 5. Manifest modified_at timestamp is updated
 
+## Design Rationale
+
+This section documents the alternatives considered during design and explains why specific approaches were chosen.
+
+### Alternatives Evaluated
+
+#### 1. Pandoc Bidirectional Conversion
+
+**Approach:** Use Pandoc to convert docx → markdown for AI editing, then markdown → docx for output.
+
+**Why rejected:**
+- No formatting memory between conversions
+- Each round-trip loses style information (fonts, colors, custom styles)
+- Generated docx uses generic Word styles, not original document's formatting
+- No maintained link between markdown and original document
+
+**Lesson learned:** Conversion tools optimize for one-way transformation, not iterative workflows.
+
+#### 2. Document Intelligence + Regeneration
+
+**Approach:** Use Azure Document Intelligence (or similar) to extract content, then regenerate docx from scratch.
+
+**Why rejected:**
+- Extraction loses formatting connections
+- Regeneration requires complex template logic
+- Expensive API calls for each extraction (~15,000 tokens for a 10-page document)
+- No way to preserve exact original formatting
+
+**Lesson learned:** Extraction-based approaches break the link between content and formatting.
+
+#### 3. HTML as Intermediate Format
+
+**Approach:** Use HTML instead of markdown as the AI-editable representation.
+
+**Why rejected:**
+- HTML mixes content with presentation (inline styles)
+- More verbose than markdown (~3x token usage)
+- Harder for AI to edit cleanly
+- Docx ↔ HTML conversion has its own fidelity issues
+
+**Lesson learned:** Markdown's simplicity is a feature, not a limitation.
+
+#### 4. LLM-Generated Formatting
+
+**Approach:** Let the AI generate formatting instructions alongside content.
+
+**Why rejected:**
+- Unpredictable and inconsistent results
+- Can't recreate exact corporate styles
+- Requires complex prompting for every document
+- Formatting decisions should be deterministic, not probabilistic
+
+**Lesson learned:** Formatting preservation should be mechanical, not AI-driven.
+
+#### 5. Track Changes Approach
+
+**Approach:** Use Word's track changes feature to record AI edits.
+
+**Why rejected:**
+- Requires Word-specific tooling
+- Doesn't solve the token efficiency problem
+- Complex merge logic for conflicting changes
+- Still requires parsing docx XML
+
+**Lesson learned:** We need a new representation, not a wrapper around existing formats.
+
+#### 6. Character-Level Sync
+
+**Approach:** Use character-level diffing (like git) instead of block-level sync.
+
+**Why rejected:**
+- Much more complex implementation
+- Word formatting is paragraph-based, not character-based
+- Harder to handle structural changes (heading level changes, list conversions)
+- AI edits tend to be paragraph-level anyway
+
+**Lesson learned:** Block-level sync matches both Word's model and typical AI edit patterns.
+
+### Core Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **ZIP container** | Separates concerns; easy to inspect; familiar pattern (docx uses it too) |
+| **Markdown for content** | AI-efficient; human-readable; good structure without presentation |
+| **JSON for metadata** | Structured; schema-validatable; widely supported |
+| **Block-level sync** | Matches Word's paragraph model; simpler than character-level |
+| **Separate styles.json** | Keeps content.md clean; preserves all formatting details |
+| **Content hashes** | Efficient change detection without full text comparison |
+
+### Trade-offs Accepted
+
+| What we sacrificed | Why it's acceptable |
+|--------------------|---------------------|
+| Tables in MVP | Complex layout; can add post-MVP |
+| Nested lists beyond 2 levels | Rare in practice; preserved opaquely |
+| Track changes / comments | Collaboration features; orthogonal to core problem |
+| Real-time sync | Adds complexity; batch sync is sufficient for AI workflows |
+| Character-level merge | Block-level covers 95% of use cases |
+
+### Design Principles
+
+1. **Separation of concerns:** Content, structure, and formatting live in separate files
+2. **AI efficiency:** Markdown representation optimized for token cost and editability
+3. **Human-friendly output:** Generated docx should be indistinguishable from manually created documents
+4. **Lossless round-trips:** Extract → edit → rebuild should preserve all original formatting
+5. **Inspectability:** All formats (markdown, JSON) should be human-readable for debugging
+6. **Incremental adoption:** Works with existing docx files; no special authoring required
+
 ## References
 
 - [python-docx documentation](https://python-docx.readthedocs.io/)
