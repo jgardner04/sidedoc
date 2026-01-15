@@ -129,6 +129,9 @@ def sync(input_file: str, output: str | None) -> None:
             except KeyError:
                 click.echo("Error: structure.json not found in archive", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
+            except json.JSONDecodeError as e:
+                click.echo(f"Error: Invalid JSON in structure.json: {e}", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
 
         # Parse edited content.md into new blocks
         new_blocks = parse_markdown_to_blocks(content_md)

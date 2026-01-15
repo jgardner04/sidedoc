@@ -12,6 +12,14 @@ from sidedoc import cli
 from click.testing import CliRunner
 
 
+# Test constants
+MAX_EXTRACT_TIME_SECONDS = 30  # Maximum time for extracting large documents
+MIN_LARGE_DOC_BLOCKS = 1000  # Minimum blocks expected in large document test
+LARGE_DOC_TEST_SIZE = 1000  # Number of paragraphs for large document test
+ROUNDTRIP_TEST_SIZE = 500  # Number of paragraphs for roundtrip test
+MANY_IMAGES_COUNT = 12  # Number of images for multi-image test
+
+
 # ============================================================================
 # Corrupt ZIP File Tests
 # ============================================================================
@@ -28,8 +36,9 @@ def test_extract_handles_corrupt_zip_file():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "invalid" in result.output.lower() or "zip" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert ("invalid" in result.output.lower() or "zip" in result.output.lower()), \
+            f"Expected ZIP/invalid error message, got: {result.output}"
     finally:
         Path(temp_file.name).unlink()
 
@@ -46,8 +55,9 @@ def test_validate_handles_corrupt_zip_file():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "invalid" in result.output.lower() or "zip" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert ("invalid" in result.output.lower() or "zip" in result.output.lower()), \
+            f"Expected ZIP/invalid error message, got: {result.output}"
     finally:
         Path(temp_file.name).unlink()
 
@@ -64,8 +74,9 @@ def test_build_handles_corrupt_zip_file():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "invalid" in result.output.lower() or "zip" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert ("invalid" in result.output.lower() or "zip" in result.output.lower()), \
+            f"Expected ZIP/invalid error message, got: {result.output}"
     finally:
         Path(temp_file.name).unlink()
 
@@ -82,8 +93,9 @@ def test_sync_handles_corrupt_zip_file():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "invalid" in result.output.lower() or "zip" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert ("invalid" in result.output.lower() or "zip" in result.output.lower()), \
+            f"Expected ZIP/invalid error message, got: {result.output}"
     finally:
         Path(temp_file.name).unlink()
 
@@ -145,9 +157,10 @@ def test_validate_handles_invalid_manifest_json():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
         # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"])
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+            f"Expected JSON error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -161,9 +174,10 @@ def test_validate_handles_invalid_structure_json():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
         # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"])
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+            f"Expected JSON error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -177,9 +191,10 @@ def test_validate_handles_invalid_styles_json():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
         # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"])
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+            f"Expected JSON error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -193,9 +208,10 @@ def test_build_handles_invalid_structure_json():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
         # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"])
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+            f"Expected JSON error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -209,9 +225,10 @@ def test_sync_handles_invalid_structure_json():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
         # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"])
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+            f"Expected JSON error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -264,8 +281,9 @@ def test_validate_handles_missing_content_md():
 
     try:
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "content.md" in result.output.lower() or "missing" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert ("content.md" in result.output.lower() or "missing" in result.output.lower()), \
+            f"Expected content.md/missing error, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -280,7 +298,8 @@ def test_validate_handles_missing_manifest():
     try:
         # Should fail with appropriate error message
         assert result.exit_code != 0
-        assert "manifest" in result.output.lower() or "missing" in result.output.lower()
+        assert ("manifest" in result.output.lower() or "missing" in result.output.lower()), \
+            f"Expected manifest/missing error, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -295,7 +314,8 @@ def test_validate_handles_missing_structure():
     try:
         # Should fail with appropriate error message
         assert result.exit_code != 0
-        assert "structure" in result.output.lower() or "missing" in result.output.lower()
+        assert ("structure" in result.output.lower() or "missing" in result.output.lower()), \
+            f"Expected structure/missing error, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -310,7 +330,8 @@ def test_validate_handles_missing_styles():
     try:
         # Should fail with appropriate error message
         assert result.exit_code != 0
-        assert "styles" in result.output.lower() or "missing" in result.output.lower()
+        assert ("styles" in result.output.lower() or "missing" in result.output.lower()), \
+            f"Expected styles/missing error, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
@@ -319,7 +340,7 @@ def test_validate_handles_missing_styles():
 # Large Document Performance Tests
 # ============================================================================
 
-def create_large_docx(num_paragraphs: int = 1000) -> str:
+def create_large_docx(num_paragraphs: int = LARGE_DOC_TEST_SIZE) -> str:
     """Create a large docx file for performance testing.
 
     Args:
@@ -353,7 +374,7 @@ def create_large_docx(num_paragraphs: int = 1000) -> str:
 
 def test_extract_large_document_performance():
     """Test that extract can handle large documents (1000+ paragraphs) efficiently."""
-    docx_path = create_large_docx(1000)
+    docx_path = create_large_docx(LARGE_DOC_TEST_SIZE)
 
     try:
         # This should complete without hanging or running out of memory
@@ -365,10 +386,12 @@ def test_extract_large_document_performance():
         elapsed_time = time.time() - start_time
 
         # Should extract all blocks
-        assert len(blocks) > 1000
+        assert len(blocks) > MIN_LARGE_DOC_BLOCKS, \
+            f"Expected >{MIN_LARGE_DOC_BLOCKS} blocks, got {len(blocks)}"
 
-        # Should complete in reasonable time (less than 30 seconds for 1000 paragraphs)
-        assert elapsed_time < 30, f"Extract took too long: {elapsed_time:.2f} seconds"
+        # Should complete in reasonable time
+        assert elapsed_time < MAX_EXTRACT_TIME_SECONDS, \
+            f"Extract took too long: {elapsed_time:.2f}s (max: {MAX_EXTRACT_TIME_SECONDS}s)"
 
         # Verify blocks have required fields
         for block in blocks[:10]:  # Check first 10 blocks
@@ -381,7 +404,7 @@ def test_extract_large_document_performance():
 
 def test_roundtrip_large_document():
     """Test complete roundtrip (extract -> build) for large document."""
-    docx_path = create_large_docx(500)  # Use smaller size for full roundtrip
+    docx_path = create_large_docx(ROUNDTRIP_TEST_SIZE)  # Use smaller size for full roundtrip
 
     try:
         # Extract to sidedoc
@@ -404,7 +427,8 @@ def test_roundtrip_large_document():
 
         # Should be able to open rebuilt document
         rebuilt_doc = Document(temp_output.name)
-        assert len(rebuilt_doc.paragraphs) > 500
+        assert len(rebuilt_doc.paragraphs) > ROUNDTRIP_TEST_SIZE, \
+            f"Expected >{ROUNDTRIP_TEST_SIZE} paragraphs, got {len(rebuilt_doc.paragraphs)}"
 
         # Cleanup
         Path(temp_sidedoc.name).unlink()
@@ -603,7 +627,7 @@ def test_extract_document_with_many_images():
 
     # Create docx with many images
     doc = Document()
-    for i in range(12):
+    for i in range(MANY_IMAGES_COUNT):
         doc.add_paragraph(f'Image {i + 1}:')
         doc.add_picture(temp_jpg.name, width=1)
 
@@ -614,16 +638,20 @@ def test_extract_document_with_many_images():
     try:
         blocks, _ = extract_blocks(temp_doc.name)
 
-        # Should have 24 blocks (12 paragraphs + 12 images)
-        assert len(blocks) == 24
+        # Should have blocks for paragraphs + images
+        expected_blocks = MANY_IMAGES_COUNT * 2  # Each image has a paragraph + image block
+        assert len(blocks) == expected_blocks, \
+            f"Expected {expected_blocks} blocks, got {len(blocks)}"
 
         # Count image blocks
         image_blocks = [b for b in blocks if b.type == "image"]
-        assert len(image_blocks) == 12
+        assert len(image_blocks) == MANY_IMAGES_COUNT, \
+            f"Expected {MANY_IMAGES_COUNT} images, got {len(image_blocks)}"
 
         # Each image should have unique identifier
         image_paths = [b.image_path for b in image_blocks if b.image_path]
-        assert len(image_paths) == len(set(image_paths))  # All unique
+        assert len(image_paths) == len(set(image_paths)), \
+            f"Image paths not unique: {len(image_paths)} paths, {len(set(image_paths))} unique"
     finally:
         Path(temp_doc.name).unlink()
         Path(temp_jpg.name).unlink()
@@ -648,8 +676,9 @@ def test_extract_handles_write_errors():
         result = runner.invoke(cli.extract, [temp_doc.name, "-o", "/nonexistent/path/output.sidedoc"])
 
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "error" in result.output.lower() or "permission" in result.output.lower() or "not found" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert any(word in result.output.lower() for word in ["error", "permission", "not found", "no such"]), \
+            f"Expected write error message, got: {result.output}"
     finally:
         Path(temp_doc.name).unlink()
 
@@ -675,7 +704,8 @@ def test_build_handles_write_errors():
         result = runner.invoke(cli.build, [temp_sidedoc.name, "-o", "/nonexistent/path/output.docx"])
 
         # Should fail with appropriate error message
-        assert result.exit_code != 0
-        assert "error" in result.output.lower() or "permission" in result.output.lower() or "not found" in result.output.lower()
+        assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
+        assert any(word in result.output.lower() for word in ["error", "permission", "not found", "no such"]), \
+            f"Expected write error message, got: {result.output}"
     finally:
         Path(temp_sidedoc.name).unlink()
