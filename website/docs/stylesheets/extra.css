@@ -29,35 +29,14 @@
   --md-code-fg-color: #2C3E50;
 }
 
-/* Sidedoc Dark Theme */
-[data-md-color-scheme="sidedoc-dark"] {
-  /* Primary colors */
-  --md-primary-fg-color: #E8E8E8;
-  --md-primary-fg-color--light: #B0B0B0;
-  --md-primary-fg-color--dark: #FFFFFF;
-
-  /* Accent color - burnt orange (same in dark mode) */
+/* Sidedoc Dark Theme - Override slate for brand colors */
+[data-md-color-scheme="slate"] {
+  /* Accent color - burnt orange (keep brand color) */
   --md-accent-fg-color: #E67E22;
   --md-accent-fg-color--transparent: rgba(230, 126, 34, 0.1);
 
-  /* Background */
-  --md-default-bg-color: #1A1A1A;
-  --md-default-bg-color--light: #242424;
-  --md-default-bg-color--lighter: #2E2E2E;
-  --md-default-bg-color--lightest: #383838;
-
-  /* Text */
-  --md-default-fg-color: #E8E8E8;
-  --md-default-fg-color--light: #B0B0B0;
-  --md-default-fg-color--lighter: #909090;
-  --md-default-fg-color--lightest: #707070;
-
   /* Typeset links */
   --md-typeset-a-color: #E67E22;
-
-  /* Code */
-  --md-code-bg-color: #2E2E2E;
-  --md-code-fg-color: #E8E8E8;
 }
 
 /* Additional styling */
