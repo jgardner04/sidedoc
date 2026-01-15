@@ -6,8 +6,10 @@ import click
 from sidedoc import __version__
 from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.package import create_sidedoc_archive
-from sidedoc.reconstruct import build_docx_from_sidedoc
+from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_blocks
+from sidedoc.sync import update_sidedoc_metadata, generate_updated_docx, match_blocks
 from sidedoc.utils import ensure_sidedoc_extension
+from sidedoc.models import Block
 
 
 # Exit codes as per specification
@@ -44,14 +46,14 @@ def extract(input_file: str, output: str | None) -> None:
             output = ensure_sidedoc_extension(output)
 
         # Extract blocks and styles
-        blocks = extract_blocks(input_file)
+        blocks, image_data = extract_blocks(input_file)
         styles = extract_styles(input_file, blocks)
 
         # Convert to markdown
         content_md = blocks_to_markdown(blocks)
 
         # Create archive
-        create_sidedoc_archive(output, content_md, blocks, styles, input_file)
+        create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data)
 
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)
@@ -96,9 +98,88 @@ def sync(input_file: str, output: str | None) -> None:
     """Sync changes from edited content.md back to the document.
 
     Updates the internal docx representation in the sidedoc archive.
+    Optionally builds the updated docx to a specified path.
     """
-    click.echo(f"Sync command - input: {input_file}, output: {output}")
-    sys.exit(EXIT_SUCCESS)
+    import zipfile
+    import json
+
+    try:
+        # Read sidedoc archive
+        with zipfile.ZipFile(input_file, "r") as zf:
+            # Read content.md
+            try:
+                content_md = zf.read("content.md").decode("utf-8")
+            except KeyError:
+                click.echo("Error: content.md not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+            # Read styles.json for formatting
+            try:
+                styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+            except KeyError:
+                click.echo("Error: styles.json not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+            except json.JSONDecodeError as e:
+                click.echo(f"Error: Invalid JSON in styles.json: {e}", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+            # Read old structure.json for block history
+            try:
+                old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+            except KeyError:
+                click.echo("Error: structure.json not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+        # Parse edited content.md into new blocks
+        new_blocks = parse_markdown_to_blocks(content_md)
+
+        # Update metadata in sidedoc archive
+        update_sidedoc_metadata(input_file, new_blocks, content_md)
+
+        click.echo(f"✓ Synced changes in {input_file}")
+
+        # If output path specified, build the docx
+        if output:
+            # Generate updated docx
+            from sidedoc.sync import match_blocks
+            from sidedoc.models import Block
+
+            # Convert old structure to Block objects for matching
+            old_blocks = []
+            for block_data in old_structure.get("blocks", []):
+                old_blocks.append(
+                    Block(
+                        id=block_data["id"],
+                        type=block_data["type"],
+                        content="",  # We don't have old content, but that's OK for matching
+                        docx_paragraph_index=block_data["docx_paragraph_index"],
+                        content_start=block_data["content_start"],
+                        content_end=block_data["content_end"],
+                        content_hash=block_data["content_hash"],
+                        level=block_data.get("level"),
+                        image_path=block_data.get("image_path"),
+                        inline_formatting=block_data.get("inline_formatting"),
+                    )
+                )
+
+            # Match old blocks to new blocks
+            matches = match_blocks(old_blocks, new_blocks)
+
+            # Generate updated docx
+            generate_updated_docx(new_blocks, matches, styles_data, output)
+            click.echo(f"✓ Built updated document: {output}")
+
+        sys.exit(EXIT_SUCCESS)
+
+    except FileNotFoundError:
+        click.echo(f"Error: File not found: {input_file}", err=True)
+        sys.exit(EXIT_NOT_FOUND)
+    except zipfile.BadZipFile:
+        click.echo(f"Error: Invalid sidedoc file: {input_file}", err=True)
+        sys.exit(EXIT_INVALID_FORMAT)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(EXIT_ERROR)
 
 
 @main.command()
@@ -250,10 +331,128 @@ def pack(input_dir: str, output: str) -> None:
 def diff(input_file: str) -> None:
     """Show changes in content.md since last sync.
 
-    Displays added, removed, and modified blocks.
+    Displays added, removed, and modified blocks with +/- markers.
     """
-    click.echo(f"Diff command - input: {input_file}")
-    sys.exit(EXIT_SUCCESS)
+    import zipfile
+    import json
+
+    try:
+        # Read sidedoc archive
+        with zipfile.ZipFile(input_file, "r") as zf:
+            # Read current content.md
+            try:
+                content_md = zf.read("content.md").decode("utf-8")
+            except KeyError:
+                click.echo("Error: content.md not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+            # Read old structure.json
+            try:
+                old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+            except KeyError:
+                click.echo("Error: structure.json not found in archive", err=True)
+                sys.exit(EXIT_INVALID_FORMAT)
+
+        # Parse current content into blocks
+        import hashlib
+        new_blocks = parse_markdown_to_blocks(content_md)
+
+        # Compute content hashes for new blocks (parse_markdown_to_blocks doesn't compute them)
+        for block in new_blocks:
+            block.content_hash = hashlib.sha256(block.content.encode()).hexdigest()
+
+        # Convert old structure to Block objects
+        old_blocks = []
+        for block_data in old_structure.get("blocks", []):
+            old_blocks.append(
+                Block(
+                    id=block_data["id"],
+                    type=block_data["type"],
+                    content="",  # We don't have old content
+                    docx_paragraph_index=block_data["docx_paragraph_index"],
+                    content_start=block_data["content_start"],
+                    content_end=block_data["content_end"],
+                    content_hash=block_data["content_hash"],
+                    level=block_data.get("level"),
+                    image_path=block_data.get("image_path"),
+                    inline_formatting=block_data.get("inline_formatting"),
+                )
+            )
+
+        # Match blocks to find differences
+        matches = match_blocks(old_blocks, new_blocks)
+
+        # Identify changes
+        matched_old_ids = set(matches.keys())
+        matched_new_block_ids = {b.id for b in matches.values()}
+
+        # Find deleted blocks (in old but not matched)
+        deleted_blocks = [b for b in old_blocks if b.id not in matched_old_ids]
+
+        # Find added blocks (in new but not matched)
+        added_blocks = [b for b in new_blocks if b.id not in matched_new_block_ids]
+
+        # Find modified blocks (matched but content hash differs)
+        modified_blocks = []
+        for old_id, new_block in matches.items():
+            old_block = next(b for b in old_blocks if b.id == old_id)
+            if old_block.content_hash != new_block.content_hash:
+                modified_blocks.append((old_block, new_block))
+
+        # Display diff
+        has_changes = deleted_blocks or added_blocks or modified_blocks
+
+        if not has_changes:
+            click.echo("No changes detected in content.md")
+        else:
+            click.echo("Changes in content.md:\n")
+
+            if deleted_blocks:
+                click.echo(click.style("Removed blocks:", fg="red", bold=True))
+                for block in deleted_blocks:
+                    block_desc = f"{block.type}"
+                    if block.level:
+                        block_desc += f" (level {block.level})"
+                    click.echo(click.style(f"  - [{block_desc}] ", fg="red"))
+
+            if added_blocks:
+                if deleted_blocks:
+                    click.echo()
+                click.echo(click.style("Added blocks:", fg="green", bold=True))
+                for block in added_blocks:
+                    block_desc = f"{block.type}"
+                    if block.level:
+                        block_desc += f" (level {block.level})"
+                    # Show first 50 chars of content
+                    content_preview = block.content[:50]
+                    if len(block.content) > 50:
+                        content_preview += "..."
+                    click.echo(click.style(f"  + [{block_desc}] {content_preview}", fg="green"))
+
+            if modified_blocks:
+                if deleted_blocks or added_blocks:
+                    click.echo()
+                click.echo(click.style("Modified blocks:", fg="yellow", bold=True))
+                for old_block, new_block in modified_blocks:
+                    block_desc = f"{new_block.type}"
+                    if new_block.level:
+                        block_desc += f" (level {new_block.level})"
+                    content_preview = new_block.content[:50]
+                    if len(new_block.content) > 50:
+                        content_preview += "..."
+                    click.echo(click.style(f"  ~ [{block_desc}] {content_preview}", fg="yellow"))
+
+        sys.exit(EXIT_SUCCESS)
+
+    except FileNotFoundError:
+        click.echo(f"Error: File not found: {input_file}", err=True)
+        sys.exit(EXIT_NOT_FOUND)
+    except zipfile.BadZipFile:
+        click.echo(f"Error: Invalid sidedoc file: {input_file}", err=True)
+        sys.exit(EXIT_INVALID_FORMAT)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(EXIT_ERROR)
 
 
 if __name__ == "__main__":

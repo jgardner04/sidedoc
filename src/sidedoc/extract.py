@@ -2,6 +2,7 @@
 
 import hashlib
 from pathlib import Path
+from typing import Any, Optional
 from docx import Document
 from docx.shared import Pt
 from sidedoc.models import Block, Style
@@ -31,7 +32,89 @@ def compute_content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def extract_blocks(docx_path: str) -> list[Block]:
+def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: int) -> Optional[tuple[str, str, bytes]]:
+    """Check if paragraph contains an image and extract it.
+
+    Args:
+        paragraph: python-docx paragraph object
+        doc_part: Document part for accessing relationships
+        image_counter: Counter for generating unique image names
+
+    Returns:
+        Tuple of (image_filename, image_extension, image_bytes) if image found, None otherwise
+    """
+    # Check for drawing elements (images) in paragraph runs
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        for drawing in drawing_elems:
+            # Find blip element (contains image reference)
+            blips = drawing.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+            for blip in blips:
+                # Get relationship ID
+                r_embed = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
+                if r_embed and r_embed in doc_part.rels:
+                    # Get image part
+                    image_part = doc_part.rels[r_embed].target_part
+                    # Get extension from content type or part name
+                    extension = image_part.partname.split('.')[-1]
+                    # Generate unique filename
+                    image_filename = f"image{image_counter}.{extension}"
+                    # Return image data
+                    return (image_filename, extension, image_part.blob)
+
+    return None
+
+
+def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]] | None]:
+    """Extract inline formatting from paragraph runs.
+
+    Args:
+        paragraph: python-docx paragraph object
+
+    Returns:
+        Tuple of (markdown_content, inline_formatting_list)
+        markdown_content has bold/italic converted to markdown
+        inline_formatting_list records underline and other formatting
+    """
+    markdown_parts = []
+    inline_formatting: list[dict[str, Any]] = []
+    plain_text_position = 0  # Position in plain text without markdown markers
+
+    for run in paragraph.runs:
+        text = run.text
+        if not text:
+            continue
+
+        is_bold = run.bold is True
+        is_italic = run.italic is True
+        is_underline = run.underline is True
+
+        # Build markdown with bold/italic markers
+        markdown_text = text
+        if is_bold and is_italic:
+            markdown_text = f"***{text}***"
+        elif is_bold:
+            markdown_text = f"**{text}**"
+        elif is_italic:
+            markdown_text = f"*{text}*"
+
+        # Record underline in inline_formatting (positions are in plain text without markdown)
+        if is_underline:
+            inline_formatting.append({
+                "type": "underline",
+                "start": plain_text_position,
+                "end": plain_text_position + len(text),
+                "underline": True
+            })
+
+        markdown_parts.append(markdown_text)
+        plain_text_position += len(text)  # Track plain text position, not markdown
+
+    markdown_content = "".join(markdown_parts)
+    return markdown_content, inline_formatting if inline_formatting else None
+
+
+def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
     Converts paragraphs and headings to Block objects with markdown content.
@@ -40,31 +123,80 @@ def extract_blocks(docx_path: str) -> list[Block]:
         docx_path: Path to .docx file
 
     Returns:
-        List of Block objects
+        Tuple of (blocks, image_data) where image_data maps filenames to image bytes
     """
     doc = Document(docx_path)
     blocks: list[Block] = []
+    image_data: dict[str, bytes] = {}  # Map image filenames to image bytes
     content_position = 0
+    list_number_counter = 0  # Track numbered list position
+    previous_list_type = None  # Track list type changes
+    image_counter = 1  # Track image numbering
 
     for para_index, paragraph in enumerate(doc.paragraphs):
-        text = paragraph.text
-        style_name = paragraph.style.name
+        style_name = paragraph.style.name if paragraph.style else "Normal"
 
-        # Determine block type and content
-        if style_name.startswith("Heading"):
-            # Extract heading level (e.g., "Heading 1" -> 1)
-            try:
-                level = int(style_name.split()[-1])
-            except (ValueError, IndexError):
-                level = 1
-
-            markdown_content = "#" * level + " " + text
-            block_type = "heading"
+        # Check if paragraph contains an image
+        image_info = extract_image_from_paragraph(paragraph, doc.part, image_counter)
+        if image_info:
+            # This is an image paragraph
+            image_filename, image_extension, image_bytes = image_info
+            image_path = f"assets/{image_filename}"
+            markdown_content = f"![Image {image_counter}]({image_path})"
+            block_type = "image"
+            level_value = None
+            inline_formatting = None
+            # Store image data
+            image_data[image_filename] = image_bytes
+            image_counter += 1
+            # Reset list counters
+            list_number_counter = 0
+            previous_list_type = None
         else:
-            # Normal paragraph
-            markdown_content = text
-            block_type = "paragraph"
-            level = None
+            # Extract inline formatting (bold, italic, underline)
+            text_content, inline_formatting = extract_inline_formatting(paragraph)
+
+            # Determine block type and content
+            if style_name.startswith("Heading"):
+                # Extract heading level (e.g., "Heading 1" -> 1)
+                try:
+                    level = int(style_name.split()[-1])
+                except (ValueError, IndexError):
+                    level = 1
+
+                markdown_content = "#" * level + " " + text_content
+                block_type = "heading"
+                level_value = level
+                # Reset list counter when encountering non-list content
+                list_number_counter = 0
+                previous_list_type = None
+            elif style_name == "List Bullet":
+                # Bulleted list item
+                markdown_content = "- " + text_content
+                block_type = "list"
+                level_value = None
+                # Reset numbered list counter when switching to bullets
+                if previous_list_type != "bullet":
+                    list_number_counter = 0
+                previous_list_type = "bullet"
+            elif style_name == "List Number":
+                # Numbered list item
+                # Reset counter when switching from bullets or starting new list
+                if previous_list_type != "number":
+                    list_number_counter = 0
+                list_number_counter += 1
+                markdown_content = f"{list_number_counter}. " + text_content
+                block_type = "list"
+                level_value = None
+                previous_list_type = "number"
+            else:
+                # Normal paragraph
+                markdown_content = text_content
+                block_type = "paragraph"
+                level_value = None
+                # Reset list counter when encountering non-list content
+                list_number_counter = 0
+                previous_list_type = None
 
         # Calculate content positions
         content_start = content_position
@@ -79,7 +211,9 @@ def extract_blocks(docx_path: str) -> list[Block]:
             content_start=content_start,
             content_end=content_end,
             content_hash=compute_content_hash(markdown_content),
-            level=level
+            level=level_value,
+            inline_formatting=inline_formatting,
+            image_path=image_path if image_info else None
         )
 
         blocks.append(block)
@@ -87,7 +221,7 @@ def extract_blocks(docx_path: str) -> list[Block]:
         # Update position for next block (including newline)
         content_position = content_end + 1
 
-    return blocks
+    return blocks, image_data
 
 
 def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
@@ -114,10 +248,10 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
         font_size = 11  # Default
         alignment = "left"  # Default
 
-        if paragraph.style.font.name:
+        if paragraph.style and paragraph.style.font.name:
             font_name = paragraph.style.font.name
 
-        if paragraph.style.font.size:
+        if paragraph.style and paragraph.style.font.size:
             font_size = int(paragraph.style.font.size.pt)
 
         # Get alignment
@@ -133,7 +267,7 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
         # Create style
         style = Style(
             block_id=block.id,
-            docx_style=paragraph.style.name,
+            docx_style=paragraph.style.name if paragraph.style else "Normal",
             font_name=font_name,
             font_size=font_size,
             alignment=alignment,

@@ -84,7 +84,7 @@
         "Unit test with various inline formatting combinations"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -101,7 +101,7 @@
         "Unit test with bulleted and numbered lists"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -118,7 +118,7 @@
         "Unit test with document containing multiple images"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -286,7 +286,7 @@
         "Integration test: build docx with images, verify images present"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -340,7 +340,7 @@
         "Unit test with various edit scenarios"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -357,7 +357,7 @@
         "Integration test: edit content.md, sync, verify docx updated"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -373,7 +373,7 @@
         "Integration test: sync updates metadata correctly"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -391,7 +391,7 @@
         "End-to-end test: extract, edit content.md, sync, verify changes"
       ],
       "priority": 23,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -461,7 +461,7 @@
         "Test with various edit scenarios confirms accurate diff"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -479,7 +479,7 @@
         "All fixture files open successfully in Word"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
