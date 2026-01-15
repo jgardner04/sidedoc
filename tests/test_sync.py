@@ -924,3 +924,65 @@ def test_inline_formatting_adjacent_formatting() -> None:
 
         assert "bold" in full_text, f"Missing bold: {full_text}"
         assert "italic" in full_text, f"Missing italic: {full_text}"
+
+
+# Tests for asset size validation (Issue #8)
+
+
+def test_update_sidedoc_metadata_rejects_oversized_assets() -> None:
+    """Test that oversized assets are rejected to prevent ZIP bomb attacks.
+
+    This is a regression test for Issue #8: assets are read without size
+    validation, creating a potential ZIP bomb vector.
+    """
+    import pytest
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create a sidedoc with an asset
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        # Create a modest-sized asset for testing (1KB)
+        asset_data = b"X" * 1024
+
+        with zipfile.ZipFile(sidedoc_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("content.md", "Test content")
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+            # Write asset
+            zf.writestr("assets/huge_image.png", asset_data)
+
+        # Attempt to update metadata with a low MAX_ASSET_SIZE limit
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="Test",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=4,
+                content_hash=compute_hash("Test"),
+            )
+        ]
+
+        # Patch MAX_ASSET_SIZE to be smaller than our test asset
+        with patch("sidedoc.sync.MAX_ASSET_SIZE", 100):
+            with pytest.raises(ValueError) as exc_info:
+                update_sidedoc_metadata(str(sidedoc_path), new_blocks, "Test")
+
+        # Verify error message mentions the asset and ZIP bomb
+        error_msg = str(exc_info.value)
+        assert "assets/huge_image.png" in error_msg
+        assert "exceeds maximum size" in error_msg
+        assert "ZIP bomb" in error_msg

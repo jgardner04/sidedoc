@@ -13,6 +13,9 @@ import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp
 
+# Maximum size for individual assets (50MB) to prevent ZIP bomb attacks
+MAX_ASSET_SIZE = 50 * 1024 * 1024  # 50MB in bytes
+
 
 def match_blocks(
     old_blocks: list[Block], new_blocks: list[Block]
@@ -286,6 +289,13 @@ def update_sidedoc_metadata(
         assets = {}
         for file_info in zf.filelist:
             if file_info.filename.startswith("assets/"):
+                # Validate asset size to prevent ZIP bomb attacks
+                if file_info.file_size > MAX_ASSET_SIZE:
+                    raise ValueError(
+                        f"Asset '{file_info.filename}' exceeds maximum size "
+                        f"({file_info.file_size} bytes > {MAX_ASSET_SIZE} bytes). "
+                        "This may be a malicious ZIP bomb attack."
+                    )
                 assets[file_info.filename] = zf.read(file_info.filename)
 
     # Generate new structure.json
