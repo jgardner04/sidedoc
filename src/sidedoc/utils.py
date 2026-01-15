@@ -43,3 +43,30 @@ def ensure_sidedoc_extension(path: str) -> str:
     if p.suffix != ".sidedoc":
         return str(p.with_suffix(".sidedoc"))
     return path
+
+
+def is_safe_path(path: str, base_dir: Path) -> bool:
+    """Check if a path is safe for extraction (no path traversal).
+
+    Args:
+        path: Path to check (from ZIP archive)
+        base_dir: Base directory for extraction
+
+    Returns:
+        True if path is safe, False otherwise
+    """
+    # Reject absolute paths
+    if Path(path).is_absolute():
+        return False
+
+    # Resolve the path relative to base_dir
+    # and check if it's actually within base_dir
+    try:
+        target_path = (base_dir / path).resolve()
+        base_dir_resolved = base_dir.resolve()
+
+        # Check if target is within base directory
+        return target_path.is_relative_to(base_dir_resolved)
+    except (ValueError, RuntimeError):
+        # Path resolution failed - not safe
+        return False

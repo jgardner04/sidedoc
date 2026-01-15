@@ -8,7 +8,7 @@ from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.package import create_sidedoc_archive
 from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_blocks
 from sidedoc.sync import update_sidedoc_metadata, generate_updated_docx, match_blocks
-from sidedoc.utils import ensure_sidedoc_extension
+from sidedoc.utils import ensure_sidedoc_extension, is_safe_path
 from sidedoc.models import Block
 
 
@@ -271,6 +271,16 @@ def unpack(input_file: str, output: str) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(input_file, "r") as zf:
+            # Validate all paths before extraction
+            for member in zf.namelist():
+                if not is_safe_path(member, output_path):
+                    click.echo(
+                        f"Error: Archive contains invalid path that could lead to path traversal: {member}",
+                        err=True
+                    )
+                    sys.exit(EXIT_INVALID_FORMAT)
+
+            # All paths are safe, extract
             zf.extractall(output_path)
 
         click.echo(f"✓ Unpacked to {output}")
