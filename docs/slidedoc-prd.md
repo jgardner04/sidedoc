@@ -573,6 +573,53 @@ These elements are preserved in the sidedoc but editing them in content.md won't
 
 The sync algorithm operates at the block level, not character level. This simplifies implementation while handling most real-world editing scenarios.
 
+### Sync Decision Matrix
+
+The following table defines how different content changes are detected and handled:
+
+| Content Change | Detection Method | Action | Formatting Applied |
+|----------------|------------------|--------|-------------------|
+| **Text edited in place** | Hash mismatch at same position | Update block content | Preserve original formatting exactly |
+| **Block deleted** | Block ID missing in new content | Remove from docx | N/A |
+| **Block added** | New block ID with no hash match | Insert at position | Apply default formatting for block type |
+| **Block moved** | Hash match at different position | Reorder in docx | Preserve original formatting |
+| **Heading level changed** | Type or level attribute changed | Update paragraph style | Apply new heading level style from template |
+| **Inline formatting added** | New markdown emphasis markers | Parse and apply runs | Create new runs with bold/italic |
+| **Inline formatting removed** | Fewer markdown emphasis markers | Remove formatting runs | Revert to base paragraph formatting |
+| **Paragraph merged** | Two blocks combined (detected by newline removal) | Merge paragraphs | Use formatting of first paragraph |
+| **Paragraph split** | One block becomes two (detected by new paragraph break) | Split into separate paragraphs | Duplicate formatting for both |
+| **List type changed** | Bullet `(-)`  changed to numbered `(1.)` or vice versa | Update paragraph style | Apply new list style |
+| **Image path changed** | Asset path modified in markdown | Update image reference | Maintain image size/positioning |
+| **Image added** | New `![alt](path)` syntax | Insert image | Apply inline image default positioning |
+| **Image removed** | `![alt](path)` removed | Delete image from docx | N/A |
+
+### Implementation Details by Change Type
+
+#### Text Edited in Place
+- **Detection:** Content hash mismatch at same block position
+- **Action:** Replace paragraph text while preserving formatting
+- **Edge case:** If inline formatting markers change, parse new emphasis and create/remove runs accordingly
+
+#### Block Reordering
+- **Detection:** Same content hash found at different position in sequence
+- **Action:** Reorder paragraphs in docx to match new sequence
+- **Edge case:** If multiple blocks have similar content, use combination of hash + position heuristics
+
+#### Heading Level Changes
+- **Detection:** Markdown heading level (`#` count) differs from stored level
+- **Action:** Update paragraph style to match new heading level (e.g., Heading 1 → Heading 2)
+- **Edge case:** If heading style doesn't exist in template, create derived style or warn user
+
+#### Paragraph Splits
+- **Detection:** Block breaks where continuous text existed (detected by position gaps in content mapping)
+- **Action:** Create two paragraphs, duplicate formatting
+- **Edge case:** User must manually adjust formatting if split point needs different style
+
+#### Paragraph Merges
+- **Detection:** Two sequential blocks now appear as one continuous block
+- **Action:** Combine into single paragraph, use formatting of first block
+- **Edge case:** If blocks had different formatting, log warning about format choice
+
 #### Step 1: Parse New Content
 
 Parse the edited `content.md` into blocks (headings, paragraphs, list items, images).
@@ -615,6 +662,161 @@ If sync encounters an unresolvable situation:
 Conflict examples:
 - Markdown syntax error in content.md
 - Referenced image missing from assets/
+
+### Error Handling Specification
+
+The sync algorithm must handle various error conditions gracefully. This section defines error types, detection methods, and resolution strategies.
+
+#### Error Categories
+
+| Error Category | Exit Code | Severity | Recovery Strategy |
+|----------------|-----------|----------|-------------------|
+| Malformed Markdown | 3 | Error | Abort sync, report line number and syntax issue |
+| Missing Assets | 2 | Error | Abort sync, list missing files |
+| Hash Conflicts | 4 | Warning | Attempt best-match, log ambiguity |
+| Structure Corruption | 3 | Error | Abort sync, validate structure.json |
+| Style Conflicts | 1 | Warning | Apply defaults, log warning |
+
+#### Malformed Markdown Handling
+
+**Detection:**
+- Markdown parser raises exception during `content.md` parsing
+- Unbalanced emphasis markers (e.g., `**bold but not closed`)
+- Invalid image syntax (e.g., `![missing closing`)
+- Malformed heading syntax (e.g., `###No space after hashes`)
+
+**Response:**
+```
+ERROR: Malformed markdown in content.md at line 42
+  > ## Heading with **unclosed bold text
+
+Sync aborted. Please fix markdown syntax and try again.
+Suggestion: Check emphasis markers (**) are properly paired.
+
+Exit code: 3 (Invalid format)
+```
+
+#### Missing Asset Handling
+
+**Detection:**
+- Image reference `![alt](assets/image.png)` in content.md
+- File `assets/image.png` does not exist in sidedoc archive
+
+**Response:**
+```
+ERROR: Missing asset referenced in content.md
+  Line 156: ![Sales Chart](assets/sales-q3.png)
+
+File not found: assets/sales-q3.png
+
+Sync aborted. Either:
+  1. Add the missing image to assets/ directory
+  2. Remove the image reference from content.md
+
+Exit code: 2 (File not found)
+```
+
+#### Hash Conflict Handling
+
+**Scenario:** Multiple blocks in original document have similar/identical content.
+
+**Detection:**
+- Same content hash matches multiple blocks in structure.json
+- Position-based heuristic is ambiguous
+
+**Response:**
+```
+WARNING: Ambiguous block match detected
+  Content: "Introduction to our company values..."
+  Matched blocks: blk_003, blk_042, blk_089
+
+Using position-based heuristic (closest match by index).
+Review changes carefully with 'sidedoc diff' before finalizing.
+
+Continue sync with best-effort matching? [y/N]
+```
+
+#### Structure Corruption Handling
+
+**Detection:**
+- structure.json fails JSON schema validation
+- Content positions overlap or have gaps
+- Block IDs are duplicated
+
+**Response:**
+```
+ERROR: Corrupted structure.json detected
+  Issue: Overlapping content positions
+    Block blk_003: start=100, end=250
+    Block blk_004: start=200, end=300
+
+Sync aborted. Structure integrity compromised.
+Suggestion: Re-extract from original .docx or restore from backup.
+
+Exit code: 3 (Invalid format)
+```
+
+#### Style Resolution Conflicts
+
+**Scenario:** Requested style (e.g., "Heading 4") doesn't exist in source document template.
+
+**Detection:**
+- Markdown requests heading level not in original styles
+- Custom style reference cannot be resolved
+
+**Response:**
+```
+WARNING: Style not found in template
+  Requested: Heading 4
+  Available: Heading 1, Heading 2, Heading 3
+
+Applying default "Normal" style with bold formatting.
+Consider manually applying correct style in Word after sync.
+
+Continuing sync...
+```
+
+#### Version Mismatch Handling
+
+**Detection:**
+- manifest.json specifies sidedoc_version newer than CLI supports
+- Incompatible structure.json schema
+
+**Response:**
+```
+ERROR: Version mismatch
+  Sidedoc version: 2.0.0
+  CLI version: 1.5.0 (supports up to 1.x)
+
+Sync aborted. Please upgrade sidedoc CLI:
+  pip install --upgrade sidedoc
+
+Exit code: 1 (General error)
+```
+
+#### Concurrent Modification Detection
+
+**Scenario:** Both content.md and structure.json modified since last sync.
+
+**Detection:**
+- manifest.json modified timestamp doesn't match last sync
+- Content hash doesn't match expected value
+
+**Response:**
+```
+ERROR: Concurrent modification detected
+  content.md modified: 2025-01-14 10:30:00
+  structure.json modified: 2025-01-14 10:35:00
+
+This suggests manual edits to both content and structure.
+Sync requires consistent state.
+
+Resolution:
+  1. If you only edited content.md, restore structure.json from backup
+  2. If structure was intentionally modified, re-extract from source docx
+
+Exit code: 4 (Sync conflict)
+```
 
 ## Testing Requirements
 
@@ -694,6 +896,439 @@ Create sample docx files covering:
 4. **Image positioning**: Docx images can be inline or floating. How to handle?
    
    **Current decision:** Treat all as inline for MVP.
+
+## Reference Implementation Examples
+
+This section provides concrete before/after examples of the sidedoc format to help contributors understand the structure and implement the specification correctly.
+
+### Example 1: Simple Document
+
+**Input Document (simple_doc.docx):**
+- Heading 1: "Company Overview" (Calibri 16pt, Bold, Blue)
+- Paragraph: "We are a leading technology company." (Calibri 11pt)
+- Heading 2: "Mission" (Calibri 13pt, Bold)
+- Paragraph: "To innovate and deliver value." (Calibri 11pt)
+
+**Extracted content.md:**
+```markdown
+# Company Overview
+
+We are a leading technology company.
+
+## Mission
+
+To innovate and deliver value.
+```
+
+**structure.json:**
+```json
+{
+  "version": "1.0",
+  "blocks": [
+    {
+      "id": "block-0",
+      "type": "heading",
+      "level": 1,
+      "content_hash": "7f9a8b2c1d3e4f5a6b7c8d9e0f1a2b3c",
+      "docx_paragraph_index": 0,
+      "content_start": 0,
+      "content_end": 18
+    },
+    {
+      "id": "block-1",
+      "type": "paragraph",
+      "content_hash": "8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
+      "docx_paragraph_index": 1,
+      "content_start": 20,
+      "content_end": 60
+    },
+    {
+      "id": "block-2",
+      "type": "heading",
+      "level": 2,
+      "content_hash": "9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e",
+      "docx_paragraph_index": 2,
+      "content_start": 62,
+      "content_end": 72
+    },
+    {
+      "id": "block-3",
+      "type": "paragraph",
+      "content_hash": "0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+      "docx_paragraph_index": 3,
+      "content_start": 74,
+      "content_end": 105
+    }
+  ]
+}
+```
+
+**styles.json:**
+```json
+{
+  "version": "1.0",
+  "block_styles": {
+    "block-0": {
+      "docx_style": "Heading 1",
+      "font_name": "Calibri",
+      "font_size": 16,
+      "alignment": "left",
+      "color": "0000FF"
+    },
+    "block-1": {
+      "docx_style": "Normal",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left"
+    },
+    "block-2": {
+      "docx_style": "Heading 2",
+      "font_name": "Calibri",
+      "font_size": 13,
+      "alignment": "left"
+    },
+    "block-3": {
+      "docx_style": "Normal",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left"
+    }
+  },
+  "document_defaults": {
+    "font_name": "Calibri",
+    "font_size": 11
+  }
+}
+```
+
+**manifest.json:**
+```json
+{
+  "sidedoc_version": "1.0.0",
+  "created_at": "2025-01-14T10:30:00Z",
+  "modified_at": "2025-01-14T10:30:00Z",
+  "source_file": "simple_doc.docx",
+  "source_hash": "sha256:a1b2c3d4e5f6...",
+  "content_hash": "sha256:f6e5d4c3b2a1...",
+  "generator": "sidedoc-cli/0.1.0"
+}
+```
+
+**Key Observations:**
+1. Content positions in structure.json map to character offsets in content.md
+2. Block IDs are sequential: block-0, block-1, etc.
+3. Heading levels in structure.json match markdown `#` count
+4. Styles preserve exact font names, sizes, and colors from original
+
+### Example 2: Document with Inline Formatting
+
+**Input Document (formatted_doc.docx):**
+- Paragraph: "We achieved **strong results** in Q3." (Calibri 11pt, with "strong results" in bold)
+
+**Extracted content.md:**
+```markdown
+We achieved **strong results** in Q3.
+```
+
+**structure.json:**
+```json
+{
+  "version": "1.0",
+  "blocks": [
+    {
+      "id": "block-0",
+      "type": "paragraph",
+      "content_hash": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+      "docx_paragraph_index": 0,
+      "content_start": 0,
+      "content_end": 38,
+      "inline_formatting": [
+        {
+          "type": "bold",
+          "start": 12,
+          "end": 26
+        }
+      ]
+    }
+  ]
+}
+```
+
+**styles.json:**
+```json
+{
+  "version": "1.0",
+  "block_styles": {
+    "block-0": {
+      "docx_style": "Normal",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left",
+      "runs": [
+        {
+          "start": 0,
+          "end": 12,
+          "bold": false,
+          "italic": false
+        },
+        {
+          "start": 12,
+          "end": 26,
+          "bold": true,
+          "italic": false
+        },
+        {
+          "start": 26,
+          "end": 33,
+          "bold": false,
+          "italic": false
+        }
+      ]
+    }
+  },
+  "document_defaults": {
+    "font_name": "Calibri",
+    "font_size": 11
+  }
+}
+```
+
+**Key Observations:**
+1. Inline formatting is represented both in markdown (`**text**`) and structure.json
+2. The `inline_formatting` array in structure.json tracks emphasis positions
+3. The `runs` array in styles.json tracks exact formatting for reconstruction
+4. Character positions are relative to the paragraph content, not the document
+
+### Example 3: Document with Lists
+
+**Input Document (list_doc.docx):**
+- Heading 1: "Key Features"
+- Bulleted list:
+  - "Easy to use"
+  - "Fast performance"
+  - "Secure by default"
+
+**Extracted content.md:**
+```markdown
+# Key Features
+
+- Easy to use
+- Fast performance
+- Secure by default
+```
+
+**structure.json:**
+```json
+{
+  "version": "1.0",
+  "blocks": [
+    {
+      "id": "block-0",
+      "type": "heading",
+      "level": 1,
+      "content_hash": "2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e",
+      "docx_paragraph_index": 0,
+      "content_start": 0,
+      "content_end": 14
+    },
+    {
+      "id": "block-1",
+      "type": "list",
+      "list_type": "bullet",
+      "items": [
+        {
+          "id": "block-1-0",
+          "content_hash": "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f",
+          "docx_paragraph_index": 1,
+          "content_start": 16,
+          "content_end": 29
+        },
+        {
+          "id": "block-1-1",
+          "content_hash": "4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a",
+          "docx_paragraph_index": 2,
+          "content_start": 30,
+          "content_end": 46
+        },
+        {
+          "id": "block-1-2",
+          "content_hash": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+          "docx_paragraph_index": 3,
+          "content_start": 47,
+          "content_end": 64
+        }
+      ]
+    }
+  ]
+}
+```
+
+**styles.json:**
+```json
+{
+  "version": "1.0",
+  "block_styles": {
+    "block-0": {
+      "docx_style": "Heading 1",
+      "font_name": "Calibri",
+      "font_size": 16,
+      "alignment": "left"
+    },
+    "block-1-0": {
+      "docx_style": "List Bullet",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left"
+    },
+    "block-1-1": {
+      "docx_style": "List Bullet",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left"
+    },
+    "block-1-2": {
+      "docx_style": "List Bullet",
+      "font_name": "Calibri",
+      "font_size": 11,
+      "alignment": "left"
+    }
+  },
+  "document_defaults": {
+    "font_name": "Calibri",
+    "font_size": 11
+  }
+}
+```
+
+**Key Observations:**
+1. List blocks have type "list" with list_type "bullet" or "numbered"
+2. Each list item gets its own nested structure with unique ID (block-1-0, block-1-1, etc.)
+3. List items map to separate docx paragraphs
+4. Each list item preserves its own formatting in styles.json
+
+### Example 4: Sync Transformation
+
+**Original content.md:**
+```markdown
+# Company Overview
+
+We are a leading technology company.
+
+## Mission
+
+To innovate and deliver value.
+```
+
+**User edits content.md to:**
+```markdown
+# Company Overview
+
+We are a leading **technology company** focused on innovation.
+
+## Vision
+
+To be the most trusted technology partner.
+
+## Mission
+
+To innovate and deliver exceptional value.
+```
+
+**Sync processing:**
+
+1. **Block-0 (Heading "Company Overview"):**
+   - Hash matches → Unchanged → Preserve original formatting
+
+2. **Block-1 (Paragraph about company):**
+   - Hash mismatch, same position → Text edited in place
+   - Action: Update paragraph content
+   - New inline formatting: Parse `**technology company**` as bold
+   - Result: Preserve original paragraph font/size, add bold run
+
+3. **Block-2 (Heading "Mission"):**
+   - Content changed to "Vision" AND moved to different position
+   - Hash no match, level match → New heading inserted
+   - Action: Create new heading paragraph
+   - Formatting: Apply Heading 2 style from document template
+
+4. **Original Block-2 (Heading "Mission"):**
+   - Now appears later in document → Reordered
+   - Hash matches when accounting for text change → Modified in place
+   - Action: Update text "To innovate and deliver exceptional value"
+
+**Updated structure.json:**
+```json
+{
+  "version": "1.0",
+  "blocks": [
+    {
+      "id": "block-0",
+      "type": "heading",
+      "level": 1,
+      "content_hash": "7f9a8b2c1d3e4f5a6b7c8d9e0f1a2b3c",
+      "docx_paragraph_index": 0,
+      "content_start": 0,
+      "content_end": 18
+    },
+    {
+      "id": "block-1",
+      "type": "paragraph",
+      "content_hash": "NEW_HASH_1",
+      "docx_paragraph_index": 1,
+      "content_start": 20,
+      "content_end": 73,
+      "inline_formatting": [
+        {
+          "type": "bold",
+          "start": 18,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "id": "block-4",
+      "type": "heading",
+      "level": 2,
+      "content_hash": "NEW_HASH_2",
+      "docx_paragraph_index": 2,
+      "content_start": 75,
+      "content_end": 84
+    },
+    {
+      "id": "block-5",
+      "type": "paragraph",
+      "content_hash": "NEW_HASH_3",
+      "docx_paragraph_index": 3,
+      "content_start": 86,
+      "content_end": 129
+    },
+    {
+      "id": "block-2",
+      "type": "heading",
+      "level": 2,
+      "content_hash": "9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e",
+      "docx_paragraph_index": 4,
+      "content_start": 131,
+      "content_end": 141
+    },
+    {
+      "id": "block-3",
+      "type": "paragraph",
+      "content_hash": "NEW_HASH_4",
+      "docx_paragraph_index": 5,
+      "content_start": 143,
+      "content_end": 185
+    }
+  ]
+}
+```
+
+**Key Observations:**
+1. Unchanged blocks keep original IDs and formatting
+2. New blocks get new sequential IDs (block-4, block-5)
+3. Content hashes are recomputed for all modified blocks
+4. Paragraph indices are resequenced to match new document order
+5. Manifest modified_at timestamp is updated
 
 ## References
 

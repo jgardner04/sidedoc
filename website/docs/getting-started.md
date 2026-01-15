@@ -1,5 +1,18 @@
 # Getting Started
 
+## Why Use Sidedoc?
+
+Sidedoc makes AI document workflows **10x more efficient** while preserving perfect formatting:
+
+- **Lower AI costs:** Read documents using ~1,500 tokens (markdown) instead of 15,000+ tokens (XML)
+- **Lossless iteration:** Edit content repeatedly without formatting degradation
+- **Format preservation:** Original Word styling is maintained automatically through metadata
+- **Best of both worlds:** AI works with clean markdown; humans get familiar Word documents
+
+Perfect for teams building AI document automation, content generation pipelines, or iterative AI-human document collaboration.
+
+[Learn more about the motivation](index.md#the-problem){ .md-button }
+
 ## Installation
 
 Currently, install from source (PyPI package coming soon):

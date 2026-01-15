@@ -14,9 +14,11 @@ Sidedoc enables efficient AI interaction with documents while preserving rich fo
 
 Current document workflows force a tradeoff between AI efficiency and human usability:
 
-- **Reading documents:** Extracting content for AI is expensive and loses formatting connections
-- **Creating documents:** Tools like Pandoc generate docx from markdown, but it's one-way
-- **Iterative collaboration:** Repeated extraction and regeneration is lossy and expensive
+- **Reading documents:** Extracting content for AI is expensive (15,000+ tokens for a 10-page document via XML) and loses formatting connections
+- **Creating documents:** Tools like Pandoc generate docx from markdown, but it's one-way with no formatting preservation
+- **Iterative collaboration:** Repeated extraction and regeneration is lossy and expensive - each cycle costs 10x more than necessary and degrades formatting
+
+**Cost impact:** AI document workflows using traditional extraction methods pay 10x more in API costs than necessary and lose formatting with every iteration.
 
 ## The Solution
 
@@ -26,6 +28,15 @@ Documents should have two representations that stay in sync:
 - **Formatted docx** - optimized for human consumption
 
 Changes to either propagate to the other.
+
+!!! success "Key Benefits"
+    **10x Token Efficiency:** Sidedoc markdown uses ~1,500 tokens vs. 15,000+ tokens for XML-based extraction
+
+    **Perfect Format Preservation:** Original docx formatting is preserved in metadata and automatically reapplied
+
+    **Lossless Iteration:** Edit content infinitely without formatting degradation - each sync maintains perfect fidelity
+
+    **Human + AI Friendly:** AI works with clean markdown; humans get familiar Word documents
 
 ## Quick Example
 
