@@ -1,11 +1,16 @@
 """Extract content from Word documents to sidedoc format."""
 
 import hashlib
+import io
 from pathlib import Path
 from typing import Any, Optional
 from docx import Document
 from docx.shared import Pt
+from PIL import Image
 from sidedoc.models import Block, Style
+
+# Maximum image size in bytes (10MB)
+MAX_IMAGE_SIZE = 10 * 1024 * 1024
 
 
 def generate_block_id(index: int) -> str:
@@ -32,7 +37,61 @@ def compute_content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: int) -> Optional[tuple[str, str, bytes]]:
+def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, str]:
+    """Validate image size, format, and integrity.
+
+    Args:
+        image_bytes: Raw image data
+        expected_extension: Expected file extension (e.g., 'png', 'jpg')
+
+    Returns:
+        Tuple of (is_valid, error_message). If valid, error_message is empty.
+    """
+    # Check size
+    if len(image_bytes) > MAX_IMAGE_SIZE:
+        size_mb = len(image_bytes) / (1024 * 1024)
+        max_mb = MAX_IMAGE_SIZE / (1024 * 1024)
+        return False, f"Image exceeds maximum size ({size_mb:.1f}MB > {max_mb:.0f}MB)"
+
+    # Validate image data and format using PIL
+    try:
+        # First pass: verify image integrity
+        # Note: We must load the image twice because PIL's verify() method makes
+        # the image object unusable for further operations. This is a known PIL
+        # limitation. For large images near the 10MB limit, this doubles memory
+        # usage temporarily, but it's necessary to ensure both integrity and
+        # format validation.
+        img = Image.open(io.BytesIO(image_bytes))
+        img.verify()  # Verify that it's a valid image
+
+        # Second pass: reopen to check format (verify() makes the image unusable)
+        img = Image.open(io.BytesIO(image_bytes))
+
+        # Map extensions to PIL formats
+        extension_to_format = {
+            'png': 'PNG',
+            'jpg': 'JPEG',
+            'jpeg': 'JPEG',
+            'gif': 'GIF',
+            'bmp': 'BMP',
+            'tiff': 'TIFF',
+            'tif': 'TIFF',
+        }
+
+        expected_format = extension_to_format.get(expected_extension.lower())
+        if expected_format and img.format != expected_format:
+            return False, f"Image format mismatch (extension: {expected_extension}, actual: {img.format})"
+
+        return True, ""
+
+    except (Image.UnidentifiedImageError, OSError, ValueError) as e:
+        # UnidentifiedImageError: PIL cannot identify the image format
+        # OSError: File-related errors (truncated file, etc.)
+        # ValueError: Invalid image data
+        return False, f"Invalid or corrupted image data: {str(e)}"
+
+
+def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: int) -> Optional[tuple[str, str, bytes, str]]:
     """Check if paragraph contains an image and extract it.
 
     Args:
@@ -41,7 +100,9 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
         image_counter: Counter for generating unique image names
 
     Returns:
-        Tuple of (image_filename, image_extension, image_bytes) if image found, None otherwise
+        Tuple of (image_filename, image_extension, image_bytes, error_message) if image found.
+        If image is valid, error_message is empty. If invalid, error_message contains the reason.
+        Returns None if no image found.
     """
     # Check for drawing elements (images) in paragraph runs
     for run in paragraph.runs:
@@ -57,10 +118,17 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
                     image_part = doc_part.rels[r_embed].target_part
                     # Get extension from content type or part name
                     extension = image_part.partname.split('.')[-1]
+                    # Get image bytes
+                    image_bytes = image_part.blob
+
+                    # Validate image
+                    is_valid, error_message = validate_image(image_bytes, extension)
+
                     # Generate unique filename
                     image_filename = f"image{image_counter}.{extension}"
-                    # Return image data
-                    return (image_filename, extension, image_part.blob)
+
+                    # Return image data with validation result
+                    return (image_filename, extension, image_bytes, error_message)
 
     return None
 
@@ -135,20 +203,34 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
 
     for para_index, paragraph in enumerate(doc.paragraphs):
         style_name = paragraph.style.name if paragraph.style else "Normal"
+        image_path = None  # Initialize for all paragraphs
 
         # Check if paragraph contains an image
         image_info = extract_image_from_paragraph(paragraph, doc.part, image_counter)
         if image_info:
             # This is an image paragraph
-            image_filename, image_extension, image_bytes = image_info
-            image_path = f"assets/{image_filename}"
-            markdown_content = f"![Image {image_counter}]({image_path})"
-            block_type = "image"
-            level_value = None
-            inline_formatting = None
-            # Store image data
-            image_data[image_filename] = image_bytes
+            image_filename, image_extension, image_bytes, error_message = image_info
+
+            if error_message:
+                # Image validation failed - create a paragraph with error message
+                markdown_content = f"[Image {image_counter} skipped: {error_message}]"
+                block_type = "paragraph"
+                level_value = None
+                inline_formatting = None
+                # Don't store invalid image data
+            else:
+                # Image is valid
+                image_path = f"assets/{image_filename}"
+                markdown_content = f"![Image {image_counter}]({image_path})"
+                block_type = "image"
+                level_value = None
+                inline_formatting = None
+                # Store image data
+                image_data[image_filename] = image_bytes
+
+            # Increment counter for both valid and invalid images to maintain consistent numbering
             image_counter += 1
+
             # Reset list counters
             list_number_counter = 0
             previous_list_type = None
@@ -213,7 +295,7 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
             content_hash=compute_content_hash(markdown_content),
             level=level_value,
             inline_formatting=inline_formatting,
-            image_path=image_path if image_info else None
+            image_path=image_path
         )
 
         blocks.append(block)

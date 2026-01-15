@@ -84,21 +84,14 @@ def create_minimal_png() -> bytes:
     Returns:
         PNG file bytes
     """
-    # PNG signature
-    signature = b'\x89PNG\r\n\x1a\n'
+    from PIL import Image
+    import io
 
-    # IHDR chunk (1x1 RGBA image)
-    ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
-    ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', 0x7f5a9b42)
-
-    # IDAT chunk (compressed image data)
-    idat_data = zlib.compress(b'\x00\x00\x00\x00\x00')
-    idat = struct.pack('>I', len(idat_data)) + b'IDAT' + idat_data + struct.pack('>I', 0x57bef5f5)
-
-    # IEND chunk
-    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', 0xae426082)
-
-    return signature + ihdr + idat + iend
+    # Use PIL to create a proper 1x1 PNG image
+    img = Image.new('RGB', (1, 1), color='white')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='PNG')
+    return img_bytes.getvalue()
 
 
 def test_build_command_embeds_images():
