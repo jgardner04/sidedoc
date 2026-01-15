@@ -33,6 +33,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "mypy>=1.11.0",
+    "Pillow>=10.0.0",
 ]
 
 [project.scripts]
