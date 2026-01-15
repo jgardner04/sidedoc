@@ -773,3 +773,154 @@ def test_update_sidedoc_metadata_preserves_styles() -> None:
         with zipfile.ZipFile(sidedoc_path, "r") as zf:
             styles_data = json.loads(zf.read("styles.json"))
             assert styles_data == old_styles
+
+
+# Tests for apply_inline_formatting edge cases (Issue #7)
+from sidedoc.sync import apply_inline_formatting
+
+
+def test_inline_formatting_nested_bold_italic() -> None:
+    """Test that nested formatting like **bold *italic* text** works correctly.
+
+    This is a regression test for Issue #7: the regex pattern [^*]+ rejects
+    any asterisks inside bold text, causing nested formatting to fail.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        doc = Document()
+        para = doc.add_paragraph()
+
+        apply_inline_formatting(para, "**bold *italic* text**")
+
+        # The paragraph should have runs with proper formatting
+        # Expected: "bold " (bold), "italic" (bold+italic), " text" (bold)
+        runs = list(para.runs)
+
+        # Verify all text is present
+        full_text = "".join(run.text for run in runs)
+        assert full_text == "bold italic text", f"Got: {full_text}"
+
+        # Verify bold is applied to outer content
+        bold_runs = [run for run in runs if run.bold]
+        assert len(bold_runs) >= 1, "Expected at least one bold run"
+
+        # Verify italic is applied to inner content
+        italic_runs = [run for run in runs if run.italic]
+        assert len(italic_runs) >= 1, "Expected at least one italic run"
+
+
+def test_inline_formatting_escaped_asterisks() -> None:
+    """Test that escaped asterisks are preserved as literal asterisks.
+
+    This is a regression test for Issue #7: the parser doesn't handle
+    escaped asterisks like \\*literal\\*.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        doc = Document()
+        para = doc.add_paragraph()
+
+        # \* should be treated as a literal asterisk, not formatting
+        apply_inline_formatting(para, r"Use \*asterisks\* for emphasis")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        # Should contain literal asterisks, not be formatted as italic
+        assert "*asterisks*" in full_text, f"Got: {full_text}"
+        # Should not have italic formatting
+        italic_runs = [run for run in runs if run.italic]
+        assert len(italic_runs) == 0, "Escaped asterisks should not create italic"
+
+
+def test_inline_formatting_malformed_bold_italic() -> None:
+    """Test graceful handling of malformed markdown like **bold*italic**.
+
+    This is a regression test for Issue #7: malformed markdown may cause
+    incorrect formatting or corrupted output.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        doc = Document()
+        para = doc.add_paragraph()
+
+        # Malformed: mixing bold and italic markers incorrectly
+        apply_inline_formatting(para, "**bold*italic**")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        # The text should be preserved (graceful degradation)
+        # Either render as-is or apply best-effort formatting
+        assert "bold" in full_text.lower(), f"Content lost: {full_text}"
+        assert "italic" in full_text.lower(), f"Content lost: {full_text}"
+
+
+def test_inline_formatting_multiple_bold_sections() -> None:
+    """Test that multiple separate bold sections work correctly."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        doc = Document()
+        para = doc.add_paragraph()
+
+        apply_inline_formatting(para, "**first** and **second** bold")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        assert full_text == "first and second bold", f"Got: {full_text}"
+
+        # Both "first" and "second" should be bold
+        bold_runs = [run for run in runs if run.bold]
+        bold_text = "".join(run.text for run in bold_runs)
+        assert "first" in bold_text, "First bold section missing"
+        assert "second" in bold_text, "Second bold section missing"
+
+
+def test_inline_formatting_bold_with_asterisk_word() -> None:
+    """Test bold text containing words that look like italic markers.
+
+    This tests **bold *word* more** where *word* should be bold+italic.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        doc = Document()
+        para = doc.add_paragraph()
+
+        apply_inline_formatting(para, "This is **very *important* text**.")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        # Should contain all the words
+        assert "very" in full_text, f"Missing content: {full_text}"
+        assert "important" in full_text, f"Missing content: {full_text}"
+        assert "text" in full_text, f"Missing content: {full_text}"
+
+
+def test_inline_formatting_unclosed_bold() -> None:
+    """Test graceful handling of unclosed bold marker."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        doc = Document()
+        para = doc.add_paragraph()
+
+        # Unclosed bold - should degrade gracefully
+        apply_inline_formatting(para, "Some **unclosed bold text")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        # Text should be preserved even if formatting is incorrect
+        assert "unclosed" in full_text or "**" in full_text, f"Content lost: {full_text}"
+
+
+def test_inline_formatting_adjacent_formatting() -> None:
+    """Test adjacent bold and italic without space."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        doc = Document()
+        para = doc.add_paragraph()
+
+        apply_inline_formatting(para, "**bold***italic*")
+
+        runs = list(para.runs)
+        full_text = "".join(run.text for run in runs)
+
+        assert "bold" in full_text, f"Missing bold: {full_text}"
+        assert "italic" in full_text, f"Missing italic: {full_text}"

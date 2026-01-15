@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 import tempfile
 import zipfile
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Optional, Any
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp
 
@@ -70,70 +70,120 @@ def match_blocks(
 def apply_inline_formatting(paragraph: Any, content: str) -> None:
     """Apply inline formatting from markdown to a paragraph.
 
-    Parses markdown formatting (bold, italic) and creates runs with appropriate formatting.
+    Uses mistune for robust markdown parsing to handle:
+    - Nested formatting (**bold *italic* text**)
+    - Escaped asterisks (\\*literal\\*)
+    - Malformed markdown (graceful degradation)
 
     Args:
         paragraph: python-docx Paragraph object
         content: Text content with markdown formatting
     """
-    # Pattern to match **bold**, *italic*, and plain text
-    # This is a simplified implementation - full markdown parsing would be more complex
-    parts = []
-    current_pos = 0
+    # Parse the content to extract formatting runs
+    runs = _parse_inline_markdown(content)
 
-    # Match **bold**
-    for match in re.finditer(r'\*\*([^*]+)\*\*', content):
-        # Add plain text before bold
-        if match.start() > current_pos:
-            parts.append(("plain", content[current_pos:match.start()]))
-        parts.append(("bold", match.group(1)))
-        current_pos = match.end()
-
-    # Add remaining text
-    if current_pos < len(content):
-        remaining = content[current_pos:]
-        # Now check for *italic* in remaining
-        parts.extend(_parse_italic(remaining))
-    else:
-        # Check for italic in the parts we already have
-        new_parts = []
-        for style, text in parts:
-            if style == "plain":
-                new_parts.extend(_parse_italic(text))
-            else:
-                new_parts.append((style, text))
-        parts = new_parts
-
-    # Apply formatting to runs
-    if not parts:
+    # Apply each run to the paragraph
+    if not runs:
         paragraph.add_run(content)
     else:
-        for style, text in parts:
+        for text, bold, italic in runs:
             run = paragraph.add_run(text)
-            if style == "bold":
+            if bold:
                 run.bold = True
-            elif style == "italic":
-                run.italic = True
-            elif style == "bold_italic":
-                run.bold = True
+            if italic:
                 run.italic = True
 
 
-def _parse_italic(text: str) -> list[tuple[str, str]]:
-    """Parse italic formatting from text."""
-    parts = []
-    current_pos = 0
+def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
+    """Parse inline markdown formatting using mistune.
 
-    for match in re.finditer(r'\*([^*]+)\*', text):
-        if match.start() > current_pos:
-            parts.append(("plain", text[current_pos:match.start()]))
-        parts.append(("italic", match.group(1)))
-        current_pos = match.end()
+    Returns a list of (text, is_bold, is_italic) tuples representing
+    the text runs with their formatting.
 
-    if current_pos < len(text):
-        parts.append(("plain", text[current_pos:]))
+    Args:
+        content: Markdown text to parse
 
-    return parts if parts else [("plain", text)]
+    Returns:
+        List of tuples: (text, bold, italic)
+    """
+    # Create markdown parser that returns AST instead of HTML
+    md = mistune.create_markdown(renderer=None)
+
+    # Parse the content
+    try:
+        tokens, _ = md.parse(content)
+    except Exception:
+        # On parse error, return content as plain text (graceful degradation)
+        return [(content, False, False)]
+
+    # Extract inline content from paragraph tokens
+    runs: list[tuple[str, bool, bool]] = []
+    for block_token in tokens:
+        if block_token.get("type") == "paragraph":
+            children = block_token.get("children", [])
+            _process_tokens(children, runs, bold=False, italic=False)
+        else:
+            # Handle other block types by extracting raw text
+            raw = block_token.get("raw", "")
+            if raw:
+                runs.append((raw, False, False))
+
+    return runs if runs else [(content, False, False)]
+
+
+def _process_tokens(
+    tokens: list[dict[str, Any]],
+    runs: list[tuple[str, bool, bool]],
+    bold: bool,
+    italic: bool,
+) -> None:
+    """Recursively process mistune tokens into text runs.
+
+    Args:
+        tokens: List of mistune inline tokens
+        runs: Output list to append runs to
+        bold: Whether current context is bold
+        italic: Whether current context is italic
+    """
+    for token in tokens:
+        token_type = token.get("type", "")
+
+        if token_type == "text":
+            # Plain text - use current formatting state
+            raw = token.get("raw", "")
+            if raw:
+                runs.append((raw, bold, italic))
+
+        elif token_type == "strong":
+            # Bold - recurse with bold=True
+            children = token.get("children", [])
+            _process_tokens(children, runs, bold=True, italic=italic)
+
+        elif token_type == "emphasis":
+            # Italic - recurse with italic=True
+            children = token.get("children", [])
+            _process_tokens(children, runs, bold=bold, italic=True)
+
+        elif token_type == "codespan":
+            # Inline code - treat as plain text
+            raw = token.get("raw", "")
+            if raw:
+                runs.append((raw, bold, italic))
+
+        elif token_type == "softbreak" or token_type == "linebreak":
+            # Line breaks - add space or newline
+            runs.append((" ", bold, italic))
+
+        else:
+            # Unknown token type - try to extract text/raw content
+            # This handles escapes and other edge cases
+            raw = token.get("raw", "")
+            children = token.get("children", [])
+
+            if children:
+                _process_tokens(children, runs, bold, italic)
+            elif raw:
+                runs.append((raw, bold, italic))
 
 
 def generate_updated_docx(
