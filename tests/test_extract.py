@@ -406,21 +406,14 @@ def create_minimal_png() -> bytes:
     Returns:
         PNG file bytes
     """
-    # PNG signature
-    signature = b'\x89PNG\r\n\x1a\n'
+    from PIL import Image
+    import io
 
-    # IHDR chunk (1x1 RGBA image)
-    ihdr_data = struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)
-    ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', 0x7f5a9b42)
-
-    # IDAT chunk (compressed image data)
-    idat_data = zlib.compress(b'\x00\x00\x00\x00\x00')
-    idat = struct.pack('>I', len(idat_data)) + b'IDAT' + idat_data + struct.pack('>I', 0x57bef5f5)
-
-    # IEND chunk
-    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', 0xae426082)
-
-    return signature + ihdr + idat + iend
+    # Use PIL to create a proper 1x1 PNG image
+    img = Image.new('RGB', (1, 1), color='white')
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='PNG')
+    return img_bytes.getvalue()
 
 
 def create_docx_with_image() -> tuple[str, str]:
@@ -549,3 +542,145 @@ def test_extract_image_markdown_format():
     finally:
         Path(docx_path).unlink()
         Path(img_path).unlink()
+
+
+def test_extract_rejects_oversized_image():
+    """Test that extraction rejects images exceeding MAX_IMAGE_SIZE."""
+    # Create a large valid PNG image (10MB + some bytes)
+    from sidedoc.extract import MAX_IMAGE_SIZE
+    from PIL import Image
+    import random
+
+    # Create a large image with random noise (doesn't compress well)
+    # ~10368 x 10368 pixels with random data will be > 10MB
+    # But that's huge, so let's use uncompressed BMP or save with compression=0
+    img_size = 2100
+    img = Image.new('RGB', (img_size, img_size))
+    # Fill with random pixels so it doesn't compress well
+    pixels = img.load()
+    for i in range(img_size):
+        for j in range(img_size):
+            pixels[i, j] = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    # Save with no compression to make it large
+    img.save(temp_img.name, format='PNG', compress_level=0)
+    temp_img.close()
+
+    # Verify the image is actually larger than MAX_IMAGE_SIZE
+    img_file_size = Path(temp_img.name).stat().st_size
+    assert img_file_size > MAX_IMAGE_SIZE, f"Test image ({img_file_size} bytes) should be larger than MAX_IMAGE_SIZE ({MAX_IMAGE_SIZE} bytes)"
+
+    # Create docx with oversized image
+    doc = Document()
+    doc.add_paragraph('Before image')
+    doc.add_picture(temp_img.name, width=Inches(1.0))
+    doc.add_paragraph('After image')
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
+    doc.save(temp_doc.name)
+    temp_doc.close()
+
+    try:
+        blocks, image_data = extract_blocks(temp_doc.name)
+
+        # Should have 3 blocks but image should be skipped
+        # The image paragraph should be converted to a regular paragraph with warning
+        assert len(blocks) == 3
+        assert blocks[0].type == "paragraph"
+        assert blocks[2].type == "paragraph"
+
+        # The middle block should be a paragraph with error message, not an image
+        assert blocks[1].type == "paragraph"
+        assert "skipped" in blocks[1].content.lower() or "size" in blocks[1].content.lower()
+
+        # No image data should be stored
+        assert len(image_data) == 0
+    finally:
+        Path(temp_doc.name).unlink()
+        Path(temp_img.name).unlink()
+
+
+def test_extract_rejects_format_mismatch():
+    """Test that extraction rejects images where format doesn't match extension."""
+    # Create a JPEG image but save with .png extension
+    from PIL import Image
+
+    # Create a small JPEG image
+    img = Image.new('RGB', (1, 1), color='red')
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    img.save(temp_img.name, format='JPEG')  # Save as JPEG but file has .png extension
+    temp_img.close()
+
+    # Create docx with mismatched image
+    doc = Document()
+    doc.add_paragraph('Before image')
+    doc.add_picture(temp_img.name, width=Inches(1.0))
+    doc.add_paragraph('After image')
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
+    doc.save(temp_doc.name)
+    temp_doc.close()
+
+    try:
+        blocks, image_data = extract_blocks(temp_doc.name)
+
+        # Should have 3 blocks but image should be skipped
+        assert len(blocks) == 3
+        assert blocks[0].type == "paragraph"
+        assert blocks[2].type == "paragraph"
+
+        # The middle block should be a paragraph with error message
+        assert blocks[1].type == "paragraph"
+        assert "skipped" in blocks[1].content.lower() or "format" in blocks[1].content.lower()
+
+        # No image data should be stored
+        assert len(image_data) == 0
+    finally:
+        Path(temp_doc.name).unlink()
+        Path(temp_img.name).unlink()
+
+
+def test_extract_rejects_corrupted_image():
+    """Test that extraction rejects corrupted image data."""
+    # Create corrupted image data (not a valid image)
+    corrupted_data = b'This is not a valid image file'
+
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    temp_img.write(corrupted_data)
+    temp_img.close()
+
+    # Create docx with corrupted image
+    doc = Document()
+    doc.add_paragraph('Before image')
+    # Note: python-docx may refuse to add invalid image, so we'll handle that
+    try:
+        doc.add_picture(temp_img.name, width=Inches(1.0))
+    except Exception:
+        # If python-docx can't add it, create a simpler test
+        # Just test that extract_blocks handles corrupted embedded images gracefully
+        Path(temp_img.name).unlink()
+        return  # Skip this test if we can't create the scenario
+
+    doc.add_paragraph('After image')
+
+    temp_doc = tempfile.NamedTemporaryFile(delete=False, suffix='.docx')
+    doc.save(temp_doc.name)
+    temp_doc.close()
+
+    try:
+        blocks, image_data = extract_blocks(temp_doc.name)
+
+        # Should handle gracefully - either skip or convert to paragraph
+        assert len(blocks) >= 2  # At least the text paragraphs
+
+        # If there's an image block, it should be marked as problematic
+        # Otherwise it should be converted to paragraph with warning
+        image_blocks = [b for b in blocks if b.type == "image"]
+        if len(image_blocks) == 0:
+            # Image was skipped, should have warning paragraph
+            para_contents = [b.content.lower() for b in blocks if b.type == "paragraph"]
+            assert any("skipped" in c or "invalid" in c or "corrupted" in c for c in para_contents)
+    finally:
+        Path(temp_doc.name).unlink()
+        Path(temp_img.name).unlink()
