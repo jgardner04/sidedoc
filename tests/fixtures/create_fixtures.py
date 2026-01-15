@@ -1,9 +1,11 @@
 """Script to create test fixture docx files."""
 
-from docx import Document
-from docx.shared import Pt, Inches
 from pathlib import Path
-import io
+from docx import Document
+from docx.shared import Inches
+
+# Get the directory where this script is located
+FIXTURES_DIR = Path(__file__).parent
 
 
 def create_simple_docx() -> None:
@@ -20,7 +22,7 @@ def create_simple_docx() -> None:
     doc.add_heading("Section 2", level=2)
     doc.add_paragraph("A paragraph in section 2.")
 
-    doc.save("tests/fixtures/simple.docx")
+    doc.save(str(FIXTURES_DIR / "simple.docx"))
     print("✓ Created simple.docx")
 
 
@@ -46,7 +48,7 @@ def create_lists_docx() -> None:
     doc.add_paragraph("Then a numbered item", style="List Number")
     doc.add_paragraph("Another numbered item", style="List Number")
 
-    doc.save("tests/fixtures/lists.docx")
+    doc.save(str(FIXTURES_DIR / "lists.docx"))
     print("✓ Created lists.docx")
 
 
@@ -94,7 +96,7 @@ def create_formatted_docx() -> None:
     run.italic = True
     p.add_run(" mixed together.")
 
-    doc.save("tests/fixtures/formatted.docx")
+    doc.save(str(FIXTURES_DIR / "formatted.docx"))
     print("✓ Created formatted.docx")
 
 
@@ -104,11 +106,11 @@ def create_test_images() -> None:
 
     # Create a simple red square
     img = PILImage.new('RGB', (100, 100), color='red')
-    img.save('tests/fixtures/test_image1.png')
+    img.save(str(FIXTURES_DIR / 'test_image1.png'))
 
     # Create a simple blue square
     img2 = PILImage.new('RGB', (100, 100), color='blue')
-    img2.save('tests/fixtures/test_image2.png')
+    img2.save(str(FIXTURES_DIR / 'test_image2.png'))
 
 
 def create_images_docx() -> None:
@@ -121,14 +123,14 @@ def create_images_docx() -> None:
     doc.add_heading("Document with Images", level=1)
 
     doc.add_paragraph("First image:")
-    doc.add_picture('tests/fixtures/test_image1.png', width=Inches(1.5))
+    doc.add_picture(str(FIXTURES_DIR / 'test_image1.png'), width=Inches(1.5))
 
     doc.add_paragraph("Second image:")
-    doc.add_picture('tests/fixtures/test_image2.png', width=Inches(2.0))
+    doc.add_picture(str(FIXTURES_DIR / 'test_image2.png'), width=Inches(2.0))
 
     doc.add_paragraph("Text after images.")
 
-    doc.save("tests/fixtures/images.docx")
+    doc.save(str(FIXTURES_DIR / "images.docx"))
     print("✓ Created images.docx")
 
 
@@ -163,12 +165,12 @@ def create_complex_docx() -> None:
 
     doc.add_heading("Image Section", level=2)
     doc.add_paragraph("An embedded image:")
-    doc.add_picture('tests/fixtures/test_image1.png', width=Inches(1.0))
+    doc.add_picture(str(FIXTURES_DIR / 'test_image1.png'), width=Inches(1.0))
 
     doc.add_heading("Final Section", level=2)
     doc.add_paragraph("A concluding paragraph with regular text.")
 
-    doc.save("tests/fixtures/complex.docx")
+    doc.save(str(FIXTURES_DIR / "complex.docx"))
     print("✓ Created complex.docx")
 
 
