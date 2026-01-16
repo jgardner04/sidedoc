@@ -986,3 +986,112 @@ def test_update_sidedoc_metadata_rejects_oversized_assets() -> None:
         assert "assets/huge_image.png" in error_msg
         assert "exceeds maximum size" in error_msg
         assert "ZIP bomb" in error_msg
+
+
+# Tests for tempfile cleanup (Issue #17)
+
+
+def test_update_sidedoc_metadata_successful_no_tempfile_left() -> None:
+    """Test that temp file does not exist after successful update.
+
+    This is a regression test for Issue #17: the finally block attempts
+    to delete a temp file that was already moved via .replace().
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", "Old content")
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+
+        # Update with new content
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        # Track temp files before and after
+        temp_files_before = set(Path(temp_dir).glob("*.sidedoc"))
+
+        # This should succeed without leaving temp files
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
+
+        temp_files_after = set(Path(temp_dir).glob("*.sidedoc"))
+
+        # Should only have the original file, no temp files left behind
+        assert temp_files_after == temp_files_before
+        assert sidedoc_path.exists()
+
+
+def test_update_sidedoc_metadata_cleanup_on_error() -> None:
+    """Test that temp file is cleaned up when an error occurs.
+
+    This is a regression test for Issue #17: temp files should be
+    cleaned up only when an error prevents successful completion.
+    """
+    import pytest
+    from unittest.mock import patch, MagicMock
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+            zf.writestr("content.md", "Old content")
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps(old_manifest))
+
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        # Patch Path.replace to raise an error during the replace operation
+        with patch("pathlib.Path.replace") as mock_replace:
+            mock_replace.side_effect = OSError("Simulated replace error")
+
+            # Should raise the error
+            with pytest.raises(OSError, match="Simulated replace error"):
+                update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
+
+        # After error, no temp files should remain in the directory
+        temp_files = [f for f in Path(temp_dir).glob("*.sidedoc") if f.name != "test.sidedoc"]
+        assert len(temp_files) == 0, f"Found leftover temp files: {temp_files}"

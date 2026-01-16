@@ -349,7 +349,8 @@ def update_sidedoc_metadata(
 
         # Replace original file with updated one
         Path(tmp_path).replace(sidedoc_path)
-    finally:
-        # Clean up temp file if it still exists
+    except Exception:
+        # Clean up temp file only if replace failed
         if Path(tmp_path).exists():
             Path(tmp_path).unlink()
+        raise
