@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 
 
@@ -70,3 +71,19 @@ def is_safe_path(path: str, base_dir: Path) -> bool:
     except (ValueError, RuntimeError):
         # Path resolution failed - not safe
         return False
+
+
+def compute_similarity(text1: str, text2: str) -> float:
+    """Compute similarity ratio between two strings.
+
+    Uses Python's difflib.SequenceMatcher to calculate a similarity ratio
+    between 0.0 (completely different) and 1.0 (identical).
+
+    Args:
+        text1: First string to compare
+        text2: Second string to compare
+
+    Returns:
+        Similarity ratio as a float between 0.0 and 1.0
+    """
+    return SequenceMatcher(None, text1, text2).ratio()
