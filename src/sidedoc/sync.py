@@ -11,20 +11,28 @@ from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import mistune
 from sidedoc.models import Block
-from sidedoc.utils import get_iso_timestamp
+from sidedoc.utils import get_iso_timestamp, compute_similarity
 
 # Maximum size for individual assets (50MB) to prevent ZIP bomb attacks
 MAX_ASSET_SIZE = 50 * 1024 * 1024  # 50MB in bytes
+
+# Similarity threshold for matching blocks (0.0 to 1.0)
+# Blocks at the same position must have at least this similarity to be considered edits
+# Below this threshold, they are treated as delete + add operations
+SIMILARITY_THRESHOLD = 0.7  # 70% similarity required
 
 
 def match_blocks(
     old_blocks: list[Block], new_blocks: list[Block]
 ) -> dict[str, Block]:
-    """Match old blocks to new blocks using hashes and positions.
+    """Match old blocks to new blocks using hashes, positions, and similarity.
 
     Matching strategy:
     1. First pass: Match by content hash (unchanged blocks)
-    2. Second pass: Match by type and position (edited blocks)
+    2. Second pass: Match by type, position, and similarity threshold (edited blocks)
+       - Blocks at the same position with the same type are only matched if
+         their content similarity meets the SIMILARITY_THRESHOLD
+       - This prevents incorrectly treating "delete + add" as "edit"
 
     Args:
         old_blocks: List of blocks from previous version (structure.json)
@@ -48,9 +56,12 @@ def match_blocks(
                 used_new_blocks.add(i)
                 break
 
-    # Second pass: Match by type and exact position (edited blocks)
+    # Second pass: Match by type, position, and similarity (edited blocks)
     # This handles blocks that were edited but are at the exact same position
-    # We only match if the positions are identical to avoid false matches
+    # We only match if:
+    # 1. Positions are identical
+    # 2. Types match
+    # 3. Content similarity meets threshold
     remaining_old = [b for b in old_blocks if b.id not in matches]
     remaining_new_indices = [
         i for i in range(len(new_blocks)) if i not in used_new_blocks
@@ -63,9 +74,12 @@ def match_blocks(
         if old_idx in remaining_new_indices:
             new_block = new_blocks[old_idx]
             if old_block.type == new_block.type:
-                matches[old_block.id] = new_block
-                used_new_blocks.add(old_idx)
-                remaining_new_indices.remove(old_idx)
+                # Check content similarity to distinguish edits from delete+add
+                similarity = compute_similarity(old_block.content, new_block.content)
+                if similarity >= SIMILARITY_THRESHOLD:
+                    matches[old_block.id] = new_block
+                    used_new_blocks.add(old_idx)
+                    remaining_new_indices.remove(old_idx)
 
     return matches
 

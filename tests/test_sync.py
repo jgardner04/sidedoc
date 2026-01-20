@@ -49,16 +49,16 @@ def test_match_unchanged_blocks():
 
 
 def test_match_edited_blocks_by_position():
-    """Test that edited blocks are matched by type and position."""
+    """Test that edited blocks are matched by type, position, and similarity."""
     old_blocks = [
         Block(
             id="block-1",
             type="paragraph",
-            content="Original text.",
+            content="Original text for testing.",
             docx_paragraph_index=0,
             content_start=0,
-            content_end=14,
-            content_hash=compute_hash("Original text."),
+            content_end=26,
+            content_hash=compute_hash("Original text for testing."),
         ),
     ]
 
@@ -66,20 +66,20 @@ def test_match_edited_blocks_by_position():
         Block(
             id="block-new-1",
             type="paragraph",
-            content="Modified text.",
+            content="Original text for testing edits.",
             docx_paragraph_index=0,
             content_start=0,
-            content_end=14,
-            content_hash=compute_hash("Modified text."),
+            content_end=32,
+            content_hash=compute_hash("Original text for testing edits."),
         ),
     ]
 
     matches = match_blocks(old_blocks, new_blocks)
 
-    # Should match by position even though content changed
+    # Should match by position when content has high similarity (edit)
     assert "block-1" in matches
     assert matches["block-1"] == new_blocks[0]
-    assert matches["block-1"].content == "Modified text."
+    assert matches["block-1"].content == "Original text for testing edits."
 
 
 def test_identify_new_blocks():
@@ -239,18 +239,18 @@ def test_match_multiple_blocks_complex():
     assert "block-1" in matches
     assert matches["block-1"].content == "# Title"
 
-    # block-2 edited (matched by position)
+    # block-2 edited with high similarity (matched by position and similarity)
     assert "block-2" in matches
     assert matches["block-2"].content == "First para modified."
 
-    # block-3 treated as edited (matched by position)
-    # Note: From algorithm perspective, this is reasonable - same type, same position
-    # The algorithm can't distinguish "delete + add" from "edit" without content similarity
-    assert "block-3" in matches
-    assert matches["block-3"].content == "Brand new para."
+    # block-3 NOT matched - low similarity means it's treated as delete + add
+    # This is the improvement from issue #11 - the algorithm now uses similarity
+    # to distinguish "delete + add" from "edit"
+    assert "block-3" not in matches
 
-    # Total matches = 3 (all blocks matched by position)
-    assert len(matches) == 3
+    # Total matches = 2 (block-1 by hash, block-2 by position+similarity)
+    # block-3 was deleted, block-new-3 is a new addition
+    assert len(matches) == 2
 
 
 def test_true_deletion_when_blocks_decrease():
@@ -1095,3 +1095,168 @@ def test_update_sidedoc_metadata_cleanup_on_error() -> None:
         # After error, no temp files should remain in the directory
         temp_files = [f for f in Path(temp_dir).glob("*.sidedoc") if f.name != "test.sidedoc"]
         assert len(temp_files) == 0, f"Found leftover temp files: {temp_files}"
+
+
+def test_delete_and_add_with_low_similarity_not_matched():
+    """Test that deleting a paragraph and adding a completely different one is NOT matched.
+
+    This test addresses issue #11 - when content at the same position is completely different
+    (low similarity), it should be treated as delete + add, not as an edit.
+    """
+    old_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content="The quick brown fox jumps over the lazy dog.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=45,
+            content_hash=compute_hash("The quick brown fox jumps over the lazy dog."),
+        ),
+    ]
+
+    new_blocks = [
+        Block(
+            id="block-new-1",
+            type="paragraph",
+            content="Python is a great programming language.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=40,
+            content_hash=compute_hash("Python is a great programming language."),
+        ),
+    ]
+
+    matches = match_blocks(old_blocks, new_blocks)
+
+    # With low similarity, block should NOT be matched
+    # This means block-1 was deleted and block-new-1 was added
+    assert "block-1" not in matches
+
+
+def test_edit_with_high_similarity_is_matched():
+    """Test that editing a paragraph with high similarity IS matched.
+
+    This test addresses issue #11 - when content at the same position has high similarity
+    (e.g., minor edits, additions), it should be treated as an edit and preserve formatting.
+    """
+    old_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content="The quick brown fox jumps over the lazy dog.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=45,
+            content_hash=compute_hash("The quick brown fox jumps over the lazy dog."),
+        ),
+    ]
+
+    new_blocks = [
+        Block(
+            id="block-new-1",
+            type="paragraph",
+            content="The quick brown fox jumps over the sleepy dog.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=47,
+            content_hash=compute_hash("The quick brown fox jumps over the sleepy dog."),
+        ),
+    ]
+
+    matches = match_blocks(old_blocks, new_blocks)
+
+    # With high similarity, block SHOULD be matched (treated as edit)
+    assert "block-1" in matches
+    assert matches["block-1"].content == "The quick brown fox jumps over the sleepy dog."
+
+
+def test_similarity_threshold_boundary_cases():
+    """Test similarity threshold boundary cases.
+
+    Tests content that is at or near the similarity threshold (0.7 or 70%).
+    """
+    # Create a base paragraph
+    base_content = "This is a paragraph with about fifty characters."
+
+    old_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content=base_content,
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=len(base_content),
+            content_hash=compute_hash(base_content),
+        ),
+    ]
+
+    # Test 1: Low similarity (well below threshold) - should NOT match
+    # Completely different content
+    new_blocks_low = [
+        Block(
+            id="block-new-1",
+            type="paragraph",
+            content="Python programming language features and syntax.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=48,
+            content_hash=compute_hash("Python programming language features and syntax."),
+        ),
+    ]
+
+    matches_low = match_blocks(old_blocks, new_blocks_low)
+    assert "block-1" not in matches_low, "Low similarity should not match"
+
+    # Test 2: High similarity (above threshold) - SHOULD match
+    # Only changed one word
+    new_blocks_high = [
+        Block(
+            id="block-new-2",
+            type="paragraph",
+            content="This is a paragraph with about sixty characters.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=49,
+            content_hash=compute_hash("This is a paragraph with about sixty characters."),
+        ),
+    ]
+
+    matches_high = match_blocks(old_blocks, new_blocks_high)
+    assert "block-1" in matches_high, "High similarity should match"
+
+
+def test_different_block_types_not_matched():
+    """Test that blocks with different types are not matched even with similar content.
+
+    This ensures type checking happens before similarity checking.
+    """
+    old_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content="Important Note",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=14,
+            content_hash=compute_hash("Important Note"),
+        ),
+    ]
+
+    new_blocks = [
+        Block(
+            id="block-new-1",
+            type="heading",
+            level=1,
+            content="# Important Note",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=16,
+            content_hash=compute_hash("# Important Note"),
+        ),
+    ]
+
+    matches = match_blocks(old_blocks, new_blocks)
+
+    # Different types should never match, regardless of content similarity
+    assert "block-1" not in matches
