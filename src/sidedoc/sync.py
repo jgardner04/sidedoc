@@ -189,6 +189,93 @@ def _process_tokens(
                 runs.append((raw, bold, italic))
 
 
+def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
+    """Create reverse mapping from new block IDs to old block IDs.
+
+    Args:
+        matches: Dictionary mapping old block IDs to new blocks
+
+    Returns:
+        Dictionary mapping new block IDs to old block IDs
+    """
+    new_to_old: dict[str, str] = {}
+    for old_id, new_block in matches.items():
+        new_to_old[new_block.id] = old_id
+    return new_to_old
+
+
+def _get_block_style(
+    block: Block,
+    new_to_old: dict[str, str],
+    styles: dict[str, Any]
+) -> dict[str, Any]:
+    """Get the style for a block if it was matched to an old block.
+
+    Args:
+        block: The new block to get style for
+        new_to_old: Mapping from new block IDs to old block IDs
+        styles: Style information dictionary with block_styles
+
+    Returns:
+        Style dictionary for the block, or empty dict if no style
+    """
+    old_block_id = new_to_old.get(block.id)
+    if old_block_id:
+        return styles.get("block_styles", {}).get(old_block_id, {})
+    return {}
+
+
+def _create_paragraph_from_block(doc: Any, block: Block) -> Any:
+    """Create a paragraph from a block based on its type.
+
+    Args:
+        doc: python-docx Document object
+        block: Block to create paragraph from
+
+    Returns:
+        python-docx Paragraph object
+    """
+    if block.type == "heading" and block.level:
+        text = block.content.lstrip("#").strip()
+        style_name = f"Heading {block.level}"
+        return doc.add_paragraph(text, style=style_name)
+    elif block.type == "paragraph":
+        if "**" in block.content or "*" in block.content:
+            para = doc.add_paragraph()
+            apply_inline_formatting(para, block.content)
+            return para
+        else:
+            return doc.add_paragraph(block.content)
+    else:
+        return doc.add_paragraph(block.content)
+
+
+def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
+    """Apply formatting from block_style to a paragraph.
+
+    Args:
+        para: python-docx Paragraph object
+        block_style: Style dictionary with font_name, font_size, alignment
+    """
+    if not block_style:
+        return
+
+    if "font_name" in block_style and para.style:
+        para.style.font.name = block_style["font_name"]
+    if "font_size" in block_style and para.style:
+        para.style.font.size = Pt(block_style["font_size"])
+
+    alignment = block_style.get("alignment", "left")
+    alignment_map = {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+    if alignment in alignment_map:
+        para.alignment = alignment_map[alignment]
+
+
 def generate_updated_docx(
     new_blocks: list[Block],
     matches: dict[str, Block],
@@ -210,56 +297,13 @@ def generate_updated_docx(
         output_path: Path where docx should be saved
     """
     doc = Document()
-
-    # Create reverse mapping: new block -> old block ID (for style lookup)
-    new_to_old: dict[str, str] = {}
-    for old_id, new_block in matches.items():
-        new_to_old[new_block.id] = old_id
+    new_to_old = _create_reverse_mapping(matches)
 
     for block in new_blocks:
-        # Determine which style to use
-        old_block_id = new_to_old.get(block.id)
-        block_style = {}
-        if old_block_id:
-            # Matched block - use its old style
-            block_style = styles.get("block_styles", {}).get(old_block_id, {})
+        block_style = _get_block_style(block, new_to_old, styles)
+        para = _create_paragraph_from_block(doc, block)
+        _apply_block_formatting(para, block_style)
 
-        # Create paragraph based on block type
-        if block.type == "heading" and block.level:
-            # Remove markdown markers from heading
-            text = block.content.lstrip("#").strip()
-            style_name = f"Heading {block.level}"
-            para = doc.add_paragraph(text, style=style_name)
-        elif block.type == "paragraph":
-            # Check if content has inline formatting
-            if "**" in block.content or "*" in block.content:
-                para = doc.add_paragraph()
-                apply_inline_formatting(para, block.content)
-            else:
-                para = doc.add_paragraph(block.content)
-        else:
-            # Default to paragraph for other types
-            para = doc.add_paragraph(block.content)
-
-        # Apply formatting if available
-        if block_style:
-            if "font_name" in block_style and para.style:
-                para.style.font.name = block_style["font_name"]
-            if "font_size" in block_style and para.style:
-                para.style.font.size = Pt(block_style["font_size"])
-
-            # Apply alignment
-            alignment = block_style.get("alignment", "left")
-            alignment_map = {
-                "left": WD_ALIGN_PARAGRAPH.LEFT,
-                "center": WD_ALIGN_PARAGRAPH.CENTER,
-                "right": WD_ALIGN_PARAGRAPH.RIGHT,
-                "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
-            }
-            if alignment in alignment_map:
-                para.alignment = alignment_map[alignment]
-
-    # Save document
     doc.save(output_path)
 
 
