@@ -12,14 +12,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
-
-# Maximum size for individual assets (50MB) to prevent ZIP bomb attacks
-MAX_ASSET_SIZE = 50 * 1024 * 1024  # 50MB in bytes
-
-# Similarity threshold for matching blocks (0.0 to 1.0)
-# Blocks at the same position must have at least this similarity to be considered edits
-# Below this threshold, they are treated as delete + add operations
-SIMILARITY_THRESHOLD = 0.7  # 70% similarity required
+from sidedoc.constants import MAX_ASSET_SIZE, SIMILARITY_THRESHOLD
 
 
 def match_blocks(

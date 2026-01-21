@@ -10,6 +10,7 @@ from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_block
 from sidedoc.sync import update_sidedoc_metadata, generate_updated_docx, match_blocks
 from sidedoc.utils import ensure_sidedoc_extension, is_safe_path
 from sidedoc.models import Block
+from sidedoc.constants import HASH_DISPLAY_LENGTH, CONTENT_PREVIEW_LENGTH
 
 
 # Exit codes as per specification
@@ -276,8 +277,8 @@ def info(input_file: str) -> None:
             click.echo(f"Created:       {manifest.get('created_at', 'N/A')}")
             click.echo(f"Modified:      {manifest.get('modified_at', 'N/A')}")
             click.echo(f"Source File:   {manifest.get('source_file', 'N/A')}")
-            click.echo(f"Source Hash:   {manifest.get('source_hash', 'N/A')[:16]}...")
-            click.echo(f"Content Hash:  {manifest.get('content_hash', 'N/A')[:16]}...")
+            click.echo(f"Source Hash:   {manifest.get('source_hash', 'N/A')[:HASH_DISPLAY_LENGTH]}...")
+            click.echo(f"Content Hash:  {manifest.get('content_hash', 'N/A')[:HASH_DISPLAY_LENGTH]}...")
             click.echo(f"Generator:     {manifest.get('generator', 'N/A')}")
 
         sys.exit(EXIT_SUCCESS)
@@ -467,9 +468,9 @@ def diff(input_file: str) -> None:
                     block_desc = f"{block.type}"
                     if block.level:
                         block_desc += f" (level {block.level})"
-                    # Show first 50 chars of content
-                    content_preview = block.content[:50]
-                    if len(block.content) > 50:
+                    # Show first N chars of content
+                    content_preview = block.content[:CONTENT_PREVIEW_LENGTH]
+                    if len(block.content) > CONTENT_PREVIEW_LENGTH:
                         content_preview += "..."
                     click.echo(click.style(f"  + [{block_desc}] {content_preview}", fg="green"))
 
@@ -481,8 +482,8 @@ def diff(input_file: str) -> None:
                     block_desc = f"{new_block.type}"
                     if new_block.level:
                         block_desc += f" (level {new_block.level})"
-                    content_preview = new_block.content[:50]
-                    if len(new_block.content) > 50:
+                    content_preview = new_block.content[:CONTENT_PREVIEW_LENGTH]
+                    if len(new_block.content) > CONTENT_PREVIEW_LENGTH:
                         content_preview += "..."
                     click.echo(click.style(f"  ~ [{block_desc}] {content_preview}", fg="yellow"))
 

@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
+from sidedoc.constants import FILE_READ_CHUNK_SIZE
 
 
 def compute_file_hash(file_path: str) -> str:
@@ -17,7 +18,7 @@ def compute_file_hash(file_path: str) -> str:
     """
     sha256 = hashlib.sha256()
     with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
+        for chunk in iter(lambda: f.read(FILE_READ_CHUNK_SIZE), b""):
             sha256.update(chunk)
     return sha256.hexdigest()
 
