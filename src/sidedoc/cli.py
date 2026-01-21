@@ -40,20 +40,14 @@ def extract(input_file: str, output: str | None) -> None:
     Converts document.docx to document.sidedoc (or custom output path).
     """
     try:
-        # Determine output path
         if output is None:
             output = str(Path(input_file).with_suffix(".sidedoc"))
         else:
             output = ensure_sidedoc_extension(output)
 
-        # Extract blocks and styles
         blocks, image_data = extract_blocks(input_file)
         styles = extract_styles(input_file, blocks)
-
-        # Convert to markdown
         content_md = blocks_to_markdown(blocks)
-
-        # Create archive
         create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data)
 
         click.echo(f"✓ Extracted to {output}")
@@ -75,11 +69,9 @@ def build(input_file: str, output: str | None) -> None:
     Converts document.sidedoc to document.docx (or custom output path).
     """
     try:
-        # Determine output path
         if output is None:
             output = str(Path(input_file).with_suffix(".docx"))
 
-        # Build document
         build_docx_from_sidedoc(input_file, output)
 
         click.echo(f"✓ Built document: {output}")
@@ -231,7 +223,6 @@ def validate(input_file: str) -> None:
         with zipfile.ZipFile(input_file, "r") as zf:
             names = zf.namelist()
 
-            # Check required files
             required = ["content.md", "structure.json", "styles.json", "manifest.json"]
             missing = [f for f in required if f not in names]
 
@@ -239,7 +230,6 @@ def validate(input_file: str) -> None:
                 click.echo(f"✗ Missing files: {', '.join(missing)}", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
-            # Validate JSON files
             for json_file in ["structure.json", "styles.json", "manifest.json"]:
                 try:
                     json.loads(zf.read(json_file))
@@ -303,7 +293,6 @@ def unpack(input_file: str, output: str) -> None:
         output_path.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(input_file, "r") as zf:
-            # Validate all paths before extraction
             for member in zf.namelist():
                 if not is_safe_path(member, output_path):
                     click.echo(
@@ -312,7 +301,6 @@ def unpack(input_file: str, output: str) -> None:
                     )
                     sys.exit(EXIT_INVALID_FORMAT)
 
-            # All paths are safe, extract
             zf.extractall(output_path)
 
         click.echo(f"✓ Unpacked to {output}")
@@ -340,14 +328,12 @@ def pack(input_dir: str, output: str) -> None:
     try:
         input_path = Path(input_dir)
 
-        # Validate required files exist
         required = ["content.md", "structure.json", "styles.json", "manifest.json"]
         for req_file in required:
             if not (input_path / req_file).exists():
                 click.echo(f"✗ Missing required file: {req_file}", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
-        # Validate JSON files
         for json_file in ["structure.json", "styles.json", "manifest.json"]:
             try:
                 with open(input_path / json_file) as f:
@@ -356,7 +342,6 @@ def pack(input_dir: str, output: str) -> None:
                 click.echo(f"✗ Invalid JSON in {json_file}: {e}", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
-        # Create ZIP archive
         output = ensure_sidedoc_extension(output)
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_path in input_path.rglob("*"):
@@ -382,23 +367,19 @@ def diff(input_file: str) -> None:
     import json
 
     try:
-        # Read sidedoc archive
         with zipfile.ZipFile(input_file, "r") as zf:
-            # Read current content.md
             try:
                 content_md = zf.read("content.md").decode("utf-8")
             except KeyError:
                 click.echo("Error: content.md not found in archive", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
-            # Read old structure.json
             try:
                 old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
             except KeyError:
                 click.echo("Error: structure.json not found in archive", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
-        # Parse current content into blocks
         import hashlib
         new_blocks = parse_markdown_to_blocks(content_md)
 
@@ -406,7 +387,6 @@ def diff(input_file: str) -> None:
         for block in new_blocks:
             block.content_hash = hashlib.sha256(block.content.encode()).hexdigest()
 
-        # Convert old structure to Block objects
         old_blocks = []
         for block_data in old_structure.get("blocks", []):
             old_blocks.append(

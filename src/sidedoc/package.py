@@ -26,7 +26,6 @@ def create_sidedoc_archive(
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
     """
-    # Create structure.json
     structure_data = {
         "blocks": [
             {
@@ -44,7 +43,6 @@ def create_sidedoc_archive(
         ]
     }
 
-    # Create styles.json
     styles_data = {
         "block_styles": {
             style.block_id: {
@@ -64,7 +62,6 @@ def create_sidedoc_archive(
         },
     }
 
-    # Create manifest.json
     timestamp = get_iso_timestamp()
     content_hash = compute_file_hash(source_file)
 
@@ -95,7 +92,7 @@ def create_sidedoc_archive(
         zf.writestr("styles.json", json.dumps(styles_data, indent=2))
         zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
-        # Write image files to assets/ directory
+        # Preserve image assets from the original document
         if image_data:
             for filename, image_bytes in image_data.items():
                 zf.writestr(f"assets/{filename}", image_bytes)

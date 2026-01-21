@@ -247,7 +247,6 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
         style_name = paragraph.style.name if paragraph.style else "Normal"
         image_path = None  # Initialize for all paragraphs
 
-        # Check if paragraph contains an image
         image_info = extract_image_from_paragraph(paragraph, doc.part, image_counter)
         if image_info:
             # This is an image paragraph
@@ -277,10 +276,8 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
             list_number_counter = 0
             previous_list_type = None
         else:
-            # Extract inline formatting (bold, italic, underline)
             text_content, inline_formatting = extract_inline_formatting(paragraph)
 
-            # Determine block type and content
             if style_name.startswith("Heading"):
                 # Extract heading level (e.g., "Heading 1" -> 1)
                 try:
@@ -322,11 +319,9 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
                 list_number_counter = 0
                 previous_list_type = None
 
-        # Calculate content positions
         content_start = content_position
         content_end = content_position + len(markdown_content)
 
-        # Create block
         block = Block(
             id=generate_block_id(para_index),
             type=block_type,
@@ -341,8 +336,6 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
         )
 
         blocks.append(block)
-
-        # Update position for next block (including newline)
         content_position = content_end + 1
 
     return blocks, image_data

@@ -33,7 +33,6 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
         if not line:
             continue
 
-        # Detect images: ![alt](path)
         if line.startswith("![") and "](" in line and line.endswith(")"):
             # Extract image path from markdown
             start_idx = line.find("](") + 2
@@ -50,7 +49,6 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 content_hash="",
                 image_path=image_path,
             )
-        # Detect headings
         elif line.startswith("#"):
             level = 0
             while level < len(line) and line[level] == "#":
@@ -68,7 +66,6 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 level=level,
             )
         else:
-            # Regular paragraph
             block = Block(
                 id=f"block-{block_id}",
                 type="paragraph",
