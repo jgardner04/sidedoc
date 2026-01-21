@@ -47,7 +47,9 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
     Returns:
         Tuple of (is_valid, error_message). If valid, error_message is empty.
     """
-    # Check size
+    # Check size first - fastest validation, prevents processing huge files
+    # Why check size: Protects against ZIP bombs and malicious documents with
+    # extremely large embedded images that could cause memory issues
     if len(image_bytes) > MAX_IMAGE_SIZE:
         size_mb = len(image_bytes) / (1024 * 1024)
         max_mb = MAX_IMAGE_SIZE / (1024 * 1024)
@@ -56,6 +58,8 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
     # Validate image data and format using PIL
     try:
         # First pass: verify image integrity
+        # Why verify: Detects corrupted or malicious image data before we try to
+        # process it further. This prevents crashes from malformed images.
         # Note: We must load the image twice because PIL's verify() method makes
         # the image object unusable for further operations. This is a known PIL
         # limitation. For large images near the 10MB limit, this doubles memory
@@ -65,9 +69,13 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
         img.verify()  # Verify that it's a valid image
 
         # Second pass: reopen to check format (verify() makes the image unusable)
+        # Why check format: Detects extension spoofing (e.g., malware.exe renamed
+        # to image.png). We verify the actual image format matches the extension.
         img = Image.open(io.BytesIO(image_bytes))
 
         # Map extensions to PIL formats
+        # Why mapping: PIL uses format names like "JPEG" while file extensions are
+        # "jpg" or "jpeg". We need to normalize for comparison.
         extension_to_format = {
             'png': 'PNG',
             'jpg': 'JPEG',
@@ -88,6 +96,9 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
         # UnidentifiedImageError: PIL cannot identify the image format
         # OSError: File-related errors (truncated file, etc.)
         # ValueError: Invalid image data
+        # Why catch these: Documents may contain corrupted images or non-image data
+        # embedded as images. We want to skip these gracefully with an error message
+        # rather than crash the entire extraction.
         return False, f"Invalid or corrupted image data: {str(e)}"
 
 
@@ -105,29 +116,46 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
         Returns None if no image found.
     """
     # Check for drawing elements (images) in paragraph runs
+    # Why check runs: Word documents store images inside run elements within paragraphs.
+    # A paragraph may have multiple runs, and any of them could contain an image.
     for run in paragraph.runs:
+        # Navigate XML structure to find drawing elements
+        # Why XML namespaces: Word documents use Office Open XML format with specific
+        # namespaces. We need the full namespace URI to find elements correctly.
         drawing_elems = run._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
         for drawing in drawing_elems:
             # Find blip element (contains image reference)
+            # Why blip: In Office Open XML, a "blip" (binary large image or picture)
+            # element contains the relationship ID pointing to the actual image data.
             blips = drawing.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
             for blip in blips:
-                # Get relationship ID
+                # Get relationship ID that points to the image part
+                # Why r:embed: Images aren't stored inline - they're stored as separate
+                # "parts" in the ZIP archive, referenced via relationship IDs.
                 r_embed = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
                 if r_embed and r_embed in doc_part.rels:
-                    # Get image part
+                    # Get image part using the relationship ID
+                    # Why relationships: This is how Office Open XML connects elements
+                    # to their binary data. The relationship maps ID -> actual image.
                     image_part = doc_part.rels[r_embed].target_part
                     # Get extension from content type or part name
                     extension = image_part.partname.split('.')[-1]
-                    # Get image bytes
+                    # Get image bytes (the actual binary image data)
                     image_bytes = image_part.blob
 
-                    # Validate image
+                    # Validate image before including it in the sidedoc
+                    # Why validate: Protects against corrupted images, format mismatches,
+                    # and security issues like ZIP bombs or format spoofing
                     is_valid, error_message = validate_image(image_bytes, extension)
 
                     # Generate unique filename
+                    # Why counter: Multiple images in a document need unique filenames
+                    # in the assets/ directory to avoid collisions
                     image_filename = f"image{image_counter}.{extension}"
 
                     # Return image data with validation result
+                    # Why return error_message even if invalid: The caller decides how to
+                    # handle invalid images (skip, show error message, etc.)
                     return (image_filename, extension, image_bytes, error_message)
 
     return None
@@ -148,16 +176,25 @@ def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]]
     inline_formatting: list[dict[str, Any]] = []
     plain_text_position = 0  # Position in plain text without markdown markers
 
+    # Process each run (formatted text segment) in the paragraph
+    # Why runs: Word stores formatting at the "run" level - each run is a segment
+    # of text with consistent formatting. A paragraph with "Hello **world**" has
+    # two runs: one for "Hello " and one for "world" with bold formatting.
     for run in paragraph.runs:
         text = run.text
         if not text:
             continue
 
+        # Extract formatting flags from the run
+        # Why check "is True": python-docx returns None for unset properties, False
+        # for explicitly disabled, and True for enabled. We only want explicit True.
         is_bold = run.bold is True
         is_italic = run.italic is True
         is_underline = run.underline is True
 
         # Build markdown with bold/italic markers
+        # Why markdown: Bold and italic are well-supported in markdown, so we convert
+        # them to markdown syntax for AI-friendly editing.
         markdown_text = text
         if is_bold and is_italic:
             markdown_text = f"***{text}***"
@@ -167,6 +204,10 @@ def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]]
             markdown_text = f"*{text}*"
 
         # Record underline in inline_formatting (positions are in plain text without markdown)
+        # Why separate: Markdown doesn't have standard underline syntax, so we store
+        # it separately in inline_formatting with character positions. The positions
+        # refer to the plain text (without ** or * markers) so they remain valid
+        # when we convert markdown back to docx.
         if is_underline:
             inline_formatting.append({
                 "type": "underline",
@@ -176,7 +217,10 @@ def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]]
             })
 
         markdown_parts.append(markdown_text)
-        plain_text_position += len(text)  # Track plain text position, not markdown
+        # Track plain text position, not markdown position
+        # Why plain text: The inline_formatting positions need to match the text
+        # without markdown markers, so we only count the actual text length
+        plain_text_position += len(text)
 
     markdown_content = "".join(markdown_parts)
     return markdown_content, inline_formatting if inline_formatting else None

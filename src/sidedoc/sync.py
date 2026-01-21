@@ -47,6 +47,9 @@ def match_blocks(
     used_new_blocks: set[int] = set()
 
     # First pass: Match by content hash (unchanged blocks)
+    # Why this works: Identical content hashes mean the block wasn't edited at all,
+    # so we can confidently match it regardless of position changes. This is the
+    # fastest and most reliable matching strategy.
     for old_block in old_blocks:
         for i, new_block in enumerate(new_blocks):
             if i in used_new_blocks:
@@ -54,14 +57,17 @@ def match_blocks(
             if old_block.content_hash == new_block.content_hash:
                 matches[old_block.id] = new_block
                 used_new_blocks.add(i)
-                break
+                break  # Move to next old_block once we find a match
 
     # Second pass: Match by type, position, and similarity (edited blocks)
+    # Why we need this: After the first pass, we have blocks that changed but might
+    # be edits (modify) rather than delete+add operations. We only match blocks at
+    # the SAME position to avoid incorrectly matching unrelated blocks.
     # This handles blocks that were edited but are at the exact same position
     # We only match if:
-    # 1. Positions are identical
-    # 2. Types match
-    # 3. Content similarity meets threshold
+    # 1. Positions are identical (same index in both lists)
+    # 2. Types match (heading stays heading, paragraph stays paragraph)
+    # 3. Content similarity meets threshold (distinguishes edit from delete+add)
     remaining_old = [b for b in old_blocks if b.id not in matches]
     remaining_new_indices = [
         i for i in range(len(new_blocks)) if i not in used_new_blocks
@@ -71,10 +77,16 @@ def match_blocks(
         old_idx = old_blocks.index(old_block)
 
         # Only match if there's a new block at the exact same position with same type
+        # Why position matters: If a block moved, it's safer to treat it as delete+add
+        # rather than risk matching to the wrong block
         if old_idx in remaining_new_indices:
             new_block = new_blocks[old_idx]
             if old_block.type == new_block.type:
                 # Check content similarity to distinguish edits from delete+add
+                # Why similarity threshold: If someone deleted "Hello" and added "Goodbye"
+                # at the same position, similarity is low and we treat it as separate
+                # operations. If they changed "Hello world" to "Hello there", similarity
+                # is high and we preserve the formatting as an edit.
                 similarity = compute_similarity(old_block.content, new_block.content)
                 if similarity >= SIMILARITY_THRESHOLD:
                     matches[old_block.id] = new_block
@@ -124,6 +136,9 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
         List of tuples: (text, bold, italic)
     """
     # Create markdown parser that returns AST instead of HTML
+    # Why mistune: It handles nested formatting, escaped characters, and malformed
+    # markdown robustly. The AST approach (renderer=None) gives us structured tokens
+    # rather than HTML, making it easier to extract formatting information.
     md = mistune.create_markdown(renderer=None)
 
     # Parse the content
@@ -131,9 +146,13 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
         tokens, _ = md.parse(content)
     except Exception:
         # On parse error, return content as plain text (graceful degradation)
+        # Why fail gracefully: User-edited markdown may have syntax errors. Better
+        # to preserve the text without formatting than to crash.
         return [(content, False, False)]
 
     # Extract inline content from paragraph tokens
+    # Why paragraph tokens: Mistune wraps inline content in paragraph block tokens.
+    # We need to extract the children (inline tokens) to get the actual formatting.
     runs: list[tuple[str, bool, bool]] = []
     for block_token in tokens:
         if block_token.get("type") == "paragraph":
@@ -141,6 +160,8 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
             _process_tokens(children, runs, bold=False, italic=False)
         else:
             # Handle other block types by extracting raw text
+            # Why this fallback: If mistune generates non-paragraph blocks (e.g., from
+            # malformed markdown), we still want to preserve the text content
             raw = block_token.get("raw", "")
             if raw:
                 runs.append((raw, False, False))
@@ -167,39 +188,54 @@ def _process_tokens(
 
         if token_type == "text":
             # Plain text - use current formatting state
+            # Why track state: Nested formatting like **bold *and italic*** requires
+            # passing the parent's formatting state down through recursion
             raw = token.get("raw", "")
             if raw:
                 runs.append((raw, bold, italic))
 
         elif token_type == "strong":
             # Bold - recurse with bold=True
+            # Why recurse: This handles nested formatting. When we encounter **bold**,
+            # we need to process any child tokens (like *italic*) with bold=True so
+            # they inherit the bold state
             children = token.get("children", [])
             _process_tokens(children, runs, bold=True, italic=italic)
 
         elif token_type == "emphasis":
             # Italic - recurse with italic=True
+            # Why recurse: Same as bold - handles nested formatting like *italic **and bold***
             children = token.get("children", [])
             _process_tokens(children, runs, bold=bold, italic=True)
 
         elif token_type == "codespan":
             # Inline code - treat as plain text
+            # Why plain text: We don't format code differently in docx, just preserve
+            # the text content. The backticks are already removed by mistune.
             raw = token.get("raw", "")
             if raw:
                 runs.append((raw, bold, italic))
 
         elif token_type == "softbreak" or token_type == "linebreak":
             # Line breaks - add space or newline
+            # Why space: In Word, soft breaks typically render as spaces within a
+            # paragraph rather than actual line breaks
             runs.append((" ", bold, italic))
 
         else:
             # Unknown token type - try to extract text/raw content
-            # This handles escapes and other edge cases
+            # Why graceful degradation: Mistune may introduce new token types or
+            # the markdown may have unexpected syntax. Rather than crash, we try
+            # to extract any text content we can find.
+            # This handles escapes (\*) and other edge cases
             raw = token.get("raw", "")
             children = token.get("children", [])
 
             if children:
+                # If there are children, process them recursively
                 _process_tokens(children, runs, bold, italic)
             elif raw:
+                # Otherwise, just add the raw text
                 runs.append((raw, bold, italic))
 
 
