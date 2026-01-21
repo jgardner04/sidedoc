@@ -291,6 +291,223 @@ def test_extract_mixed_inline_formatting():
         Path(docx_path).unlink()
 
 
+def test_extract_escaped_asterisks_in_text():
+    """Test that literal asterisks in text are preserved (not treated as markdown).
+
+    When docx contains text with asterisks but NO formatting applied,
+    those asterisks should appear in markdown as-is.
+    """
+    docx_path = create_formatted_docx([
+        ("This has ", False, False, False),
+        ("*literal asterisks*", False, False, False),
+        (" in text", False, False, False)
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # No formatting was applied, so asterisks should be preserved literally
+        assert blocks[0].content == "This has *literal asterisks* in text"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_nested_formatting_bold_containing_italic():
+    """Test nested formatting: bold text containing italic text.
+
+    In docx: "start BOLD_START normal ITALIC_START both ITALIC_END normal BOLD_END end"
+    Current implementation: treats each run separately, resulting in adjacent markers
+    """
+    docx_path = create_formatted_docx([
+        ("start ", False, False, False),
+        ("bold ", True, False, False),
+        ("and italic", True, True, False),
+        (" bold", True, False, False),
+        (" end", False, False, False)
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Current implementation: adjacent runs create adjacent markers
+        # "bold " is bold: **bold **
+        # "and italic" is bold+italic: ***and italic***
+        # " bold" is bold: ** bold**
+        assert blocks[0].content == "start **bold *****and italic***** bold** end"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_alternating_bold_italic():
+    """Test alternating bold and italic formatting.
+
+    Tests rapid switching between formatting types.
+    """
+    docx_path = create_formatted_docx([
+        ("A", True, False, False),
+        ("B", False, True, False),
+        ("C", True, False, False),
+        ("D", False, True, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "**A***B***C***D*"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_empty_formatting_runs():
+    """Test that empty runs with formatting don't create spurious markdown markers."""
+    docx_path = create_formatted_docx([
+        ("start", False, False, False),
+        ("", True, False, False),  # Empty bold run
+        ("end", False, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Empty runs should be ignored
+        assert blocks[0].content == "startend"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_whitespace_only_formatted_runs():
+    """Test formatting on whitespace-only runs.
+
+    Edge case: what happens when only spaces are bold/italic?
+    """
+    docx_path = create_formatted_docx([
+        ("word", False, False, False),
+        ("   ", True, False, False),  # Bold spaces
+        ("word", False, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Spaces with formatting should preserve the formatting markers
+        assert blocks[0].content == "word**   **word"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_single_character_formatting():
+    """Test formatting applied to single characters."""
+    docx_path = create_formatted_docx([
+        ("a", True, False, False),
+        ("b", False, True, False),
+        ("c", True, True, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        assert blocks[0].content == "**a***b****c***"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_unicode_with_formatting():
+    """Test that Unicode characters work correctly with formatting."""
+    docx_path = create_formatted_docx([
+        ("Hello ", False, False, False),
+        ("世界", True, False, False),  # "world" in Chinese
+        (" café", False, True, False),
+        (" 🎉", True, True, False),  # emoji
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Each run is formatted separately, creating adjacent markers
+        assert blocks[0].content == "Hello **世界*** café**** 🎉***"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_mixed_underline_bold_italic():
+    """Test complex mix of underline with bold and italic.
+
+    Underline should be tracked separately in inline_formatting,
+    while bold/italic appear in markdown.
+    """
+    docx_path = create_formatted_docx([
+        ("plain ", False, False, False),
+        ("bold-underline", True, False, True),
+        (" ", False, False, False),
+        ("italic-underline", False, True, True),
+        (" ", False, False, False),
+        ("all-three", True, True, True),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Bold and italic in markdown
+        assert blocks[0].content == "plain **bold-underline** *italic-underline* ***all-three***"
+
+        # Underline tracked separately
+        assert blocks[0].inline_formatting is not None
+        assert len(blocks[0].inline_formatting) == 3
+
+        # Verify underline positions (calculated from plain text)
+        underline_entries = [fmt for fmt in blocks[0].inline_formatting if fmt.get("underline")]
+        assert len(underline_entries) == 3
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_adjacent_same_formatting():
+    """Test adjacent runs with same formatting.
+
+    Edge case: multiple consecutive runs with identical formatting
+    should produce clean markdown.
+    """
+    docx_path = create_formatted_docx([
+        ("bold", True, False, False),
+        ("also", True, False, False),
+        ("bold", True, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Current implementation handles each run separately
+        assert blocks[0].content == "**bold****also****bold**"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_formatting_with_newline_characters():
+    """Test that runs containing newline characters are handled correctly."""
+    docx_path = create_formatted_docx([
+        ("before", False, False, False),
+        ("bold\ntext", True, False, False),
+        ("after", False, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert len(blocks) == 1
+        # Newlines in runs should be preserved
+        assert blocks[0].content == "before**bold\ntext**after"
+        assert blocks[0].type == "paragraph"
+    finally:
+        Path(docx_path).unlink()
+
+
 def create_list_docx(list_items: list[tuple[str, str]]) -> str:
     """Create a test docx file with list items.
 
