@@ -91,6 +91,97 @@ def build(input_file: str, output: str | None) -> None:
         sys.exit(EXIT_ERROR)
 
 
+def _read_sidedoc_files(input_file: str) -> tuple[str, dict, dict]:
+    """Read content.md, styles.json, and structure.json from sidedoc archive.
+
+    Args:
+        input_file: Path to .sidedoc file
+
+    Returns:
+        Tuple of (content_md, styles_data, old_structure)
+
+    Raises:
+        KeyError: If required files are missing
+        json.JSONDecodeError: If JSON files are invalid
+    """
+    import zipfile
+    import json
+
+    with zipfile.ZipFile(input_file, "r") as zf:
+        try:
+            content_md = zf.read("content.md").decode("utf-8")
+        except KeyError:
+            click.echo("Error: content.md not found in archive", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+
+        try:
+            styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+        except KeyError:
+            click.echo("Error: styles.json not found in archive", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error: Invalid JSON in styles.json: {e}", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+
+        try:
+            old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+        except KeyError:
+            click.echo("Error: structure.json not found in archive", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error: Invalid JSON in structure.json: {e}", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+
+    return content_md, styles_data, old_structure
+
+
+def _convert_structure_to_blocks(old_structure: dict):
+    """Convert structure.json dict to list of Block objects.
+
+    Args:
+        old_structure: Dictionary containing blocks from structure.json
+
+    Returns:
+        List of Block objects
+    """
+    from sidedoc.models import Block
+
+    old_blocks = []
+    for block_data in old_structure.get("blocks", []):
+        old_blocks.append(
+            Block(
+                id=block_data["id"],
+                type=block_data["type"],
+                content="",
+                docx_paragraph_index=block_data["docx_paragraph_index"],
+                content_start=block_data["content_start"],
+                content_end=block_data["content_end"],
+                content_hash=block_data["content_hash"],
+                level=block_data.get("level"),
+                image_path=block_data.get("image_path"),
+                inline_formatting=block_data.get("inline_formatting"),
+            )
+        )
+    return old_blocks
+
+
+def _build_output_docx(new_blocks, old_structure: dict, styles_data: dict, output: str) -> None:
+    """Build output docx file from new blocks with formatting preserved.
+
+    Args:
+        new_blocks: List of new Block objects
+        old_structure: Dictionary containing blocks from structure.json
+        styles_data: Style information dictionary
+        output: Path to save output docx file
+    """
+    from sidedoc.sync import match_blocks
+
+    old_blocks = _convert_structure_to_blocks(old_structure)
+    matches = match_blocks(old_blocks, new_blocks)
+    generate_updated_docx(new_blocks, matches, styles_data, output)
+    click.echo(f"✓ Built updated document: {output}")
+
+
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", help="Optional: build updated docx to this path")
@@ -101,76 +192,16 @@ def sync(input_file: str, output: str | None) -> None:
     Optionally builds the updated docx to a specified path.
     """
     import zipfile
-    import json
 
     try:
-        # Read sidedoc archive
-        with zipfile.ZipFile(input_file, "r") as zf:
-            # Read content.md
-            try:
-                content_md = zf.read("content.md").decode("utf-8")
-            except KeyError:
-                click.echo("Error: content.md not found in archive", err=True)
-                sys.exit(EXIT_INVALID_FORMAT)
-
-            # Read styles.json for formatting
-            try:
-                styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
-            except KeyError:
-                click.echo("Error: styles.json not found in archive", err=True)
-                sys.exit(EXIT_INVALID_FORMAT)
-            except json.JSONDecodeError as e:
-                click.echo(f"Error: Invalid JSON in styles.json: {e}", err=True)
-                sys.exit(EXIT_INVALID_FORMAT)
-
-            # Read old structure.json for block history
-            try:
-                old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
-            except KeyError:
-                click.echo("Error: structure.json not found in archive", err=True)
-                sys.exit(EXIT_INVALID_FORMAT)
-            except json.JSONDecodeError as e:
-                click.echo(f"Error: Invalid JSON in structure.json: {e}", err=True)
-                sys.exit(EXIT_INVALID_FORMAT)
-
-        # Parse edited content.md into new blocks
+        content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
         new_blocks = parse_markdown_to_blocks(content_md)
-
-        # Update metadata in sidedoc archive
         update_sidedoc_metadata(input_file, new_blocks, content_md)
 
         click.echo(f"✓ Synced changes in {input_file}")
 
-        # If output path specified, build the docx
         if output:
-            # Generate updated docx
-            from sidedoc.sync import match_blocks
-            from sidedoc.models import Block
-
-            # Convert old structure to Block objects for matching
-            old_blocks = []
-            for block_data in old_structure.get("blocks", []):
-                old_blocks.append(
-                    Block(
-                        id=block_data["id"],
-                        type=block_data["type"],
-                        content="",  # We don't have old content, but that's OK for matching
-                        docx_paragraph_index=block_data["docx_paragraph_index"],
-                        content_start=block_data["content_start"],
-                        content_end=block_data["content_end"],
-                        content_hash=block_data["content_hash"],
-                        level=block_data.get("level"),
-                        image_path=block_data.get("image_path"),
-                        inline_formatting=block_data.get("inline_formatting"),
-                    )
-                )
-
-            # Match old blocks to new blocks
-            matches = match_blocks(old_blocks, new_blocks)
-
-            # Generate updated docx
-            generate_updated_docx(new_blocks, matches, styles_data, output)
-            click.echo(f"✓ Built updated document: {output}")
+            _build_output_docx(new_blocks, old_structure, styles_data, output)
 
         sys.exit(EXIT_SUCCESS)
 
