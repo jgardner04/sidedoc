@@ -11,6 +11,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.document import Document as DocumentType
 import mistune
 from sidedoc.models import Block, Style
+from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
 
 
 def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
@@ -116,7 +117,7 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                     # Add image to document
                     para = doc.add_paragraph()
                     run = para.add_run()
-                    run.add_picture(str(image_file_path), width=Inches(3.0))
+                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                 else:
                     # Image file missing - add placeholder text
                     para = doc.add_paragraph(f"[Missing image: {block.image_path}]")

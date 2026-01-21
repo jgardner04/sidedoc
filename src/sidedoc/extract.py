@@ -8,9 +8,7 @@ from docx import Document
 from docx.shared import Pt
 from PIL import Image
 from sidedoc.models import Block, Style
-
-# Maximum image size in bytes (10MB)
-MAX_IMAGE_SIZE = 10 * 1024 * 1024
+from sidedoc.constants import MAX_IMAGE_SIZE
 
 
 def generate_block_id(index: int) -> str:

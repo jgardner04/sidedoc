@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
+from sidedoc.constants import FILE_READ_CHUNK_SIZE
 
 
 def compute_file_hash(file_path: str) -> str:
@@ -24,7 +25,7 @@ def compute_file_hash(file_path: str) -> str:
         # Why iter with lambda: This is a Python idiom for reading until EOF. The
         # lambda returns empty bytes (b"") when EOF is reached, which terminates
         # the iterator.
-        for chunk in iter(lambda: f.read(4096), b""):
+        for chunk in iter(lambda: f.read(FILE_READ_CHUNK_SIZE), b""):
             sha256.update(chunk)
     return sha256.hexdigest()
 
