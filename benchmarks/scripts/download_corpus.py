@@ -4,8 +4,9 @@ This script downloads 5 public domain PDFs from government and corporate sources
 to be used as the real-world test corpus for benchmarking Sidedoc against alternatives.
 """
 
+import hashlib
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import requests
 
@@ -26,20 +27,69 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+# SHA256 checksums for corpus files (None = checksum not yet computed)
+# Run download once to get actual checksums, then update these values
+CORPUS_CHECKSUMS: Dict[str, Optional[str]] = {
+    "sec_2024_afr": None,
+    "gsa_2024_annual": None,
+    "sss_fy2024_afr": None,
+    "bmw_q3_2024": None,
+    "cocacola_earnings_2024": None,
+}
 
-def download_file(url: str, output_path: Path) -> bool:
+
+def compute_sha256(path: Path) -> str:
+    """Compute SHA256 hash of a file.
+
+    Args:
+        path: Path to the file.
+
+    Returns:
+        Hexadecimal SHA256 hash string.
+    """
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def verify_checksum(path: Path, expected: Optional[str]) -> bool:
+    """Verify file integrity via SHA256.
+
+    Args:
+        path: Path to the file to verify.
+        expected: Expected SHA256 hash, or None to skip verification.
+
+    Returns:
+        True if checksum matches or no checksum is configured.
+    """
+    if expected is None:
+        return True
+    actual = compute_sha256(path)
+    return actual == expected
+
+
+def download_file(
+    url: str, output_path: Path, expected_checksum: Optional[str] = None
+) -> bool:
     """Download a file from a URL to the specified path.
 
     Args:
         url: The URL to download from.
         output_path: The local path to save the file to.
+        expected_checksum: Optional SHA256 checksum to verify after download.
 
     Returns:
-        True if the file was downloaded or already exists, False on error.
+        True if the file was downloaded (or already exists with valid checksum),
+        False on error or checksum mismatch.
     """
-    # Idempotent: skip if file already exists
+    # Idempotent: skip if file already exists and checksum matches
     if output_path.exists():
-        return True
+        if verify_checksum(output_path, expected_checksum):
+            return True
+        # Checksum mismatch - re-download
+        output_path.unlink()
 
     try:
         response = requests.get(
@@ -54,6 +104,12 @@ def download_file(url: str, output_path: Path) -> bool:
 
         # Write the content
         output_path.write_bytes(response.content)
+
+        # Verify checksum if provided
+        if not verify_checksum(output_path, expected_checksum):
+            output_path.unlink()
+            return False
+
         return True
 
     except requests.RequestException:
@@ -79,7 +135,8 @@ def download_corpus(output_dir: Path | None = None) -> Dict[str, bool]:
 
     for name, url in CORPUS_URLS.items():
         output_path = output_dir / f"{name}.pdf"
-        success = download_file(url, output_path)
+        expected_checksum = CORPUS_CHECKSUMS.get(name)
+        success = download_file(url, output_path, expected_checksum)
         results[name] = success
 
     return results

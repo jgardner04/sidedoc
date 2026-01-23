@@ -11,8 +11,9 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Self
 
+from benchmarks.metrics.token_counter import TokenCounter
 from benchmarks.pipelines.base import BasePipeline, PipelineResult
 from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.package import create_sidedoc_archive
@@ -104,6 +105,20 @@ class SidedocPipeline(BasePipeline):
         self._sidedoc_path: Optional[Path] = None
         self._current_content: str = ""
         self._temp_dir: Optional[tempfile.TemporaryDirectory[str]] = None
+        self._token_counter = TokenCounter()
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Exit context manager, ensuring cleanup is called."""
+        self.cleanup()
 
     def extract_content(self, document_path: Path) -> str:
         """Extract text content from a document using sidedoc.
@@ -287,8 +302,8 @@ class SidedocPipeline(BasePipeline):
 
             elapsed = time.time() - start_time
 
-            # Calculate token counts (simple character-based approximation)
-            input_tokens = len(content) // 4  # Rough approximation
+            # Calculate token counts using tiktoken
+            input_tokens = self._token_counter.count_tokens(content)
             output_tokens = input_tokens  # Output is similar size
 
             return PipelineResult(

@@ -4,6 +4,7 @@ This module provides the BenchmarkExecutor which runs benchmarks
 across pipelines, tasks, and documents.
 """
 
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -197,8 +198,8 @@ class BenchmarkExecutor:
             metrics["completion_tokens"] = task_result.completion_tokens
             metrics["error"] = task_result.error
 
-        except Exception as e:
-            metrics["error"] = str(e)
+        except Exception:
+            metrics["error"] = traceback.format_exc()
 
         return {
             "pipeline": pipeline_name,

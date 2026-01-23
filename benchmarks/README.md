@@ -49,7 +49,7 @@ sudo apt install pandoc libreoffice poppler-utils
 
 1. Clone the repository and navigate to it:
 ```bash
-git clone https://github.com/your-org/sidedoc.git
+git clone https://github.com/jgardner04/sidedoc.git
 cd sidedoc
 ```
 

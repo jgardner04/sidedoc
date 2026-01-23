@@ -30,7 +30,26 @@ class FidelityScorer:
 
     def __init__(self) -> None:
         """Initialize the fidelity scorer."""
-        pass
+        self._rng = random.Random(42)
+
+    def _validate_path(self, path: Path) -> Path:
+        """Validate a path is safe for subprocess use.
+
+        Args:
+            path: Path to validate.
+
+        Returns:
+            Resolved absolute path.
+
+        Raises:
+            ValueError: If path does not exist or is not a file.
+        """
+        resolved = path.resolve()
+        if not resolved.exists():
+            raise ValueError(f"Path does not exist: {resolved}")
+        if not resolved.is_file():
+            raise ValueError(f"Path is not a file: {resolved}")
+        return resolved
 
     def score_structure(
         self, original_docx: Union[str, Path], rebuilt_docx: Union[str, Path]
@@ -156,8 +175,7 @@ class FidelityScorer:
         # Get indices to sample (use same indices for both)
         sample_indices = list(range(min(len(original_styles), len(rebuilt_styles))))
         if len(sample_indices) > 10:
-            random.seed(42)  # Fixed seed for reproducibility
-            sample_indices = random.sample(sample_indices, 10)
+            sample_indices = self._rng.sample(sample_indices, 10)
 
         # Compare styles at sampled positions
         total_attributes = 0
@@ -292,7 +310,12 @@ class FidelityScorer:
 
         Raises:
             RuntimeError: If LibreOffice is not available.
+            ValueError: If docx_path is invalid.
         """
+        # Validate input path before subprocess call
+        validated_docx = self._validate_path(docx_path)
+        validated_outdir = output_dir.resolve()
+
         # Try common LibreOffice paths
         soffice_paths = [
             "soffice",
@@ -319,21 +342,21 @@ class FidelityScorer:
                 "LibreOffice (soffice) not found. Install LibreOffice for visual comparison."
             )
 
-        # Convert docx to PDF
+        # Convert docx to PDF using validated paths
         subprocess.run(
             [
                 soffice_cmd,
                 "--headless",
                 "--convert-to", "pdf",
-                "--outdir", str(output_dir),
-                str(docx_path),
+                "--outdir", str(validated_outdir),
+                str(validated_docx),
             ],
             capture_output=True,
             check=True,
         )
 
         # Return path to generated PDF
-        pdf_path = output_dir / f"{docx_path.stem}.pdf"
+        pdf_path = validated_outdir / f"{validated_docx.stem}.pdf"
         return pdf_path
 
     def score_total(
