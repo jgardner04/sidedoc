@@ -44,6 +44,16 @@ Sidedoc MVP is **complete** with all core features implemented and tested.
 - ✅ `styles.json` - Formatting data
 - ✅ `manifest.json` - Metadata and hashes
 
+### Benchmark Suite
+- ✅ Benchmark framework with 4 comparison pipelines
+- ✅ 3 benchmark tasks (summarize, single-edit, multi-turn edit)
+- ✅ Token counting with tiktoken (cl100k_base encoding)
+- ✅ Cost calculation for LLM and Document Intelligence APIs
+- ✅ Fidelity scoring (structural, style, visual)
+- ✅ CLI tools for running benchmarks and generating reports
+
+See [Benchmark Suite](benchmarks.md) for usage instructions.
+
 ## 🚧 Post-MVP Roadmap
 
 ### Next Priority (v0.2.0)
