@@ -186,16 +186,16 @@ class SidedocPipeline(BasePipeline):
             return
 
         # Read existing archive
-        with zipfile.ZipFile(self._sidedoc_path, "r") as zf:
-            structure_json = zf.read("structure.json").decode("utf-8")
-            styles_json = zf.read("styles.json").decode("utf-8")
-            manifest_json = zf.read("manifest.json").decode("utf-8")
+        with zipfile.ZipFile(self._sidedoc_path, "r") as zip_file:
+            structure_json = zip_file.read("structure.json").decode("utf-8")
+            styles_json = zip_file.read("styles.json").decode("utf-8")
+            manifest_json = zip_file.read("manifest.json").decode("utf-8")
 
             # Collect assets
             assets: dict[str, bytes] = {}
-            for file_info in zf.filelist:
+            for file_info in zip_file.filelist:
                 if file_info.filename.startswith("assets/"):
-                    assets[file_info.filename] = zf.read(file_info.filename)
+                    assets[file_info.filename] = zip_file.read(file_info.filename)
 
         # Parse new content into blocks
         new_blocks = _parse_markdown_to_blocks(new_content)
@@ -223,15 +223,15 @@ class SidedocPipeline(BasePipeline):
         manifest_data["content_hash"] = _compute_content_hash(new_content)
 
         # Rewrite archive
-        with zipfile.ZipFile(self._sidedoc_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("content.md", new_content)
-            zf.writestr("structure.json", json.dumps(structure_data, indent=2))
-            zf.writestr("styles.json", styles_json)
-            zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+        with zipfile.ZipFile(self._sidedoc_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("content.md", new_content)
+            zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
+            zip_file.writestr("styles.json", styles_json)
+            zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
             # Preserve assets
             for asset_path, asset_data in assets.items():
-                zf.writestr(asset_path, asset_data)
+                zip_file.writestr(asset_path, asset_data)
 
     def rebuild_document(
         self, content: str, original_path: Path, output_path: Path
@@ -254,9 +254,9 @@ class SidedocPipeline(BasePipeline):
 
             # Read structure and styles from sidedoc
             if self._sidedoc_path and self._sidedoc_path.exists():
-                with zipfile.ZipFile(self._sidedoc_path, "r") as zf:
-                    structure_data = json.loads(zf.read("structure.json").decode("utf-8"))
-                    styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+                with zipfile.ZipFile(self._sidedoc_path, "r") as zip_file:
+                    structure_data = json.loads(zip_file.read("structure.json").decode("utf-8"))
+                    styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
 
                 # Reconstruct old blocks from structure
                 old_blocks = [

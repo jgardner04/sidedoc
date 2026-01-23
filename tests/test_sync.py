@@ -591,11 +591,11 @@ def test_update_sidedoc_metadata_regenerates_structure() -> None:
             "generator": "sidedoc-cli/0.1.0",
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", old_content)
-            zf.writestr("structure.json", json.dumps(old_structure))
-            zf.writestr("styles.json", json.dumps(old_styles))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", old_content)
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps(old_styles))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
 
         # New content with edited blocks
         new_content = "# New Title\n\nNew paragraph."
@@ -625,8 +625,8 @@ def test_update_sidedoc_metadata_regenerates_structure() -> None:
         update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
 
         # Verify structure.json was updated
-        with zipfile.ZipFile(sidedoc_path, "r") as zf:
-            structure_data = json.loads(zf.read("structure.json"))
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            structure_data = json.loads(zip_file.read("structure.json"))
             assert len(structure_data["blocks"]) == 2
             assert structure_data["blocks"][0]["content_hash"] == compute_hash("# New Title")
             assert structure_data["blocks"][1]["content_hash"] == compute_hash("New paragraph.")
@@ -649,11 +649,11 @@ def test_update_sidedoc_metadata_updates_manifest_timestamp() -> None:
             "generator": "sidedoc-cli/0.1.0",
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", old_content)
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", old_content)
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
 
         # Update with new content
         new_content = "New content"
@@ -672,8 +672,8 @@ def test_update_sidedoc_metadata_updates_manifest_timestamp() -> None:
         update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
 
         # Verify manifest was updated
-        with zipfile.ZipFile(sidedoc_path, "r") as zf:
-            manifest_data = json.loads(zf.read("manifest.json"))
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            manifest_data = json.loads(zip_file.read("manifest.json"))
             # modified_at should be different from original
             assert manifest_data["modified_at"] != "2024-01-01T00:00:00+00:00"
             # created_at should remain unchanged
@@ -696,11 +696,11 @@ def test_update_sidedoc_metadata_updates_content_hash() -> None:
             "generator": "sidedoc-cli/0.1.0",
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", old_content)
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", old_content)
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
 
         new_content = "New content here"
         new_blocks = [
@@ -718,8 +718,8 @@ def test_update_sidedoc_metadata_updates_content_hash() -> None:
         update_sidedoc_metadata(str(sidedoc_path), new_blocks, new_content)
 
         # Verify content_hash was updated
-        with zipfile.ZipFile(sidedoc_path, "r") as zf:
-            manifest_data = json.loads(zf.read("manifest.json"))
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            manifest_data = json.loads(zip_file.read("manifest.json"))
             expected_hash = compute_hash("New content here")
             assert manifest_data["content_hash"] == expected_hash
             assert manifest_data["content_hash"] != compute_hash("Old content")
@@ -741,11 +741,11 @@ def test_update_sidedoc_metadata_preserves_styles() -> None:
             "document_defaults": {"font_name": "Arial", "font_size": 11},
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", "Old content")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps(old_styles))
-            zf.writestr("manifest.json", json.dumps({
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", "Old content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps(old_styles))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2024-01-01T00:00:00+00:00",
                 "modified_at": "2024-01-01T00:00:00+00:00",
@@ -770,8 +770,8 @@ def test_update_sidedoc_metadata_preserves_styles() -> None:
         update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
 
         # Verify styles were preserved
-        with zipfile.ZipFile(sidedoc_path, "r") as zf:
-            styles_data = json.loads(zf.read("styles.json"))
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            styles_data = json.loads(zip_file.read("styles.json"))
             assert styles_data == old_styles
 
 
@@ -955,13 +955,13 @@ def test_update_sidedoc_metadata_rejects_oversized_assets() -> None:
         # Create a modest-sized asset for testing (1KB)
         asset_data = b"X" * 1024
 
-        with zipfile.ZipFile(sidedoc_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("content.md", "Test content")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("content.md", "Test content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
             # Write asset
-            zf.writestr("assets/huge_image.png", asset_data)
+            zip_file.writestr("assets/huge_image.png", asset_data)
 
         # Attempt to update metadata with a low MAX_ASSET_SIZE limit
         new_blocks = [
@@ -1011,11 +1011,11 @@ def test_update_sidedoc_metadata_successful_no_tempfile_left() -> None:
             "generator": "sidedoc-cli/0.1.0",
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", "Old content")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", "Old content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
 
         # Update with new content
         new_blocks = [
@@ -1066,11 +1066,11 @@ def test_update_sidedoc_metadata_cleanup_on_error() -> None:
             "generator": "sidedoc-cli/0.1.0",
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", "Old content")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps(old_manifest))
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", "Old content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
 
         new_blocks = [
             Block(

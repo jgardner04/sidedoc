@@ -161,21 +161,21 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         assets_dir = Path(temp_dir) / "assets"
         assets_dir.mkdir(exist_ok=True)
 
-        with zipfile.ZipFile(sidedoc_path, "r") as zf:
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
             # Read content.md
-            content_md = zf.read("content.md").decode("utf-8")
+            content_md = zip_file.read("content.md").decode("utf-8")
 
             # Read styles.json
-            styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+            styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
 
             # Read structure.json
-            structure_data = json.loads(zf.read("structure.json").decode("utf-8"))
+            structure_data = json.loads(zip_file.read("structure.json").decode("utf-8"))
 
             # Extract assets if they exist
-            for file_info in zf.filelist:
+            for file_info in zip_file.filelist:
                 if file_info.filename.startswith("assets/"):
                     # Extract asset file
-                    zf.extract(file_info, temp_dir)
+                    zip_file.extract(file_info, temp_dir)
 
         # Parse markdown to blocks
         blocks = parse_markdown_to_blocks(content_md)

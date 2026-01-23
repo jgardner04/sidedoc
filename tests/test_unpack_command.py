@@ -13,11 +13,11 @@ def create_test_sidedoc() -> str:
     """Create a test .sidedoc file."""
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
 
-    with zipfile.ZipFile(temp_file.name, "w") as zf:
-        zf.writestr("content.md", "# Test\n\nContent")
-        zf.writestr("structure.json", json.dumps({"blocks": []}))
-        zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-        zf.writestr("manifest.json", json.dumps({
+    with zipfile.ZipFile(temp_file.name, "w") as zip_file:
+        zip_file.writestr("content.md", "# Test\n\nContent")
+        zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+        zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+        zip_file.writestr("manifest.json", json.dumps({
             "sidedoc_version": "1.0.0",
             "created_at": "2026-01-01T00:00:00Z",
             "modified_at": "2026-01-01T00:00:00Z",
@@ -80,11 +80,11 @@ def test_unpack_rejects_path_traversal_in_assets():
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
 
         # Create a malicious sidedoc with path traversal
-        with zipfile.ZipFile(temp_file.name, "w") as zf:
-            zf.writestr("content.md", "# Test\n\n![image](assets/../../etc/passwd)")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+        with zipfile.ZipFile(temp_file.name, "w") as zip_file:
+            zip_file.writestr("content.md", "# Test\n\n![image](assets/../../etc/passwd)")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2026-01-01T00:00:00Z",
                 "modified_at": "2026-01-01T00:00:00Z",
@@ -94,7 +94,7 @@ def test_unpack_rejects_path_traversal_in_assets():
                 "generator": "test"
             }))
             # Attempt to write outside assets directory
-            zf.writestr("assets/../../etc/passwd", "malicious content")
+            zip_file.writestr("assets/../../etc/passwd", "malicious content")
 
         temp_file.close()
         output_dir = "unpacked"
@@ -119,11 +119,11 @@ def test_unpack_rejects_absolute_paths():
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
 
         # Create a malicious sidedoc with absolute path
-        with zipfile.ZipFile(temp_file.name, "w") as zf:
-            zf.writestr("content.md", "# Test")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+        with zipfile.ZipFile(temp_file.name, "w") as zip_file:
+            zip_file.writestr("content.md", "# Test")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2026-01-01T00:00:00Z",
                 "modified_at": "2026-01-01T00:00:00Z",
@@ -133,7 +133,7 @@ def test_unpack_rejects_absolute_paths():
                 "generator": "test"
             }))
             # Attempt absolute path
-            zf.writestr("/tmp/malicious.txt", "malicious content")
+            zip_file.writestr("/tmp/malicious.txt", "malicious content")
 
         temp_file.close()
         output_dir = "unpacked"
@@ -155,11 +155,11 @@ def test_unpack_allows_valid_nested_paths():
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
 
         # Create a sidedoc with valid nested paths
-        with zipfile.ZipFile(temp_file.name, "w") as zf:
-            zf.writestr("content.md", "# Test")
-            zf.writestr("structure.json", json.dumps({"blocks": []}))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+        with zipfile.ZipFile(temp_file.name, "w") as zip_file:
+            zip_file.writestr("content.md", "# Test")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2026-01-01T00:00:00Z",
                 "modified_at": "2026-01-01T00:00:00Z",
@@ -169,7 +169,7 @@ def test_unpack_allows_valid_nested_paths():
                 "generator": "test"
             }))
             # Valid nested path in assets
-            zf.writestr("assets/images/photo.jpg", b"fake image data")
+            zip_file.writestr("assets/images/photo.jpg", b"fake image data")
 
         temp_file.close()
         output_dir = "unpacked"
