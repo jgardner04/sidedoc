@@ -4,11 +4,11 @@
 
 Sidedoc enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
 
-!!! info "Project Status: MVP Released"
+!!! info "Project Status: MVP Complete"
     **Current Version:** 0.1.0
-    **Status:** Core extract/build workflow functional with 55 passing tests
-    **What Works:** Extract docx → edit markdown → rebuild docx with formatting preserved
-    **Coming Soon:** Inline formatting (bold/italic), lists, images, sync command
+    **Status:** All MVP features implemented with 156 passing tests (84% coverage)
+    **What Works:** Extract, sync, diff, build — including inline formatting, lists, and images
+    **Coming Next:** Tables, hyperlinks, nested lists
 
 ## The Problem
 

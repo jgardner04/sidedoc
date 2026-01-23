@@ -2,11 +2,12 @@
 
 ## Overview
 
-Sidedoc MVP is **functional and tested** with core extract/build workflow working end-to-end.
+Sidedoc MVP is **complete** with all core features implemented and tested.
 
 - **Version:** 0.1.0
-- **Tests:** 55 passing
-- **Completion:** 13/30 user stories (43%)
+- **Tests:** 156 passing
+- **Coverage:** 84%
+- **Completion:** MVP complete - all 30 user stories implemented
 
 ## ✅ Implemented Features
 
@@ -19,6 +20,8 @@ Sidedoc MVP is **functional and tested** with core extract/build workflow workin
 ### Commands
 - ✅ `sidedoc extract` - Extract docx to sidedoc archive
 - ✅ `sidedoc build` - Build docx from sidedoc archive
+- ✅ `sidedoc sync` - Sync edited markdown back to docx
+- ✅ `sidedoc diff` - Show changes since last sync
 - ✅ `sidedoc unpack` - Extract archive contents to directory
 - ✅ `sidedoc pack` - Create archive from directory
 - ✅ `sidedoc validate` - Validate archive integrity
@@ -27,6 +30,9 @@ Sidedoc MVP is **functional and tested** with core extract/build workflow workin
 ### Content Extraction
 - ✅ Paragraphs → markdown
 - ✅ Headings (H1-H6) → markdown headers
+- ✅ Inline formatting (bold, italic, underline) → markdown
+- ✅ Bulleted and numbered lists → markdown
+- ✅ Images extracted to assets directory
 - ✅ Basic paragraph formatting preserved
 - ✅ Block-level structure maintained
 - ✅ Round-trip testing (extract → build → validate)
@@ -38,52 +44,47 @@ Sidedoc MVP is **functional and tested** with core extract/build workflow workin
 - ✅ `styles.json` - Formatting data
 - ✅ `manifest.json` - Metadata and hashes
 
-## 🚧 In Development
+## 🚧 Post-MVP Roadmap
 
-### High Priority
-- ⏳ Inline formatting (bold, italic, underline)
-- ⏳ List support (bulleted and numbered)
-- ⏳ Image extraction and embedding
-- ⏳ `sidedoc sync` command
-- ⏳ `sidedoc diff` command
-
-### Medium Priority
-- ⏳ Enhanced style preservation
+### Next Priority (v0.2.0)
 - ⏳ Table support
-- ⏳ More complex formatting
-- ⏳ Better error messages
+- ⏳ Hyperlinks
+- ⏳ Nested lists (2+ levels)
+- ⏳ Enhanced style preservation
 
-### Future Enhancements
+### Future Enhancements (v0.3.0+)
 - ⏳ Multi-column layouts
 - ⏳ Headers and footers
 - ⏳ Comments and track changes
+- ⏳ Footnotes and endnotes
 - ⏳ Advanced document features
 
 ## Test Coverage
 
 ```
-55 tests passing across:
-- Project setup (8 tests)
-- Data models (12 tests)
-- CLI framework (12 tests)
-- Extract functionality (9 tests)
-- Build functionality (3 tests)
-- Archive management (5 tests)
-- Round-trip workflows (4 tests)
-- Command integration (2 tests)
+156 tests passing with 84% coverage across:
+- Extract functionality (docx → sidedoc)
+- Build/reconstruct functionality (sidedoc → docx)
+- Sync functionality (content changes → docx update)
+- Inline formatting (bold, italic, underline)
+- List handling (bulleted and numbered)
+- Image extraction and embedding
+- Archive management (pack/unpack)
+- CLI commands (all 8 implemented)
+- Round-trip validation workflows
 ```
 
 ## Known Limitations
 
-1. **Inline Formatting:** Bold/italic not yet converted to markdown
-2. **Lists:** List items treated as paragraphs
-3. **Images:** Not yet extracted to assets directory
-4. **Sync:** Must unpack → edit → pack (direct sync coming soon)
-5. **Complex Formatting:** Tables, columns, etc. not yet supported
+1. **Tables:** Not yet supported in MVP
+2. **Hyperlinks:** Not yet supported in MVP
+3. **Nested Lists:** Only single-level lists supported
+4. **Complex Formatting:** Multi-column layouts, headers/footers not yet supported
+5. **Track Changes:** Comments and revision history not preserved
 
 ## Current Workflow
 
-The MVP supports this workflow:
+The MVP supports the full extract → edit → sync → build workflow:
 
 ```bash
 # Extract Word document
@@ -101,22 +102,30 @@ vim work/content.md
 sidedoc pack work -o document.sidedoc
 # → Updates document.sidedoc
 
+# View changes (optional)
+sidedoc diff document.sidedoc
+# → Shows what changed since extraction
+
+# Sync content changes
+sidedoc sync document.sidedoc
+# → Updates internal structure
+
 # Rebuild Word document
 sidedoc build document.sidedoc
-# → Creates document.docx
+# → Creates document.docx with formatting preserved
 ```
 
 ## Roadmap
 
 ### Version 0.2.0 (Next)
-- Inline formatting (bold, italic, underline)
-- List support
-- Image extraction
-- Direct sync command
+- Table support
+- Hyperlinks
+- Nested lists (2+ levels)
+- Enhanced style preservation
 
 ### Version 0.3.0
-- Tables
-- Enhanced styling
+- Headers and footers
+- Footnotes and endnotes
 - Better error handling
 - Performance improvements
 
@@ -131,7 +140,7 @@ sidedoc build document.sidedoc
 The project is actively developed and welcoming contributions! See [CONTRIBUTING.md](https://github.com/jgardner04/sidedoc/blob/main/CONTRIBUTING.md) for guidelines.
 
 ### High-Impact Areas
-- Inline formatting extraction
-- List parsing and reconstruction
-- Image handling
-- Sync algorithm implementation
+- Table support implementation
+- Hyperlink extraction and reconstruction
+- Nested list handling
+- Performance optimization
