@@ -38,6 +38,10 @@ Changes to either propagate to the other.
 
     **Human + AI Friendly:** AI works with clean markdown; humans get familiar Word documents
 
+## Prove It Yourself
+
+Run the [Benchmark Suite](benchmarks.md) to measure token efficiency, format fidelity, and cost savings on your own documents. Compare Sidedoc against Pandoc, raw DOCX extraction, and Azure Document Intelligence.
+
 ## Quick Example
 
 ```bash
