@@ -10,6 +10,7 @@ from pathlib import Path
 
 from docx import Document
 
+from benchmarks.metrics.token_counter import TokenCounter
 from benchmarks.pipelines.base import BasePipeline, PipelineResult
 
 
@@ -27,6 +28,7 @@ class RawDocxPipeline(BasePipeline):
     def __init__(self) -> None:
         """Initialize the Raw DOCX pipeline."""
         self._current_content: str = ""
+        self._token_counter = TokenCounter()
 
     def extract_content(self, document_path: Path) -> str:
         """Extract text content from a document using python-docx.
@@ -81,8 +83,8 @@ class RawDocxPipeline(BasePipeline):
         start_time = time.time()
         elapsed = time.time() - start_time
 
-        # Calculate token counts for reference
-        input_tokens = len(content) // 4
+        # Calculate token counts using proper tokenizer
+        input_tokens = self._token_counter.count_tokens(content)
         output_tokens = 0  # No output generated
 
         return PipelineResult(

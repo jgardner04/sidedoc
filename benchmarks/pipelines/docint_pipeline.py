@@ -11,6 +11,7 @@ from typing import Optional, Any
 
 from docx import Document
 
+from benchmarks.metrics.token_counter import TokenCounter
 from benchmarks.pipelines.base import BasePipeline, PipelineResult
 
 
@@ -53,6 +54,7 @@ class DocIntelPipeline(BasePipeline):
         self._current_content: str = ""
         self._client: Optional[Any] = None
         self._api_cost: float = 0.0
+        self._token_counter = TokenCounter()
 
         # Initialize the client lazily to avoid import errors when credentials not needed
         self._init_client()
@@ -150,8 +152,8 @@ class DocIntelPipeline(BasePipeline):
 
             elapsed = time.time() - start_time
 
-            # Calculate token counts
-            input_tokens = len(content) // 4
+            # Calculate token counts using proper tokenizer
+            input_tokens = self._token_counter.count_tokens(content)
             output_tokens = input_tokens
 
             return PipelineResult(

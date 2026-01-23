@@ -42,14 +42,42 @@ class FidelityScorer:
             Resolved absolute path.
 
         Raises:
-            ValueError: If path does not exist or is not a file.
+            ValueError: If path does not exist, is not a file, or is outside allowed directories.
         """
         resolved = path.resolve()
         if not resolved.exists():
             raise ValueError(f"Path does not exist: {resolved}")
         if not resolved.is_file():
             raise ValueError(f"Path is not a file: {resolved}")
+
+        # Whitelist allowed directories to prevent path traversal
+        benchmarks_dir = Path(__file__).parent.parent.resolve()
+        project_root = benchmarks_dir.parent
+        allowed_parents = [
+            benchmarks_dir,                          # benchmarks/
+            project_root / "tests",                  # tests/ (for fixtures)
+            Path(tempfile.gettempdir()).resolve(),   # temp files
+        ]
+        if not any(self._is_subpath(resolved, parent) for parent in allowed_parents):
+            raise ValueError(f"Path outside allowed directories: {resolved}")
+
         return resolved
+
+    def _is_subpath(self, path: Path, parent: Path) -> bool:
+        """Check if path is under parent directory.
+
+        Args:
+            path: Path to check.
+            parent: Parent directory to check against.
+
+        Returns:
+            True if path is under parent directory.
+        """
+        try:
+            path.relative_to(parent)
+            return True
+        except ValueError:
+            return False
 
     def score_structure(
         self, original_docx: Union[str, Path], rebuilt_docx: Union[str, Path]

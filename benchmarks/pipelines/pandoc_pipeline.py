@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pypandoc
 
+from benchmarks.metrics.token_counter import TokenCounter
 from benchmarks.pipelines.base import BasePipeline, PipelineResult
 
 
@@ -55,6 +56,7 @@ class PandocPipeline(BasePipeline):
     def __init__(self) -> None:
         """Initialize the Pandoc pipeline."""
         self._current_content: str = ""
+        self._token_counter = TokenCounter()
 
     def extract_content(self, document_path: Path) -> str:
         """Extract text content from a document using Pandoc.
@@ -122,8 +124,8 @@ class PandocPipeline(BasePipeline):
 
             elapsed = time.time() - start_time
 
-            # Calculate token counts (simple character-based approximation)
-            input_tokens = len(content) // 4
+            # Calculate token counts using proper tokenizer
+            input_tokens = self._token_counter.count_tokens(content)
             output_tokens = input_tokens
 
             return PipelineResult(

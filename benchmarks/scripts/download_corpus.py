@@ -5,10 +5,13 @@ to be used as the real-world test corpus for benchmarking Sidedoc against altern
 """
 
 import hashlib
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 # Public domain PDFs for the benchmark corpus
@@ -65,9 +68,13 @@ def verify_checksum(path: Path, expected: Optional[str]) -> bool:
         True if checksum matches or no checksum is configured.
     """
     if expected is None:
+        logger.warning(f"No checksum configured for {path.name} - skipping verification")
         return True
     actual = compute_sha256(path)
-    return actual == expected
+    if actual != expected:
+        logger.error(f"Checksum mismatch for {path.name}: expected {expected}, got {actual}")
+        return False
+    return True
 
 
 def download_file(
