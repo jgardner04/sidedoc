@@ -57,7 +57,7 @@ sidedoc build document.sidedoc
 # Creates: document.docx
 ```
 
-### Unpack for Editing (Current)
+### Unpack for Editing
 
 Extract the archive to edit the markdown:
 
@@ -67,37 +67,38 @@ sidedoc unpack document.sidedoc -o unpacked
 sidedoc pack unpacked -o document.sidedoc
 ```
 
-### Sync After Editing (Coming Soon)
+### Sync After Editing
 
-Future versions will support direct sync without unpacking:
+After editing content.md, sync the changes:
 
 ```bash
 sidedoc sync document.sidedoc
 ```
 
+### View Changes
+
+See what's changed since extraction:
+
+```bash
+sidedoc diff document.sidedoc
+```
+
 ## CLI Commands
 
-### ✅ Implemented
+All commands are implemented:
 
 | Command | Description |
 |---------|-------------|
 | `sidedoc extract <docx>` | Create sidedoc from docx |
 | `sidedoc build <sidedoc>` | Generate docx from sidedoc |
+| `sidedoc sync <sidedoc>` | Sync edited content back to docx |
+| `sidedoc diff <sidedoc>` | Show changes since last sync |
 | `sidedoc validate <sidedoc>` | Check sidedoc integrity |
 | `sidedoc info <sidedoc>` | Display sidedoc metadata |
 | `sidedoc unpack <sidedoc> -o <dir>` | Extract sidedoc contents to directory |
 | `sidedoc pack <dir> -o <sidedoc>` | Create sidedoc from directory |
 
-### 🚧 Coming Soon
-
-| Command | Description |
-|---------|-------------|
-| `sidedoc sync <sidedoc>` | Sync edited content back to docx |
-| `sidedoc diff <sidedoc>` | Show changes since last sync |
-
 ## Example Workflow
-
-### Current MVP Workflow
 
 ```bash
 # 1. Start with a formatted Word document
@@ -120,26 +121,17 @@ sidedoc unpack quarterly_report.sidedoc -o unpacked
 sidedoc pack unpacked -o quarterly_report.sidedoc
 # ✓ Packed to quarterly_report.sidedoc
 
-# 6. Rebuild for human consumption
+# 6. View changes (optional)
+sidedoc diff quarterly_report.sidedoc
+# Shows what changed since extraction
+
+# 7. Sync the changes
+sidedoc sync quarterly_report.sidedoc
+# ✓ Synced: 3 blocks modified, 1 block added
+
+# 8. Rebuild for human consumption
 sidedoc build quarterly_report.sidedoc -o quarterly_report_updated.docx
 # ✓ Built document: quarterly_report_updated.docx
 
-# 7. Open in Word - formatting preserved, content updated
-```
-
-### Future Workflow (with sync)
-
-```bash
-# Extract once
-sidedoc extract document.docx
-
-# Edit content.md inside the archive
-# ... make changes ...
-
-# Sync updates the docx automatically
-sidedoc sync document.sidedoc
-# ✓ Synced: 3 blocks modified, 1 block added
-
-# Build updated docx
-sidedoc build document.sidedoc
+# 9. Open in Word - formatting preserved, content updated
 ```
