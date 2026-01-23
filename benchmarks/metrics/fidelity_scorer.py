@@ -327,11 +327,15 @@ class FidelityScorer:
         soffice_cmd = None
         for path in soffice_paths:
             try:
-                subprocess.run(
+                result = subprocess.run(
                     [path, "--version"],
                     capture_output=True,
                     check=True,
                 )
+                # Verify output confirms this is actually LibreOffice
+                version_output = result.stdout.decode("utf-8", errors="ignore")
+                if "LibreOffice" not in version_output:
+                    continue
                 soffice_cmd = path
                 break
             except (subprocess.CalledProcessError, FileNotFoundError):
