@@ -73,8 +73,8 @@ def test_extract_creates_valid_zip_structure():
             assert result.exit_code == 0
 
             sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
-            with zipfile.ZipFile(sidedoc_path, "r") as zf:
-                names = zf.namelist()
+            with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+                names = zip_file.namelist()
 
                 # Check required files exist
                 assert "content.md" in names
@@ -96,8 +96,8 @@ def test_extract_creates_valid_manifest():
             assert result.exit_code == 0
 
             sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
-            with zipfile.ZipFile(sidedoc_path, "r") as zf:
-                manifest_data = json.loads(zf.read("manifest.json"))
+            with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+                manifest_data = json.loads(zip_file.read("manifest.json"))
 
                 # Check required fields
                 assert "sidedoc_version" in manifest_data

@@ -100,15 +100,15 @@ def _read_sidedoc_files(input_file: str) -> tuple[str, dict, dict]:
     import zipfile
     import json
 
-    with zipfile.ZipFile(input_file, "r") as zf:
+    with zipfile.ZipFile(input_file, "r") as zip_file:
         try:
-            content_md = zf.read("content.md").decode("utf-8")
+            content_md = zip_file.read("content.md").decode("utf-8")
         except KeyError:
             click.echo("Error: content.md not found in archive", err=True)
             sys.exit(EXIT_INVALID_FORMAT)
 
         try:
-            styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+            styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
         except KeyError:
             click.echo("Error: styles.json not found in archive", err=True)
             sys.exit(EXIT_INVALID_FORMAT)
@@ -117,7 +117,7 @@ def _read_sidedoc_files(input_file: str) -> tuple[str, dict, dict]:
             sys.exit(EXIT_INVALID_FORMAT)
 
         try:
-            old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+            old_structure = json.loads(zip_file.read("structure.json").decode("utf-8"))
         except KeyError:
             click.echo("Error: structure.json not found in archive", err=True)
             sys.exit(EXIT_INVALID_FORMAT)
@@ -220,8 +220,8 @@ def validate(input_file: str) -> None:
     import json
 
     try:
-        with zipfile.ZipFile(input_file, "r") as zf:
-            names = zf.namelist()
+        with zipfile.ZipFile(input_file, "r") as zip_file:
+            names = zip_file.namelist()
 
             required = ["content.md", "structure.json", "styles.json", "manifest.json"]
             missing = [f for f in required if f not in names]
@@ -232,7 +232,7 @@ def validate(input_file: str) -> None:
 
             for json_file in ["structure.json", "styles.json", "manifest.json"]:
                 try:
-                    json.loads(zf.read(json_file))
+                    json.loads(zip_file.read(json_file))
                 except json.JSONDecodeError as e:
                     click.echo(f"✗ Invalid JSON in {json_file}: {e}", err=True)
                     sys.exit(EXIT_INVALID_FORMAT)
@@ -258,8 +258,8 @@ def info(input_file: str) -> None:
     import json
 
     try:
-        with zipfile.ZipFile(input_file, "r") as zf:
-            manifest = json.loads(zf.read("manifest.json"))
+        with zipfile.ZipFile(input_file, "r") as zip_file:
+            manifest = json.loads(zip_file.read("manifest.json"))
 
             click.echo("Sidedoc Archive Information")
             click.echo("=" * 40)
@@ -292,8 +292,8 @@ def unpack(input_file: str, output: str) -> None:
         output_path = Path(output)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(input_file, "r") as zf:
-            for member in zf.namelist():
+        with zipfile.ZipFile(input_file, "r") as zip_file:
+            for member in zip_file.namelist():
                 if not is_safe_path(member, output_path):
                     click.echo(
                         f"Error: Archive contains invalid path that could lead to path traversal: {member}",
@@ -301,7 +301,7 @@ def unpack(input_file: str, output: str) -> None:
                     )
                     sys.exit(EXIT_INVALID_FORMAT)
 
-            zf.extractall(output_path)
+            zip_file.extractall(output_path)
 
         click.echo(f"✓ Unpacked to {output}")
         sys.exit(EXIT_SUCCESS)
@@ -343,11 +343,11 @@ def pack(input_dir: str, output: str) -> None:
                 sys.exit(EXIT_INVALID_FORMAT)
 
         output = ensure_sidedoc_extension(output)
-        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for file_path in input_path.rglob("*"):
                 if file_path.is_file():
                     arcname = str(file_path.relative_to(input_path))
-                    zf.write(file_path, arcname)
+                    zip_file.write(file_path, arcname)
 
         click.echo(f"✓ Packed to {output}")
         sys.exit(EXIT_SUCCESS)
@@ -367,15 +367,15 @@ def diff(input_file: str) -> None:
     import json
 
     try:
-        with zipfile.ZipFile(input_file, "r") as zf:
+        with zipfile.ZipFile(input_file, "r") as zip_file:
             try:
-                content_md = zf.read("content.md").decode("utf-8")
+                content_md = zip_file.read("content.md").decode("utf-8")
             except KeyError:
                 click.echo("Error: content.md not found in archive", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)
 
             try:
-                old_structure = json.loads(zf.read("structure.json").decode("utf-8"))
+                old_structure = json.loads(zip_file.read("structure.json").decode("utf-8"))
             except KeyError:
                 click.echo("Error: structure.json not found in archive", err=True)
                 sys.exit(EXIT_INVALID_FORMAT)

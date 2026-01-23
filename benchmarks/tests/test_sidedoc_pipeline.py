@@ -108,8 +108,8 @@ class TestSidedocPipeline:
 
         # Read the sidedoc archive and verify content.md was updated
         assert pipeline._sidedoc_path is not None
-        with zipfile.ZipFile(pipeline._sidedoc_path, "r") as zf:
-            content_md = zf.read("content.md").decode("utf-8")
+        with zipfile.ZipFile(pipeline._sidedoc_path, "r") as zip_file:
+            content_md = zip_file.read("content.md").decode("utf-8")
             assert edit_text in content_md
 
     def test_rebuild_document_creates_docx(self) -> None:

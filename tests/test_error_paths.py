@@ -116,34 +116,34 @@ def create_sidedoc_with_invalid_json(invalid_file: str) -> str:
     temp_sidedoc = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
     temp_sidedoc.close()
 
-    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zf:
+    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zip_file:
         # Add valid content.md
-        zf.writestr("content.md", "# Test Document\n\nSome content.")
+        zip_file.writestr("content.md", "# Test Document\n\nSome content.")
 
         # Add manifest.json (valid or invalid based on parameter)
         if invalid_file == "manifest.json":
-            zf.writestr("manifest.json", "{invalid json syntax")
+            zip_file.writestr("manifest.json", "{invalid json syntax")
         else:
             manifest = {
                 "version": "1.0",
                 "created_at": "2024-01-01T00:00:00",
                 "source_file": "test.docx"
             }
-            zf.writestr("manifest.json", json.dumps(manifest))
+            zip_file.writestr("manifest.json", json.dumps(manifest))
 
         # Add structure.json (valid or invalid based on parameter)
         if invalid_file == "structure.json":
-            zf.writestr("structure.json", "not valid json at all")
+            zip_file.writestr("structure.json", "not valid json at all")
         else:
             structure = {"blocks": [{"id": "block-0", "type": "heading", "content_hash": "abc123"}]}
-            zf.writestr("structure.json", json.dumps(structure))
+            zip_file.writestr("structure.json", json.dumps(structure))
 
         # Add styles.json (valid or invalid based on parameter)
         if invalid_file == "styles.json":
-            zf.writestr("styles.json", "[this is, broken json")
+            zip_file.writestr("styles.json", "[this is, broken json")
         else:
             styles = {"block-0": {"font_size": 14, "bold": False}}
-            zf.writestr("styles.json", json.dumps(styles))
+            zip_file.writestr("styles.json", json.dumps(styles))
 
     return temp_sidedoc.name
 
@@ -249,9 +249,9 @@ def create_incomplete_sidedoc(missing_file: str) -> str:
     temp_sidedoc = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
     temp_sidedoc.close()
 
-    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zf:
+    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zip_file:
         if missing_file != "content.md":
-            zf.writestr("content.md", "# Test Document\n\nSome content.")
+            zip_file.writestr("content.md", "# Test Document\n\nSome content.")
 
         if missing_file != "manifest.json":
             manifest = {
@@ -259,15 +259,15 @@ def create_incomplete_sidedoc(missing_file: str) -> str:
                 "created_at": "2024-01-01T00:00:00",
                 "source_file": "test.docx"
             }
-            zf.writestr("manifest.json", json.dumps(manifest))
+            zip_file.writestr("manifest.json", json.dumps(manifest))
 
         if missing_file != "structure.json":
             structure = {"blocks": [{"id": "block-0", "type": "heading", "content_hash": "abc123"}]}
-            zf.writestr("structure.json", json.dumps(structure))
+            zip_file.writestr("structure.json", json.dumps(structure))
 
         if missing_file != "styles.json":
             styles = {"block-0": {"font_size": 14, "bold": False}}
-            zf.writestr("styles.json", json.dumps(styles))
+            zip_file.writestr("styles.json", json.dumps(styles))
 
     return temp_sidedoc.name
 
@@ -689,14 +689,14 @@ def test_build_handles_write_errors():
     temp_sidedoc = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
     temp_sidedoc.close()
 
-    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zf:
-        zf.writestr("content.md", "# Test\n\nContent.")
+    with zipfile.ZipFile(temp_sidedoc.name, 'w') as zip_file:
+        zip_file.writestr("content.md", "# Test\n\nContent.")
         manifest = {"version": "1.0", "created_at": "2024-01-01T00:00:00", "source_file": "test.docx"}
-        zf.writestr("manifest.json", json.dumps(manifest))
+        zip_file.writestr("manifest.json", json.dumps(manifest))
         structure = {"blocks": [{"id": "block-0", "type": "heading", "content_hash": "abc123"}]}
-        zf.writestr("structure.json", json.dumps(structure))
+        zip_file.writestr("structure.json", json.dumps(structure))
         styles = {"block-0": {"font_size": 14}}
-        zf.writestr("styles.json", json.dumps(styles))
+        zip_file.writestr("styles.json", json.dumps(styles))
 
     try:
         # Try to write to an invalid/inaccessible location

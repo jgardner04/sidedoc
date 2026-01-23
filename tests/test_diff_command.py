@@ -44,12 +44,12 @@ def test_diff_command_shows_added_blocks() -> None:
         }
 
         # Create archive with OLD content in structure
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
             # Write NEW content (added paragraph)
-            zf.writestr("content.md", "# Title\n\nNew paragraph added.")
-            zf.writestr("structure.json", json.dumps(old_structure))
-            zf.writestr("styles.json", json.dumps(styles))
-            zf.writestr("manifest.json", json.dumps(manifest))
+            zip_file.writestr("content.md", "# Title\n\nNew paragraph added.")
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps(styles))
+            zip_file.writestr("manifest.json", json.dumps(manifest))
 
         # Run diff command
         result = runner.invoke(main, ["diff", str(sidedoc_path)])
@@ -94,12 +94,12 @@ def test_diff_command_shows_removed_blocks() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
             # New content has only 1 block (paragraph removed)
-            zf.writestr("content.md", "# Title")
-            zf.writestr("structure.json", json.dumps(old_structure))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+            zip_file.writestr("content.md", "# Title")
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2024-01-01T00:00:00+00:00",
                 "modified_at": "2024-01-01T00:00:00+00:00",
@@ -139,12 +139,12 @@ def test_diff_command_shows_modified_blocks() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
             # Modified content (different from what structure has)
-            zf.writestr("content.md", "Modified text.")
-            zf.writestr("structure.json", json.dumps(old_structure))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+            zip_file.writestr("content.md", "Modified text.")
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2024-01-01T00:00:00+00:00",
                 "modified_at": "2024-01-01T00:00:00+00:00",
@@ -204,11 +204,11 @@ def test_diff_command_no_changes() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zf:
-            zf.writestr("content.md", content)
-            zf.writestr("structure.json", json.dumps(old_structure))
-            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zf.writestr("manifest.json", json.dumps({
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", content)
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps({
                 "sidedoc_version": "1.0.0",
                 "created_at": "2024-01-01T00:00:00+00:00",
                 "modified_at": "2024-01-01T00:00:00+00:00",

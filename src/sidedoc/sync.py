@@ -365,16 +365,16 @@ def update_sidedoc_metadata(
         new_content: New markdown content
     """
     # Read existing files from archive
-    with zipfile.ZipFile(sidedoc_path, "r") as zf:
+    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
         # Read styles.json (preserve it)
-        styles_data = json.loads(zf.read("styles.json").decode("utf-8"))
+        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
 
         # Read old manifest to preserve some fields
-        old_manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        old_manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
 
         # Collect any assets (images) to preserve
         assets = {}
-        for file_info in zf.filelist:
+        for file_info in zip_file.filelist:
             if file_info.filename.startswith("assets/"):
                 # Validate asset size to prevent ZIP bomb attacks
                 if file_info.file_size > MAX_ASSET_SIZE:
@@ -383,7 +383,7 @@ def update_sidedoc_metadata(
                         f"({file_info.file_size} bytes > {MAX_ASSET_SIZE} bytes). "
                         "This may be a malicious ZIP bomb attack."
                     )
-                assets[file_info.filename] = zf.read(file_info.filename)
+                assets[file_info.filename] = zip_file.read(file_info.filename)
 
     # Generate new structure.json
     structure_data = {
@@ -423,16 +423,16 @@ def update_sidedoc_metadata(
         tmp_path = tmp.name
 
     try:
-        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
             # Write updated content and metadata
-            zf.writestr("content.md", new_content)
-            zf.writestr("structure.json", json.dumps(structure_data, indent=2))
-            zf.writestr("styles.json", json.dumps(styles_data, indent=2))
-            zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+            zip_file.writestr("content.md", new_content)
+            zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
+            zip_file.writestr("styles.json", json.dumps(styles_data, indent=2))
+            zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
             # Preserve assets
             for asset_path, asset_data in assets.items():
-                zf.writestr(asset_path, asset_data)
+                zip_file.writestr(asset_path, asset_data)
 
         # Replace original file with updated one
         Path(tmp_path).replace(sidedoc_path)

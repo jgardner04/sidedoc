@@ -86,13 +86,13 @@ def create_sidedoc_archive(
     }
 
     # Create ZIP archive
-    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("content.md", content_md)
-        zf.writestr("structure.json", json.dumps(structure_data, indent=2))
-        zf.writestr("styles.json", json.dumps(styles_data, indent=2))
-        zf.writestr("manifest.json", json.dumps(manifest_data, indent=2))
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("content.md", content_md)
+        zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
+        zip_file.writestr("styles.json", json.dumps(styles_data, indent=2))
+        zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
         # Preserve image assets from the original document
         if image_data:
             for filename, image_bytes in image_data.items():
-                zf.writestr(f"assets/{filename}", image_bytes)
+                zip_file.writestr(f"assets/{filename}", image_bytes)
