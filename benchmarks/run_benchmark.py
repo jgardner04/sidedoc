@@ -46,11 +46,18 @@ CORPUS_OPTIONS = ["synthetic", "real", "all"]
     default=None,
     help="Output path for results JSON (default: results/benchmark-{timestamp}.json)",
 )
+@click.option(
+    "--model",
+    type=str,
+    default="claude-sonnet-4-20250514",
+    help="LLM model identifier (default: claude-sonnet-4-20250514). Supports any LiteLLM-compatible model.",
+)
 def cli(
     pipeline: Optional[str],
     task: Optional[str],
     corpus: str,
     output: Optional[str],
+    model: str,
 ) -> None:
     """Run the Sidedoc benchmark suite.
 
@@ -85,6 +92,7 @@ def cli(
     click.echo(f"  Pipelines: {', '.join(pipelines_to_run)}")
     click.echo(f"  Tasks: {', '.join(tasks_to_run)}")
     click.echo(f"  Corpus: {corpus}")
+    click.echo(f"  Model: {model}")
     click.echo(f"  Output: {output_path}")
     click.echo()
 
@@ -93,6 +101,7 @@ def cli(
         pipelines=pipelines_to_run,
         tasks=tasks_to_run,
         corpus=corpus,
+        model=model,
     )
 
     results = executor.run()

@@ -1,10 +1,10 @@
 """Multi-turn edit task (US-020).
 
-This module provides the MultiTurnEditTask which uses the Anthropic API
+This module provides the MultiTurnEditTask which uses LiteLLM
 to apply multiple sequential edit instructions to document content.
 """
 
-import anthropic
+import litellm
 
 from benchmarks.tasks.base import BaseTask, TaskResult
 
@@ -12,8 +12,8 @@ from benchmarks.tasks.base import BaseTask, TaskResult
 class MultiTurnEditTask(BaseTask):
     """Task that applies multiple edit instructions sequentially.
 
-    Uses the Anthropic API (Claude) to process 3 rounds of edits.
-    Reads ANTHROPIC_API_KEY from environment.
+    Uses LiteLLM for unified access to multiple LLM providers.
+    Provider-specific API keys are read from environment variables.
     """
 
     def __init__(self, edit_instructions: list[str]) -> None:
@@ -23,9 +23,8 @@ class MultiTurnEditTask(BaseTask):
             edit_instructions: List of 3 edit instructions to apply sequentially.
         """
         self.edit_instructions = edit_instructions
-        self._client = anthropic.Anthropic()
 
-    def execute(self, content: str) -> TaskResult:
+    def execute(self, content: str, model: str) -> TaskResult:
         """Execute the multi-turn edit task on the given content.
 
         Applies each edit instruction sequentially, passing the output
@@ -33,6 +32,7 @@ class MultiTurnEditTask(BaseTask):
 
         Args:
             content: The document content to edit.
+            model: The LLM model identifier (e.g., 'claude-sonnet-4-20250514', 'ollama/llama3').
 
         Returns:
             TaskResult with final content and accumulated token counts.
@@ -50,8 +50,8 @@ class MultiTurnEditTask(BaseTask):
                     f"Return only the edited document, without explanation."
                 )
 
-                message = self._client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                response = litellm.completion(
+                    model=model,
                     max_tokens=4096,
                     messages=[
                         {
@@ -61,14 +61,14 @@ class MultiTurnEditTask(BaseTask):
                     ],
                 )
 
-                total_prompt_tokens += message.usage.input_tokens
-                total_completion_tokens += message.usage.output_tokens
+                # Accumulate token usage
+                if response.usage:
+                    total_prompt_tokens += response.usage.prompt_tokens or 0
+                    total_completion_tokens += response.usage.completion_tokens or 0
 
                 # Get the edited content for next round
-                if message.content:
-                    first_block = message.content[0]
-                    if hasattr(first_block, "text"):
-                        current_content = first_block.text
+                if response.choices and response.choices[0].message:
+                    current_content = response.choices[0].message.content or current_content
 
             return TaskResult(
                 prompt_tokens=total_prompt_tokens,

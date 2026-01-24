@@ -55,20 +55,20 @@ class TestMultiTurnEditTask:
         from benchmarks.tasks.base import TaskResult
         from benchmarks.tasks.edit_multiturn import MultiTurnEditTask
 
-        def mock_create(*args, **kwargs):
+        def mock_completion(*args, **kwargs):
             response = MagicMock()
-            response.content = [MagicMock(text="Edited content")]
-            response.usage.input_tokens = 100
-            response.usage.output_tokens = 50
+            mock_choice = MagicMock()
+            mock_choice.message.content = "Edited content"
+            response.choices = [mock_choice]
+            response.usage.prompt_tokens = 100
+            response.usage.completion_tokens = 50
             return response
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = mock_create
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = mock_completion
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            result = task.execute("Original content")
+            result = task.execute("Original content", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
 
@@ -78,22 +78,22 @@ class TestMultiTurnEditTask:
 
         call_count = 0
 
-        def mock_create(*args, **kwargs):
+        def mock_completion(*args, **kwargs):
             nonlocal call_count
             call_count += 1
             response = MagicMock()
-            response.content = [MagicMock(text=f"Edit round {call_count}")]
-            response.usage.input_tokens = 100
-            response.usage.output_tokens = 50
+            mock_choice = MagicMock()
+            mock_choice.message.content = f"Edit round {call_count}"
+            response.choices = [mock_choice]
+            response.usage.prompt_tokens = 100
+            response.usage.completion_tokens = 50
             return response
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = mock_create
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = mock_completion
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            task.execute("Content")
+            task.execute("Content", "claude-sonnet-4-20250514")
 
             assert call_count == 3
 
@@ -103,22 +103,22 @@ class TestMultiTurnEditTask:
 
         round_num = 0
 
-        def mock_create(*args, **kwargs):
+        def mock_completion(*args, **kwargs):
             nonlocal round_num
             round_num += 1
             response = MagicMock()
-            response.content = [MagicMock(text="Edited")]
-            response.usage.input_tokens = 100 * round_num
-            response.usage.output_tokens = 50 * round_num
+            mock_choice = MagicMock()
+            mock_choice.message.content = "Edited"
+            response.choices = [mock_choice]
+            response.usage.prompt_tokens = 100 * round_num
+            response.usage.completion_tokens = 50 * round_num
             return response
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = mock_create
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = mock_completion
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            result = task.execute("Content")
+            result = task.execute("Content", "claude-sonnet-4-20250514")
 
             # Total should be 100+200+300=600 input, 50+100+150=300 output
             assert result.prompt_tokens == 600
@@ -130,22 +130,22 @@ class TestMultiTurnEditTask:
 
         round_num = 0
 
-        def mock_create(*args, **kwargs):
+        def mock_completion(*args, **kwargs):
             nonlocal round_num
             round_num += 1
             response = MagicMock()
-            response.content = [MagicMock(text=f"After edit {round_num}")]
-            response.usage.input_tokens = 50
-            response.usage.output_tokens = 25
+            mock_choice = MagicMock()
+            mock_choice.message.content = f"After edit {round_num}"
+            response.choices = [mock_choice]
+            response.usage.prompt_tokens = 50
+            response.usage.completion_tokens = 25
             return response
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = mock_create
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = mock_completion
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            result = task.execute("Original")
+            result = task.execute("Original", "claude-sonnet-4-20250514")
 
             # Final result should be from round 3
             assert result.result_text == "After edit 3"
@@ -156,24 +156,24 @@ class TestMultiTurnEditTask:
 
         call_inputs = []
 
-        def mock_create(*args, **kwargs):
+        def mock_completion(*args, **kwargs):
             messages = kwargs.get("messages", [])
             if messages:
                 call_inputs.append(messages[0]["content"])
             response = MagicMock()
+            mock_choice = MagicMock()
             content = f"Output{len(call_inputs)}"
-            response.content = [MagicMock(text=content)]
-            response.usage.input_tokens = 50
-            response.usage.output_tokens = 25
+            mock_choice.message.content = content
+            response.choices = [mock_choice]
+            response.usage.prompt_tokens = 50
+            response.usage.completion_tokens = 25
             return response
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = mock_create
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = mock_completion
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            task.execute("Original")
+            task.execute("Original", "claude-sonnet-4-20250514")
 
             # Round 2 should receive Output1, Round 3 should receive Output2
             assert "Output1" in call_inputs[1]
@@ -184,13 +184,11 @@ class TestMultiTurnEditTask:
         from benchmarks.tasks.base import TaskResult
         from benchmarks.tasks.edit_multiturn import MultiTurnEditTask
 
-        with patch("benchmarks.tasks.edit_multiturn.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = Exception("API failed")
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_multiturn.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = Exception("API failed")
 
             task = MultiTurnEditTask(edit_instructions=["E1", "E2", "E3"])
-            result = task.execute("Content")
+            result = task.execute("Content", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
             assert result.error is not None

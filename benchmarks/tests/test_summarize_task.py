@@ -39,7 +39,7 @@ class TestSummarizeTask:
         assert task is not None
 
     def test_summarize_task_reads_api_key_from_env(self) -> None:
-        """Test that SummarizeTask reads ANTHROPIC_API_KEY from environment."""
+        """Test that SummarizeTask works when API key is set in environment."""
         from benchmarks.tasks.summarize import SummarizeTask
 
         # Task should not raise if API key is set
@@ -60,19 +60,19 @@ class TestSummarizeTask:
         from benchmarks.tasks.base import TaskResult
         from benchmarks.tasks.summarize import SummarizeTask
 
-        # Mock the Anthropic API response
+        # Mock the LiteLLM API response (OpenAI-compatible format)
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="- Point 1\n- Point 2\n- Point 3")]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_choice = MagicMock()
+        mock_choice.message.content = "- Point 1\n- Point 2\n- Point 3"
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
 
-        with patch("benchmarks.tasks.summarize.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.summarize.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SummarizeTask()
-            result = task.execute("Test document content")
+            result = task.execute("Test document content", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
             assert result.prompt_tokens == 100
@@ -84,21 +84,21 @@ class TestSummarizeTask:
         from benchmarks.tasks.summarize import SummarizeTask
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="- Summary")]
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 20
+        mock_choice = MagicMock()
+        mock_choice.message.content = "- Summary"
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 50
+        mock_response.usage.completion_tokens = 20
 
-        with patch("benchmarks.tasks.summarize.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.summarize.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SummarizeTask()
-            task.execute("Document content here")
+            task.execute("Document content here", "claude-sonnet-4-20250514")
 
             # Check that the API was called with summarization prompt
-            call_args = mock_client.messages.create.call_args
-            messages = call_args.kwargs.get("messages", call_args.args[0] if call_args.args else None)
+            call_args = mock_litellm.completion.call_args
+            messages = call_args.kwargs.get("messages", [])
 
             # Verify prompt mentions bullet points
             prompt_text = str(messages)
@@ -109,13 +109,11 @@ class TestSummarizeTask:
         from benchmarks.tasks.base import TaskResult
         from benchmarks.tasks.summarize import SummarizeTask
 
-        with patch("benchmarks.tasks.summarize.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = Exception("API Error")
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.summarize.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = Exception("API Error")
 
             task = SummarizeTask()
-            result = task.execute("Test content")
+            result = task.execute("Test content", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
             assert result.error is not None
@@ -126,21 +124,21 @@ class TestSummarizeTask:
         from benchmarks.tasks.summarize import SummarizeTask
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="- Summary")]
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 20
+        mock_choice = MagicMock()
+        mock_choice.message.content = "- Summary"
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 50
+        mock_response.usage.completion_tokens = 20
 
         test_content = "This is my unique test document content 12345"
 
-        with patch("benchmarks.tasks.summarize.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.summarize.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SummarizeTask()
-            task.execute(test_content)
+            task.execute(test_content, "claude-sonnet-4-20250514")
 
             # Check that content was passed to API
-            call_args = mock_client.messages.create.call_args
+            call_args = mock_litellm.completion.call_args
             call_str = str(call_args)
             assert "12345" in call_str or test_content in call_str

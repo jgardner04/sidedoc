@@ -1,10 +1,10 @@
 """Single-edit task (US-019).
 
-This module provides the SingleEditTask which uses the Anthropic API
+This module provides the SingleEditTask which uses LiteLLM
 to apply a single edit instruction to document content.
 """
 
-import anthropic
+import litellm
 
 from benchmarks.tasks.base import BaseTask, TaskResult
 
@@ -12,8 +12,8 @@ from benchmarks.tasks.base import BaseTask, TaskResult
 class SingleEditTask(BaseTask):
     """Task that applies a single edit instruction to document content.
 
-    Uses the Anthropic API (Claude) to process the edit.
-    Reads ANTHROPIC_API_KEY from environment.
+    Uses LiteLLM for unified access to multiple LLM providers.
+    Provider-specific API keys are read from environment variables.
     """
 
     def __init__(self, edit_instruction: str) -> None:
@@ -23,13 +23,13 @@ class SingleEditTask(BaseTask):
             edit_instruction: The instruction describing the edit to apply.
         """
         self.edit_instruction = edit_instruction
-        self._client = anthropic.Anthropic()
 
-    def execute(self, content: str) -> TaskResult:
+    def execute(self, content: str, model: str) -> TaskResult:
         """Execute the edit task on the given content.
 
         Args:
             content: The document content to edit.
+            model: The LLM model identifier (e.g., 'claude-sonnet-4-20250514', 'ollama/llama3').
 
         Returns:
             TaskResult with edited content and token counts.
@@ -42,8 +42,8 @@ class SingleEditTask(BaseTask):
                 f"Return only the edited document, without explanation."
             )
 
-            message = self._client.messages.create(
-                model="claude-sonnet-4-20250514",
+            response = litellm.completion(
+                model=model,
                 max_tokens=4096,
                 messages=[
                     {
@@ -54,14 +54,19 @@ class SingleEditTask(BaseTask):
             )
 
             result_text = ""
-            if message.content:
-                first_block = message.content[0]
-                if hasattr(first_block, "text"):
-                    result_text = first_block.text
+            if response.choices and response.choices[0].message:
+                result_text = response.choices[0].message.content or ""
+
+            # Get token usage from response
+            prompt_tokens = 0
+            completion_tokens = 0
+            if response.usage:
+                prompt_tokens = response.usage.prompt_tokens or 0
+                completion_tokens = response.usage.completion_tokens or 0
 
             return TaskResult(
-                prompt_tokens=message.usage.input_tokens,
-                completion_tokens=message.usage.output_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 result_text=result_text,
                 error=None,
             )

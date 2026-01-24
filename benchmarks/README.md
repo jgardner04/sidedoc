@@ -100,6 +100,42 @@ python -m benchmarks.run_benchmark --corpus synthetic
 python -m benchmarks.run_benchmark --pipeline sidedoc --task summarize --corpus synthetic
 ```
 
+### Selecting LLM Model
+
+Use the `--model` flag to specify which LLM to use. The benchmark uses [LiteLLM](https://docs.litellm.ai/) for unified access to multiple providers.
+
+```bash
+# Default: Claude Sonnet
+python -m benchmarks.run_benchmark --model claude-sonnet-4-20250514
+
+# OpenAI
+python -m benchmarks.run_benchmark --model gpt-4o
+
+# Local Ollama model (no API key needed)
+python -m benchmarks.run_benchmark --model ollama/llama3
+```
+
+#### Supported Providers
+
+| Provider | Model Format | API Key Variable |
+|----------|--------------|------------------|
+| Anthropic | `claude-sonnet-4-20250514`, `claude-opus-4-20250514` | `ANTHROPIC_API_KEY` |
+| OpenAI | `gpt-4o`, `gpt-4-turbo` | `OPENAI_API_KEY` |
+| Ollama | `ollama/llama3`, `ollama/mistral` | None (local) |
+| Google | `gemini/gemini-pro` | `GEMINI_API_KEY` |
+
+See [LiteLLM's provider list](https://docs.litellm.ai/docs/providers) for all supported models.
+
+#### Using Ollama for Local Development
+
+For fast iteration without API costs:
+
+1. Install Ollama: https://ollama.ai/download
+2. Pull a model: `ollama pull llama3`
+3. Run benchmark: `python -m benchmarks.run_benchmark --model ollama/llama3`
+
+**Note:** Token counts will differ between providers due to different tokenizers. The relative efficiency comparison (sidedoc vs docx) remains valid across all tokenizers. Use Anthropic models for official published benchmark numbers.
+
 ### Generating Reports
 
 After running a benchmark, generate a markdown report:
@@ -114,11 +150,13 @@ The following environment variables configure the benchmark:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | Yes* | API key for Claude (required for task execution) |
+| `ANTHROPIC_API_KEY` | Conditional* | API key for Claude models |
+| `OPENAI_API_KEY` | Conditional* | API key for OpenAI models |
+| `GEMINI_API_KEY` | Conditional* | API key for Google Gemini models |
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | No | Azure DI endpoint URL |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | No | Azure DI API key |
 
-*Required only if running actual LLM tasks (not for dry runs)
+*Only required for the corresponding provider. Local models (Ollama) require no API key.
 
 ### Setting Environment Variables
 
