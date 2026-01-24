@@ -1,0 +1,467 @@
+{
+  "project": "Sidedoc",
+  "branchName": "ralph/sidedoc-benchmark",
+  "description": "Benchmark suite proving Sidedoc's value proposition - token efficiency, format fidelity, and cost savings vs alternatives",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Set up benchmark project structure",
+      "description": "As a developer, I need the benchmark directory structure created so implementation can proceed.",
+      "acceptanceCriteria": [
+        "Create benchmarks/ directory with subdirectories: corpus/, pipelines/, tasks/, metrics/, results/",
+        "Create benchmarks/__init__.py files for Python package structure",
+        "Symlink corpus/synthetic/ to tests/fixtures/",
+        "Create corpus/real/ directory for converted documents",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Create benchmark requirements.txt",
+      "description": "As a developer, I need dependencies defined so the benchmark can be installed.",
+      "acceptanceCriteria": [
+        "Create benchmarks/requirements.txt with: pytest, click, python-docx, tiktoken, anthropic, azure-ai-formrecognizer, pypandoc, pdf2image, imagehash, Pillow",
+        "Pin versions for reproducibility",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Create corpus download script",
+      "description": "As a benchmark user, I need a script to download public domain PDFs for the test corpus.",
+      "acceptanceCriteria": [
+        "Create benchmarks/scripts/download_corpus.py",
+        "Downloads 5 PDFs: SEC 2024 AFR, GSA 2024 Annual, SSS FY2024 AFR, BMW Q3 2024, Coca-Cola earnings",
+        "Saves to benchmarks/corpus/real/pdfs/",
+        "Script is idempotent (skips existing files)",
+        "Uses requests library with proper headers",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Create PDF to DOCX conversion script",
+      "description": "As a benchmark user, I need PDFs converted to DOCX for testing.",
+      "acceptanceCriteria": [
+        "Create benchmarks/scripts/convert_corpus.py",
+        "Converts PDFs to DOCX using LibreOffice (soffice --convert-to docx)",
+        "Saves to benchmarks/corpus/real/",
+        "Checks for LibreOffice installation with helpful error",
+        "Script is idempotent (skips existing files)",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Create base pipeline interface",
+      "description": "As a developer, I need a common interface for all benchmark pipelines.",
+      "acceptanceCriteria": [
+        "Create benchmarks/pipelines/base.py with BasePipeline abstract class",
+        "Define abstract methods: extract_content(), apply_edit(), rebuild_document()",
+        "Define PipelineResult dataclass: input_tokens, output_tokens, time_elapsed, output_path, error",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement Sidedoc pipeline",
+      "description": "As a benchmark runner, I need the Sidedoc pipeline implemented.",
+      "acceptanceCriteria": [
+        "Create benchmarks/pipelines/sidedoc_pipeline.py with SidedocPipeline class",
+        "extract_content() uses sidedoc extract and reads content.md",
+        "apply_edit() modifies content.md in the sidedoc archive",
+        "rebuild_document() uses sidedoc sync and sidedoc build",
+        "Returns PipelineResult with metrics",
+        "Unit test verifies pipeline works with synthetic fixtures",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Implement Pandoc pipeline",
+      "description": "As a benchmark runner, I need the Pandoc pipeline implemented.",
+      "acceptanceCriteria": [
+        "Create benchmarks/pipelines/pandoc_pipeline.py with PandocPipeline class",
+        "extract_content() uses pypandoc to convert docx to markdown",
+        "apply_edit() modifies the markdown string",
+        "rebuild_document() uses pypandoc to convert markdown back to docx",
+        "Checks for pandoc binary with helpful error",
+        "Unit test verifies pipeline works with synthetic fixtures",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Implement Raw DOCX pipeline",
+      "description": "As a benchmark runner, I need the raw docx baseline pipeline.",
+      "acceptanceCriteria": [
+        "Create benchmarks/pipelines/raw_docx_pipeline.py with RawDocxPipeline class",
+        "extract_content() uses python-docx to extract all paragraph text",
+        "apply_edit() is a no-op (raw docx can't easily apply edits)",
+        "rebuild_document() returns None (baseline for comparison only)",
+        "Unit test verifies token counting works",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Implement Document Intelligence pipeline setup",
+      "description": "As a benchmark runner, I need the Azure Document Intelligence pipeline.",
+      "acceptanceCriteria": [
+        "Create benchmarks/pipelines/docint_pipeline.py with DocIntelPipeline class",
+        "Reads AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY from env",
+        "Graceful error if Azure credentials not configured",
+        "extract_content() uses azure-ai-formrecognizer to analyze document",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Implement Document Intelligence extraction and rebuild",
+      "description": "As a benchmark runner, I need Document Intelligence to extract and regenerate documents.",
+      "acceptanceCriteria": [
+        "extract_content() returns extracted text from Document Intelligence API",
+        "apply_edit() modifies the extracted text string",
+        "rebuild_document() creates new docx from edited text (loses formatting)",
+        "Returns api_cost in PipelineResult",
+        "Unit test with mocked Azure responses",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Implement token counter utility",
+      "description": "As a benchmark runner, I need accurate token counting.",
+      "acceptanceCriteria": [
+        "Create benchmarks/metrics/token_counter.py with TokenCounter class",
+        "count_tokens(text) uses tiktoken with cl100k_base encoding",
+        "Returns integer token count",
+        "Unit tests verify counts match expected values for sample texts",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Implement cost calculator",
+      "description": "As a benchmark runner, I need cost calculation for comparison.",
+      "acceptanceCriteria": [
+        "Create benchmarks/metrics/cost_calculator.py with CostCalculator class",
+        "calculate_llm_cost(input_tokens, output_tokens) computes Claude API cost",
+        "Uses configurable pricing (default: $0.003/1K input, $0.015/1K output)",
+        "calculate_docint_cost(pages) computes Document Intelligence cost (~$0.01/page)",
+        "Returns itemized breakdown dict and total",
+        "Unit tests verify calculations",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Implement format fidelity structural scorer",
+      "description": "As a benchmark runner, I need to score structural fidelity.",
+      "acceptanceCriteria": [
+        "Create benchmarks/metrics/fidelity_scorer.py with FidelityScorer class",
+        "score_structure(original_docx, rebuilt_docx) returns 0-100 score",
+        "Compares heading count, paragraph count, list item count",
+        "Returns 100 if all counts match, deducts points for differences",
+        "Unit tests with known good/bad document pairs",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Implement format fidelity style scorer",
+      "description": "As a benchmark runner, I need to score style preservation.",
+      "acceptanceCriteria": [
+        "Add score_styles(original_docx, rebuilt_docx) to FidelityScorer",
+        "Samples 10 random paragraphs and compares font name, font size, bold, italic",
+        "Returns 0-100 score based on match percentage",
+        "Unit tests with known styled documents",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Implement format fidelity visual scorer",
+      "description": "As a benchmark runner, I need visual diff scoring.",
+      "acceptanceCriteria": [
+        "Add score_visual(original_docx, rebuilt_docx) to FidelityScorer",
+        "Renders first page of each docx to PNG using pdf2image",
+        "Computes perceptual hash difference using imagehash",
+        "Returns 0-100 score (100 = identical)",
+        "Unit tests with identical and different documents",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Implement combined fidelity scorer",
+      "description": "As a benchmark runner, I need a combined fidelity score.",
+      "acceptanceCriteria": [
+        "Add score_total(original_docx, rebuilt_docx) to FidelityScorer",
+        "Computes weighted score: 0.3*structural + 0.3*style + 0.4*visual",
+        "Returns dict with individual scores and total",
+        "Unit tests verify weighting",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Create base task interface",
+      "description": "As a developer, I need a common interface for benchmark tasks.",
+      "acceptanceCriteria": [
+        "Create benchmarks/tasks/base.py with BaseTask abstract class",
+        "Define abstract method: execute(content: str) -> TaskResult",
+        "Define TaskResult dataclass: prompt_tokens, completion_tokens, result_text, error",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Implement summarization task",
+      "description": "As a benchmark runner, I need the summarization task.",
+      "acceptanceCriteria": [
+        "Create benchmarks/tasks/summarize.py with SummarizeTask class",
+        "Uses Anthropic API to send content with prompt: 'Summarize this document in 3-5 bullet points'",
+        "Returns TaskResult with token counts from API response",
+        "Reads ANTHROPIC_API_KEY from environment",
+        "Unit test verifies task execution (mocked API)",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Implement single-edit task",
+      "description": "As a benchmark runner, I need the single-edit task.",
+      "acceptanceCriteria": [
+        "Create benchmarks/tasks/edit_single.py with SingleEditTask class",
+        "Takes edit_instruction parameter in constructor",
+        "Sends content + instruction to Claude API",
+        "Returns TaskResult with edited content and token counts",
+        "Unit test verifies edit is applied (mocked API)",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Implement multi-turn edit task",
+      "description": "As a benchmark runner, I need the multi-turn task.",
+      "acceptanceCriteria": [
+        "Create benchmarks/tasks/edit_multiturn.py with MultiTurnEditTask class",
+        "Takes list of 3 edit instructions",
+        "Executes 3 rounds of edits sequentially",
+        "Returns TaskResult with total_prompt_tokens, total_completion_tokens, per_round_metrics",
+        "Unit test verifies all 3 rounds execute (mocked API)",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Create benchmark runner main entry point",
+      "description": "As a benchmark user, I need a CLI to run benchmarks.",
+      "acceptanceCriteria": [
+        "Create benchmarks/run_benchmark.py with click CLI",
+        "Default: runs all pipelines x all tasks x all documents",
+        "--pipeline flag filters to specific pipeline",
+        "--task flag filters to specific task",
+        "--corpus synthetic|real filters documents",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Implement benchmark execution loop",
+      "description": "As a benchmark user, I need the benchmark to run and collect results.",
+      "acceptanceCriteria": [
+        "run_benchmark.py iterates over pipelines, tasks, and documents",
+        "Displays progress during execution (click.echo)",
+        "Collects metrics from each pipeline/task/document combination",
+        "Handles errors gracefully without stopping entire benchmark",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Implement results JSON output",
+      "description": "As a benchmark user, I need results saved to JSON.",
+      "acceptanceCriteria": [
+        "Results saved to results/benchmark-{timestamp}.json",
+        "JSON includes: metadata (timestamp, pipelines, tasks, documents)",
+        "JSON includes: results array with pipeline, task, document, metrics",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Create report generator entry point",
+      "description": "As a benchmark user, I need to generate reports from results.",
+      "acceptanceCriteria": [
+        "Create benchmarks/generate_report.py with click CLI",
+        "Takes results JSON file as input",
+        "Outputs to results/report-{timestamp}.md",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Implement report executive summary section",
+      "description": "As a report reader, I need an executive summary.",
+      "acceptanceCriteria": [
+        "Report includes '## Executive Summary' section",
+        "Shows key finding: token reduction percentage vs alternatives",
+        "Shows format fidelity comparison",
+        "Shows cost savings comparison",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Implement report methodology section",
+      "description": "As a report reader, I need methodology documentation.",
+      "acceptanceCriteria": [
+        "Report includes '## Methodology' section",
+        "Lists test corpus (synthetic + real documents)",
+        "Lists pipelines compared",
+        "Lists tasks executed",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Implement report results tables",
+      "description": "As a report reader, I need detailed results tables.",
+      "acceptanceCriteria": [
+        "Report includes '## Results' section",
+        "Token efficiency table: pipeline x avg read/context/edit tokens",
+        "Format fidelity table: pipeline x structural/style/visual/total scores",
+        "Cost analysis table: pipeline x task x total costs",
+        "Tables formatted in Markdown",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-028",
+      "title": "Implement report conclusions section",
+      "description": "As a report reader, I need conclusions.",
+      "acceptanceCriteria": [
+        "Report includes '## Conclusions' section",
+        "Summarizes which pipeline performed best overall",
+        "Lists recommended use cases for Sidedoc",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-029",
+      "title": "Create benchmark README documentation",
+      "description": "As an external user, I need documentation to run the benchmark.",
+      "acceptanceCriteria": [
+        "Create benchmarks/README.md",
+        "Includes overview of what the benchmark measures",
+        "Lists prerequisites: Python 3.11+, Pandoc, LibreOffice, Azure credentials",
+        "Installation section with pip commands",
+        "Usage section with CLI examples",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-030",
+      "title": "Add troubleshooting and examples to README",
+      "description": "As an external user, I need troubleshooting help.",
+      "acceptanceCriteria": [
+        "README includes troubleshooting section for common issues",
+        "README includes example output or link to sample results",
+        "README includes environment variable documentation",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}

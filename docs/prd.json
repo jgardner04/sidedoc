@@ -1,520 +1,257 @@
 {
   "project": "Sidedoc",
-  "branchName": "ralph/sidedoc-mvp",
-  "description": "AI-native document format that separates content from formatting - Extract Word documents to markdown, preserve formatting, and sync changes",
+  "branchName": "ralph/hyperlink-support",
+  "description": "Add hyperlink support to Sidedoc - extract, preserve, and sync clickable links using markdown [text](url) syntax",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Set up project structure and dependencies",
-      "description": "As a developer, I need the Python package properly structured so development can proceed efficiently.",
+      "title": "Create hyperlinks test fixture",
+      "description": "As a developer, I need test fixtures with hyperlinks so that automated tests can verify the feature.",
       "acceptanceCriteria": [
-        "pyproject.toml configured with Python 3.11+ requirement",
-        "Dependencies: python-docx, mistune, PyYAML, click, pytest installed",
-        "Package structure matches specification (src/sidedoc/ layout)",
-        "README.md with project overview and installation instructions",
-        "LICENSE file (MIT)",
-        ".gitignore configured for Python projects",
-        "Typecheck passes with mypy configuration",
-        "`pip install -e .` installs package in development mode"
+        "Create tests/fixtures/hyperlinks.docx with various hyperlink scenarios",
+        "Include: simple link, multiple links per paragraph, formatted link text (bold link)",
+        "Include: links in headings, links in list items",
+        "Include: long URL (>100 chars), URL with special characters (?&=)",
+        "Document fixture contents in a comment block in test file",
+        "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-002",
-      "title": "Create data models for sidedoc format",
-      "description": "As a developer, I need data structures defined for blocks, styles, and manifest so the format is consistent across modules.",
+      "title": "Extract hyperlinks from docx paragraphs",
+      "description": "As an AI developer, I want hyperlinks extracted as markdown syntax so that I can read and process linked content efficiently.",
       "acceptanceCriteria": [
-        "models.py defines Block, Style, Manifest dataclasses",
-        "Block supports types: heading, paragraph, list, image",
-        "Style includes font_name, font_size, alignment, inline formatting",
-        "Manifest includes version, timestamps, source info, hashes",
-        "All models have proper type hints",
+        "Hyperlinks in docx paragraphs are extracted as [visible text](url) in content.md",
+        "Access hyperlinks via paragraph._element XML using w:hyperlink elements",
+        "Look up actual URL from document.part.rels using relationship ID",
+        "Multiple hyperlinks in a single paragraph are all extracted correctly",
+        "Unit tests verify extraction with hyperlinks.docx fixture",
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-003",
-      "title": "Implement CLI framework with click",
-      "description": "As a developer, I need a click-based CLI framework so all commands are accessible via the sidedoc command.",
+      "title": "Handle hyperlink URL encoding",
+      "description": "As a developer, I need URLs properly escaped so that markdown parsing works correctly.",
       "acceptanceCriteria": [
-        "cli.py implements click command group",
-        "`sidedoc --help` shows all available commands",
-        "`sidedoc --version` shows package version",
-        "Command stubs created: extract, build, sync, validate, info, unpack, pack, diff",
-        "Exit codes follow specification (0=success, 1=error, 2=not found, 3=invalid format, 4=sync conflict)",
+        "Parentheses in URLs are percent-encoded: url%28with%29parens",
+        "Spaces in URLs are percent-encoded: url%20with%20spaces",
+        "Special markdown characters in link text are escaped: [text with \\[brackets\\]](url)",
+        "Unicode characters in URLs are preserved or properly encoded",
+        "Unit tests cover URL encoding edge cases",
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Extract paragraphs and headings from docx",
-      "description": "As a developer, I need to parse docx paragraphs into markdown headings and paragraphs so content is AI-readable.",
+      "title": "Store hyperlink positions in structure.json",
+      "description": "As a developer, I need hyperlink positions tracked so that sync can map changes back correctly.",
       "acceptanceCriteria": [
-        "extract.py reads docx using python-docx",
-        "Heading 1-6 styles convert to markdown # through ######",
-        "Normal paragraphs convert to plain text with line breaks",
-        "Paragraph order preserved",
-        "Returns list of Block objects with content and indices",
-        "Typecheck passes",
-        "Unit test with simple docx confirms extraction"
+        "Add hyperlink entries to inline_formatting array in structure.json",
+        "Each hyperlink entry has: type='hyperlink', start, end, url",
+        "Positions are relative to paragraph content (not document)",
+        "Multiple hyperlinks in same paragraph each have separate entries",
+        "Unit tests verify structure.json contains hyperlink metadata",
+        "Typecheck passes"
       ],
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-005",
-      "title": "Extract inline formatting (bold, italic, underline)",
-      "description": "As a developer, I need bold, italic, and underline runs extracted correctly so formatting is preserved during round-trip.",
+      "title": "Store hyperlink formatting in styles.json",
+      "description": "As a developer, I need hyperlink formatting stored so that links maintain their appearance after round-trip.",
       "acceptanceCriteria": [
-        "Bold text in docx becomes `**bold**` in markdown",
-        "Italic text becomes `*italic*` in markdown",
-        "Underline preserved in styles.json (not in markdown)",
-        "Mixed formatting (bold+italic) handled correctly",
-        "structure.json records inline formatting positions",
-        "Typecheck passes",
-        "Unit test with various inline formatting combinations"
+        "Add is_hyperlink boolean to run entries in styles.json",
+        "Store hyperlink color (default Word blue is #0563C1)",
+        "Store underline style for hyperlinks",
+        "Runs within hyperlinks preserve their formatting (bold, italic)",
+        "Unit tests verify styles.json contains hyperlink formatting",
+        "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-006",
-      "title": "Extract lists (bulleted and numbered)",
-      "description": "As a developer, I need list extraction so docx lists become markdown lists.",
+      "title": "Reconstruct hyperlinks in docx from markdown",
+      "description": "As a user, I want hyperlinks in the rebuilt docx to be clickable so that the document functions as expected.",
       "acceptanceCriteria": [
-        "Bulleted lists convert to markdown `- item` format",
-        "Numbered lists convert to markdown `1. item` format",
-        "Single-level lists fully supported",
-        "Nested lists preserved but not editable (opaque handling)",
-        "List items become separate Block objects",
-        "Typecheck passes",
-        "Unit test with bulleted and numbered lists"
+        "Parse markdown [text](url) syntax during build",
+        "Create docx hyperlink elements with correct relationship IDs",
+        "Hyperlink text displays correctly in rebuilt document",
+        "Clicking the link opens the URL (verify manually or document in test)",
+        "Apply stored formatting from styles.json or use Word defaults (blue, underlined)",
+        "Unit tests verify hyperlinks appear in rebuilt docx XML",
+        "Typecheck passes"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-007",
-      "title": "Extract images to assets directory",
-      "description": "As a developer, I need images extracted so they can be referenced in markdown and reconstructed in docx.",
+      "title": "Handle hyperlinks in headings",
+      "description": "As a user, I want hyperlinks in headings to work correctly so that linked section titles are supported.",
       "acceptanceCriteria": [
-        "Images extracted to assets/ directory with unique names",
-        "content.md includes `![alt text](assets/imagename.png)` references",
-        "structure.json maps image blocks to docx paragraph indices",
-        "Supports common formats (PNG, JPG, GIF)",
-        "Image alt text preserved from docx",
-        "Typecheck passes",
-        "Unit test with document containing multiple images"
+        "Hyperlinks in H1-H6 headings extract correctly",
+        "Heading formatting is preserved alongside hyperlink",
+        "Hyperlinks in headings rebuild correctly",
+        "Unit tests cover hyperlinks in heading blocks",
+        "Typecheck passes"
       ],
       "priority": 7,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-008",
-      "title": "Generate structure.json with block mappings",
-      "description": "As a developer, I need structure.json generated so blocks can be mapped back to docx paragraphs during sync.",
+      "title": "Handle hyperlinks in lists",
+      "description": "As a user, I want hyperlinks within list items to work correctly so that bulleted/numbered lists with references are supported.",
       "acceptanceCriteria": [
-        "structure.json contains blocks array with ids, types, content hashes",
-        "Each block records docx_paragraph_index",
-        "content_start and content_end positions in content.md",
-        "inline_formatting array for text runs",
-        "Content hashes computed using hashlib",
-        "Typecheck passes",
-        "Integration test confirms valid JSON structure"
+        "Hyperlinks in bulleted list items extract correctly",
+        "Hyperlinks in numbered list items extract correctly",
+        "Multiple hyperlinks in a single list item are handled",
+        "Hyperlinks rebuild correctly within list context",
+        "Unit tests verify list hyperlink handling",
+        "Typecheck passes"
       ],
       "priority": 8,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-009",
-      "title": "Generate styles.json with formatting data",
-      "description": "As a developer, I need styles.json generated so formatting can be preserved when rebuilding docx.",
+      "title": "Sync new hyperlinks from edited markdown",
+      "description": "As an AI agent, I want to add new hyperlinks via markdown and have them appear in the synced docx.",
       "acceptanceCriteria": [
-        "styles.json contains block_styles mapping block IDs to formatting",
-        "Each style records: docx_style, font_name, font_size, alignment",
-        "Run-level formatting (bold, italic, underline) recorded for text spans",
-        "document_defaults section with global font settings",
-        "Typecheck passes",
-        "Integration test confirms valid JSON structure"
+        "Adding [text](url) syntax in content.md creates new hyperlink in docx after sync",
+        "New hyperlinks use default formatting (blue #0563C1, underlined)",
+        "New hyperlinks are clickable in rebuilt docx",
+        "structure.json updated with new hyperlink positions",
+        "Unit tests verify new hyperlink sync",
+        "Typecheck passes"
       ],
       "priority": 9,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-010",
-      "title": "Generate manifest.json with metadata",
-      "description": "As a developer, I need manifest.json generated so sidedoc version and provenance is tracked.",
+      "title": "Sync modified hyperlinks",
+      "description": "As an AI agent, I want to modify hyperlink text or URLs and have those changes reflected in the synced docx.",
       "acceptanceCriteria": [
-        "manifest.json includes sidedoc_version (1.0.0)",
-        "Records created_at and modified_at timestamps (ISO 8601)",
-        "Records source_file name and source_hash (sha256)",
-        "Records content_hash of content.md",
-        "Records generator version (sidedoc-cli/0.1.0)",
-        "Typecheck passes",
-        "Integration test confirms valid JSON structure"
+        "Changing link text in markdown updates visible text in docx",
+        "Changing URL in markdown updates hyperlink target",
+        "Existing hyperlink formatting is preserved where possible",
+        "Unit tests verify modified hyperlink sync",
+        "Typecheck passes"
       ],
       "priority": 10,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-011",
-      "title": "Package extracted files into ZIP archive",
-      "description": "As a developer, I need extracted content packaged as .sidedoc ZIP so the format is complete.",
+      "title": "Sync removed hyperlinks",
+      "description": "As an AI agent, I want to remove hyperlinks by removing markdown syntax and have the text remain as plain text.",
       "acceptanceCriteria": [
-        "ZIP archive created with .sidedoc extension",
-        "Contains: content.md, structure.json, styles.json, manifest.json",
-        "Contains assets/ directory with images",
-        "Uses Python zipfile module",
-        "Typecheck passes",
-        "Integration test confirms ZIP structure"
+        "Removing [text](url) syntax but keeping 'text' removes hyperlink",
+        "Plain text remains in docx at same position",
+        "Plain text uses paragraph's base formatting (not hyperlink blue)",
+        "Unit tests verify hyperlink removal sync",
+        "Typecheck passes"
       ],
       "priority": 11,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-012",
-      "title": "Implement sidedoc extract command",
-      "description": "As an AI developer, I want to extract a Word document into a sidedoc archive so that I can access its content as clean markdown while preserving formatting.",
+      "title": "Handle edge cases in hyperlink extraction",
+      "description": "As a developer, I need edge cases handled gracefully so that extraction doesn't fail on complex documents.",
       "acceptanceCriteria": [
-        "`sidedoc extract document.docx` creates `document.sidedoc` ZIP archive",
-        "Supports -o flag for custom output path",
-        "Clear error message if docx file not found",
-        "Success message shows output path",
-        "Exit code 0 on success, 2 if file not found",
-        "Typecheck passes",
-        "End-to-end test: extract sample docx, verify archive contents"
+        "Empty hyperlinks (no visible text) are skipped with warning",
+        "Hyperlinks with no URL are treated as plain text",
+        "Very long URLs (>2000 chars) are preserved correctly",
+        "Nested formatting within hyperlinks (bold link text) is preserved",
+        "Unit tests cover all edge cases",
+        "Typecheck passes"
       ],
       "priority": 12,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-013",
-      "title": "Implement sidedoc unpack command",
-      "description": "As a developer, I want to extract sidedoc contents to a directory so I can inspect and debug the internal structure.",
+      "title": "Validate hyperlinks in sidedoc",
+      "description": "As a user, I want validation to check hyperlink integrity so that I catch issues before building.",
       "acceptanceCriteria": [
-        "`sidedoc unpack document.sidedoc -o ./unpacked/` extracts all files",
-        "Creates output directory if it doesn't exist",
-        "Preserves directory structure (assets/ subfolder)",
-        "Clear error message if sidedoc file not found or invalid",
-        "Exit code 0 on success, 2 if not found, 3 if invalid",
-        "Typecheck passes",
-        "Test confirms unpacked contents match ZIP contents"
+        "sidedoc validate checks hyperlink positions in structure.json are valid",
+        "Validation passes for documents with valid hyperlinks",
+        "Clear error message if hyperlink position exceeds content length",
+        "Validation warns (non-blocking) for obviously malformed URLs",
+        "Unit tests cover validation scenarios",
+        "Typecheck passes"
       ],
       "priority": 13,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-014",
-      "title": "Parse content.md into Block objects",
-      "description": "As a developer, I need markdown parsing so content.md can be converted back to docx paragraphs.",
+      "title": "Round-trip integration test for hyperlinks",
+      "description": "As a developer, I need an integration test proving hyperlinks survive extract->build round-trip.",
       "acceptanceCriteria": [
-        "reconstruct.py parses markdown using mistune",
-        "Headings (# through ######) become heading blocks with level",
-        "Paragraphs become paragraph blocks",
-        "Lists (bulleted/numbered) become list blocks",
-        "Images (![alt](path)) become image blocks",
-        "Inline formatting (**bold**, *italic*) parsed",
-        "Typecheck passes",
-        "Unit test parses sample markdown correctly"
+        "Integration test: extract hyperlinks.docx, build new docx, compare",
+        "All hyperlinks present in rebuilt docx",
+        "Hyperlink URLs match original",
+        "Hyperlink visible text matches original",
+        "Test passes in CI",
+        "Typecheck passes"
       ],
       "priority": 14,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-015",
-      "title": "Create docx document with python-docx",
-      "description": "As a developer, I need docx document creation so blocks can be written as paragraphs.",
+      "title": "Update README with hyperlink support",
+      "description": "As a user, I want documentation updated so that I understand hyperlink support is available.",
       "acceptanceCriteria": [
-        "reconstruct.py creates new Document using python-docx",
-        "Heading blocks written with Heading 1-6 styles",
-        "Paragraph blocks written with Normal style",
-        "List blocks written with appropriate list formatting",
-        "Empty docx validates and can be opened in Word",
-        "Typecheck passes",
-        "Unit test creates simple docx"
+        "README.md 'Supported Elements' table includes Hyperlinks row",
+        "Show markdown syntax: [text](url)",
+        "Note any limitations (no mailto, no internal anchors)",
+        "Typecheck passes"
       ],
       "priority": 15,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-016",
-      "title": "Apply styles from styles.json when building docx",
-      "description": "As a developer, I need style application so rebuilt docx matches original formatting.",
+      "title": "Update docs site with hyperlink feature",
+      "description": "As a potential user, I want the docs site updated so that I know Sidedoc supports hyperlinks.",
       "acceptanceCriteria": [
-        "Font name and size applied from styles.json",
-        "Paragraph alignment applied (left/center/right)",
-        "Inline formatting (bold, italic, underline) applied to runs",
-        "Document defaults applied to paragraphs without specific styles",
-        "Typecheck passes",
-        "Integration test: build docx from sidedoc, verify formatting preserved"
+        "Docs site Features page lists hyperlink support",
+        "Format Specification page documents hyperlink handling in structure.json and styles.json",
+        "Include example showing hyperlink extraction and reconstruction",
+        "Docs site builds without errors",
+        "Typecheck passes"
       ],
       "priority": 16,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-017",
-      "title": "Embed images from assets in docx",
-      "description": "As a developer, I need image embedding so rebuilt docx contains original images.",
-      "acceptanceCriteria": [
-        "Images read from assets/ directory",
-        "Images embedded at correct paragraph positions using structure.json",
-        "Image alt text preserved",
-        "Inline positioning (not floating)",
-        "Missing images produce clear error",
-        "Typecheck passes",
-        "Integration test: build docx with images, verify images present"
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-018",
-      "title": "Implement sidedoc build command",
-      "description": "As a user, I want to reconstruct a Word document from a sidedoc archive so that humans can view and edit the document with formatting intact.",
-      "acceptanceCriteria": [
-        "`sidedoc build document.sidedoc` creates `document.docx`",
-        "Supports -o flag for custom output path",
-        "Clear error message if sidedoc file not found or invalid",
-        "Success message shows output path",
-        "Generated docx opens successfully in Microsoft Word",
-        "Exit code 0 on success, 2 if not found, 3 if invalid",
-        "Typecheck passes",
-        "End-to-end test: build from sample sidedoc, verify docx opens"
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-019",
-      "title": "Implement round-trip test suite",
-      "description": "As a developer, I need round-trip tests to verify extract \u2192 build produces visually identical docx.",
-      "acceptanceCriteria": [
-        "test_roundtrip.py extracts sample docx to sidedoc",
-        "Builds docx from sidedoc",
-        "Compares paragraph count, heading styles, text content",
-        "Compares formatting (fonts, sizes, bold/italic)",
-        "Compares image count and positions",
-        "Test fixtures: simple doc, lists doc, formatted doc, images doc",
-        "All tests pass",
-        "Typecheck passes"
-      ],
-      "priority": 19,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-020",
-      "title": "Implement block matching algorithm for sync",
-      "description": "As a developer, I need block matching so sync can identify unchanged, modified, added, and deleted blocks.",
-      "acceptanceCriteria": [
-        "sync.py computes content hashes for blocks in edited content.md",
-        "Matches blocks by hash (unchanged)",
-        "Matches blocks by type and position (likely edited)",
-        "Identifies new blocks (no match)",
-        "Identifies deleted blocks (in old structure.json but not new content)",
-        "Returns mapping of old block IDs to new blocks",
-        "Typecheck passes",
-        "Unit test with various edit scenarios"
-      ],
-      "priority": 20,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-021",
-      "title": "Generate updated docx during sync",
-      "description": "As a developer, I need sync to generate updated docx so content changes are reflected.",
-      "acceptanceCriteria": [
-        "Creates new docx with blocks from edited content.md",
-        "Matched blocks preserve formatting from styles.json",
-        "New blocks receive default formatting based on type",
-        "Deleted blocks omitted",
-        "Inline formatting from markdown applied",
-        "Typecheck passes",
-        "Integration test: edit content.md, sync, verify docx updated"
-      ],
-      "priority": 21,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-022",
-      "title": "Update structure.json and manifest.json during sync",
-      "description": "As a developer, I need metadata updated during sync so sidedoc reflects current state.",
-      "acceptanceCriteria": [
-        "Regenerate structure.json with new block mappings and content hashes",
-        "Update manifest.json modified_at timestamp",
-        "Update manifest.json content_hash",
-        "Repackage sidedoc ZIP with updated files",
-        "Typecheck passes",
-        "Integration test: sync updates metadata correctly"
-      ],
-      "priority": 22,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-023",
-      "title": "Implement sidedoc sync command",
-      "description": "As an AI agent, I want to edit content.md and sync changes back to docx so that content updates preserve existing formatting.",
-      "acceptanceCriteria": [
-        "`sidedoc sync document.sidedoc` detects changes in content.md",
-        "Updates internal docx representation in sidedoc",
-        "Can optionally build updated docx with -o flag",
-        "Clear error message if markdown syntax invalid",
-        "Clear error message if referenced images missing",
-        "Exit code 0 on success, 4 on sync conflict",
-        "Typecheck passes",
-        "End-to-end test: extract, edit content.md, sync, verify changes"
-      ],
-      "priority": 23,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-024",
-      "title": "Implement sidedoc validate command",
-      "description": "As a user, I want to validate a sidedoc archive to ensure it's well-formed and complete.",
-      "acceptanceCriteria": [
-        "`sidedoc validate document.sidedoc` checks ZIP structure",
-        "Verifies presence of required files (content.md, structure.json, styles.json, manifest.json)",
-        "Validates JSON schema compliance",
-        "Checks content hashes match actual content",
-        "Verifies all referenced assets exist in assets/",
-        "Returns exit code 0 for valid, 3 with error messages for invalid",
-        "Typecheck passes",
-        "Test with valid and corrupted sidedoc files"
-      ],
-      "priority": 24,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-025",
-      "title": "Implement sidedoc info command",
-      "description": "As a user, I want to view sidedoc metadata to understand the document version, source, and modification history.",
-      "acceptanceCriteria": [
-        "`sidedoc info document.sidedoc` displays manifest.json contents",
-        "Shows sidedoc version, created/modified timestamps",
-        "Shows source file name and hash",
-        "Shows content hash and generator version",
-        "Output is human-readable and well-formatted",
-        "Exit code 0 on success, 2 if not found, 3 if invalid",
-        "Typecheck passes",
-        "Test with sample sidedoc confirms accurate display"
-      ],
-      "priority": 25,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-026",
-      "title": "Implement sidedoc pack command",
-      "description": "As a developer, I want to create a sidedoc archive from an unpacked directory so I can test manual edits to internal files.",
-      "acceptanceCriteria": [
-        "`sidedoc pack ./unpacked/ -o document.sidedoc` creates valid ZIP archive",
-        "Validates directory structure before packing",
-        "Validates JSON files are well-formed",
-        "Includes all required files",
-        "Exit code 0 on success, 3 if validation fails",
-        "Typecheck passes",
-        "Test confirms pack \u2192 unpack roundtrip preserves contents"
-      ],
-      "priority": 26,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-027",
-      "title": "Implement sidedoc diff command",
-      "description": "As a user, I want to see what changed in content.md since the last sync so I can review edits before applying them.",
-      "acceptanceCriteria": [
-        "`sidedoc diff document.sidedoc` shows markdown diff",
-        "Displays added, removed, and modified blocks",
-        "Uses clear formatting (colors if terminal supports, +/- markers)",
-        "Works even if content.md was edited externally",
-        "Exit code 0 on success",
-        "Typecheck passes",
-        "Test with various edit scenarios confirms accurate diff"
-      ],
-      "priority": 27,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-028",
-      "title": "Create comprehensive test fixtures",
-      "description": "As a developer, I need sample docx files covering all supported elements so tests can verify functionality.",
-      "acceptanceCriteria": [
-        "tests/fixtures/ directory created",
-        "simple.docx: headings and paragraphs only",
-        "lists.docx: bulleted and numbered lists",
-        "formatted.docx: bold, italic, mixed inline formatting",
-        "images.docx: document with multiple images",
-        "complex.docx: all supported elements combined",
-        "Typecheck passes",
-        "All fixture files open successfully in Word"
-      ],
-      "priority": 28,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-029",
-      "title": "Write comprehensive README documentation",
-      "description": "As a user, I need clear documentation so I can understand and use sidedoc effectively.",
-      "acceptanceCriteria": [
-        "README.md includes project overview and motivation",
-        "Installation instructions (pip install)",
-        "Usage examples for all CLI commands",
-        "Sample workflow showing extract \u2192 edit \u2192 sync \u2192 build",
-        "Supported document elements table",
-        "Links to format specification",
-        "Contributing guidelines",
-        "Typecheck passes"
-      ],
-      "priority": 29,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-030",
-      "title": "Create format specification document",
-      "description": "As a developer, I need detailed format specification so sidedoc can be implemented by others.",
-      "acceptanceCriteria": [
-        "docs/specification.md documents container structure",
-        "Includes JSON schema for structure.json, styles.json, manifest.json",
-        "Documents content.md markdown conventions",
-        "Documents block types and their properties",
-        "Documents sync algorithm at high level",
-        "Includes versioning strategy",
-        "Typecheck passes"
-      ],
-      "priority": 30,
-      "passes": true,
+      "passes": false,
       "notes": ""
     }
   ]

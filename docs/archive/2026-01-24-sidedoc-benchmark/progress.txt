@@ -1,0 +1,258 @@
+# Sidedoc Benchmark TDD Progress Log
+
+## Codebase Patterns
+- Use python-docx for all docx file operations
+- pytest for testing with fixtures in tests/fixtures/ and benchmarks/corpus/
+- All modules should have proper type hints and pass mypy typecheck
+- Use dataclasses for models and result types
+- Click framework for CLI with proper exit codes
+- Benchmark pipelines: Sidedoc, Document Intelligence, Pandoc, Raw DOCX
+- Benchmark tasks: Summarize, Single Edit, Multi-Turn Edit
+- Metrics: Token count (tiktoken), Format fidelity, Cost calculation
+
+---
+
+## US-001: Set up benchmark project structure
+- Created benchmarks/ directory with subdirs: corpus/, pipelines/, tasks/, metrics/, results/, scripts/
+- Created __init__.py files for Python package structure
+- Created symlink corpus/synthetic/ -> tests/fixtures/
+- Created corpus/real/ directory
+- All 6 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-002: Create benchmark requirements.txt
+- Created benchmarks/requirements.txt with pinned dependencies
+- Includes: pytest, click, python-docx, tiktoken, anthropic, azure-ai-formrecognizer, pypandoc, pdf2image, imagehash, Pillow, requests
+- All 3 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-003: Create corpus download script
+- Created benchmarks/scripts/download_corpus.py
+- Downloads 5 public domain PDFs (SEC, GSA, SSS, BMW, Coca-Cola)
+- Saves to benchmarks/corpus/real/pdfs/
+- Script is idempotent (skips existing files)
+- Uses requests library with proper headers
+- All 7 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-004: Create PDF to DOCX conversion script
+- Created benchmarks/scripts/convert_corpus.py
+- Converts PDFs to DOCX using LibreOffice (soffice --convert-to docx)
+- Saves to benchmarks/corpus/real/
+- Checks for LibreOffice installation with helpful error (LibreOfficeNotFoundError)
+- Script is idempotent (skips existing files)
+- All 7 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-005: Create base pipeline interface
+- Created benchmarks/pipelines/base.py
+- BasePipeline abstract class with abstract methods: extract_content(), apply_edit(), rebuild_document()
+- PipelineResult dataclass with fields: input_tokens, output_tokens, time_elapsed, output_path, error
+- All 8 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-006: Implement Sidedoc pipeline
+- Created benchmarks/pipelines/sidedoc_pipeline.py with SidedocPipeline class
+- extract_content() uses sidedoc extract and reads content.md
+- apply_edit() modifies content.md in the sidedoc archive
+- rebuild_document() uses sidedoc sync and build
+- Returns PipelineResult with metrics
+- All 11 tests pass with synthetic fixtures, mypy typecheck passes
+- Status: COMPLETE
+
+## US-007: Implement Pandoc pipeline
+- Created benchmarks/pipelines/pandoc_pipeline.py with PandocPipeline class
+- extract_content() uses pypandoc to convert docx to markdown
+- apply_edit() modifies the markdown string
+- rebuild_document() uses pypandoc to convert markdown back to docx
+- Checks for pandoc binary with helpful error (PandocNotFoundError)
+- All 10 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-008: Implement Raw DOCX pipeline
+- Created benchmarks/pipelines/raw_docx_pipeline.py with RawDocxPipeline class
+- extract_content() uses python-docx to extract all paragraph text
+- apply_edit() is a no-op (returns content unchanged)
+- rebuild_document() returns None output_path (baseline for comparison only)
+- Token counting works on extracted content
+- All 10 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-009 & US-010: Implement Document Intelligence pipeline
+- Created benchmarks/pipelines/docint_pipeline.py with DocIntelPipeline class
+- Reads AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and KEY from environment
+- Graceful error if Azure credentials not configured (AzureCredentialsNotFoundError)
+- extract_content() uses azure-ai-formrecognizer to analyze document
+- apply_edit() modifies the extracted text string
+- rebuild_document() creates new docx from edited text (loses formatting)
+- Returns api_cost via property
+- All 10 tests pass (mocked API), mypy typecheck passes
+- Status: COMPLETE
+
+## US-011: Implement token counter utility
+- Created benchmarks/metrics/token_counter.py with TokenCounter class
+- count_tokens(text) uses tiktoken with cl100k_base encoding
+- Returns integer token count
+- Handles empty strings, unicode, multiline text
+- All 10 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-012: Implement cost calculator
+- Created benchmarks/metrics/cost_calculator.py with CostCalculator class
+- calculate_llm_cost(input_tokens, output_tokens) computes Claude API cost
+- Default pricing: $0.003/1K input, $0.015/1K output
+- calculate_docint_cost(pages) computes Document Intelligence cost (~$0.01/page)
+- Returns itemized breakdown dict with individual costs and total
+- Configurable pricing via constructor parameters
+- All 11 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-013: Implement format fidelity structural scorer
+- Created benchmarks/metrics/fidelity_scorer.py with FidelityScorer class
+- score_structure(original_docx, rebuilt_docx) returns 0-100 score
+- Compares heading count, paragraph count, list item count
+- Uses penalty-based scoring: 40 pts headings, 40 pts paragraphs, 20 pts lists
+- Detects list items via style name and XML numPr element
+- All 102 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-014: Implement format fidelity style scorer
+- Added score_styles(original_docx, rebuilt_docx) to FidelityScorer
+- Samples up to 10 paragraphs and compares font name, font size, bold, italic
+- Returns 0-100 score based on match percentage (25% per attribute)
+- Uses fixed random seed (42) for reproducible sampling
+- Skips empty paragraphs, handles documents with varying paragraph counts
+- All 111 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-015: Implement format fidelity visual scorer
+- Added score_visual(original_docx, rebuilt_docx) to FidelityScorer
+- Converts docx to PDF via LibreOffice, then to PNG via pdf2image/Poppler
+- Computes perceptual hash (phash) difference using imagehash
+- Returns 0-100 score (100 = visually identical)
+- Tests skip when LibreOffice/Poppler not installed (graceful degradation)
+- Raises RuntimeError with clear message when dependencies missing
+- All 114 tests pass (4 skipped), mypy typecheck passes
+- Status: COMPLETE
+
+## US-016: Implement combined fidelity scorer
+- Added score_total(original_docx, rebuilt_docx) to FidelityScorer
+- Returns dict with structural, style, visual, and total scores
+- Uses weights: 0.3*structural + 0.3*style + 0.4*visual when visual available
+- Falls back to 0.5*structural + 0.5*style when visual scoring unavailable
+- Gracefully handles missing visual scoring dependencies
+- All 120 tests pass (4 skipped), mypy typecheck passes
+- Status: COMPLETE
+
+## US-017: Create base task interface
+- Created benchmarks/tasks/base.py with BaseTask abstract class
+- BaseTask has abstract execute(content: str) -> TaskResult method
+- TaskResult dataclass with prompt_tokens, completion_tokens, result_text, error
+- Cannot instantiate BaseTask directly (raises TypeError)
+- All 129 tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-018: Implement summarization task
+- Created benchmarks/tasks/summarize.py with SummarizeTask class
+- Uses Anthropic API to send content with prompt: 'Summarize in 3-5 bullet points'
+- Returns TaskResult with token counts from API response
+- Reads ANTHROPIC_API_KEY from environment (via anthropic.Anthropic client)
+- Handles API errors gracefully, returns error in TaskResult
+- All tests pass (mocked API), mypy typecheck passes
+- Status: COMPLETE
+
+## US-019: Implement single-edit task
+- Created benchmarks/tasks/edit_single.py with SingleEditTask class
+- Takes edit_instruction parameter in constructor
+- Sends content + instruction to Claude API
+- Returns TaskResult with edited content and token counts
+- All tests pass (mocked API), mypy typecheck passes
+- Status: COMPLETE
+
+## US-020: Implement multi-turn edit task
+- Created benchmarks/tasks/edit_multiturn.py with MultiTurnEditTask class
+- Takes list of 3 edit instructions
+- Executes 3 rounds sequentially, passing output as input to next round
+- Returns TaskResult with accumulated token counts and final content
+- All tests pass (mocked API), mypy typecheck passes
+- Status: COMPLETE
+
+## US-021: Create benchmark runner CLI
+- Created benchmarks/run_benchmark.py with click CLI
+- --pipeline flag to filter to specific pipeline (sidedoc, pandoc, raw_docx, docint)
+- --task flag to filter to specific task (summarize, edit_single, edit_multiturn)
+- --corpus flag for synthetic|real|all document filtering
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-022: Implement benchmark execution loop
+- Created benchmarks/benchmark_executor.py with BenchmarkExecutor class
+- Iterates over pipelines, tasks, and documents
+- Displays progress during execution (click.echo)
+- Collects metrics from each combination
+- Handles errors gracefully without stopping entire benchmark
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-023: Implement results JSON output
+- Results saved to results/benchmark-{timestamp}.json
+- JSON includes metadata (timestamp, pipelines, tasks, documents)
+- JSON includes results array with pipeline, task, document, metrics
+- Can be serialized and written to file
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-024: Create report generator entry point
+- Created benchmarks/generate_report.py with click CLI
+- Takes results JSON file as input argument
+- Outputs to results/report-{timestamp}.md
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-025: Implement report executive summary section
+- Report includes '## Executive Summary' section
+- Shows key finding: token reduction percentage vs alternatives
+- Shows format fidelity comparison
+- Shows cost savings comparison
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-026: Implement report methodology section
+- Report includes '## Methodology' section
+- Lists test corpus (synthetic + real documents)
+- Lists pipelines compared with descriptions
+- Lists tasks executed with descriptions
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-027: Implement report results tables
+- Report includes '## Results' section
+- Token efficiency table: pipeline x avg prompt/completion/total tokens
+- Cost analysis table: pipeline x estimated cost per doc
+- Tables formatted in Markdown
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-028: Implement report conclusions section
+- Report includes '## Conclusions' section
+- Summarizes which pipeline performed best overall
+- Lists recommended use cases for Sidedoc
+- All tests pass, mypy typecheck passes
+- Status: COMPLETE
+
+## US-029: Create benchmark README documentation
+- Created benchmarks/README.md
+- Includes overview of what the benchmark measures
+- Lists prerequisites: Python 3.11+, Pandoc, LibreOffice, Poppler
+- Installation section with pip commands
+- Usage section with CLI examples
+- All tests pass
+- Status: COMPLETE
+
+## US-030: Add troubleshooting and examples to README
+- README includes troubleshooting section for common issues
+- README includes examples for different use cases
+- README includes environment variable documentation
+- All tests pass
+- Status: COMPLETE
+
