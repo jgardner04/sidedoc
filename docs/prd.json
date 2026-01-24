@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixture created at tests/fixtures/hyperlinks.docx. Verified by test_extract_hyperlinks_fixture."
     },
     {
       "id": "US-002",
@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in extract.py. Tests: test_extract_simple_hyperlink, test_extract_multiple_hyperlinks, test_extract_hyperlinks_fixture."
     },
     {
       "id": "US-003",
@@ -48,8 +48,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_with_parentheses_in_url, test_extract_hyperlink_with_spaces_in_url, test_extract_hyperlink_with_special_chars_in_text."
     },
     {
       "id": "US-004",
@@ -64,8 +64,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_hyperlink_stores_position_in_inline_formatting, test_multiple_hyperlinks_store_positions."
     },
     {
       "id": "US-005",
@@ -80,8 +80,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Bold/italic formatting within hyperlinks preserved. Tests: test_extract_bold_hyperlink, test_extract_italic_hyperlink, test_reconstruct_bold_hyperlink, test_reconstruct_italic_hyperlink."
     },
     {
       "id": "US-006",
@@ -97,8 +97,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in reconstruct.py. Tests: test_reconstruct_simple_hyperlink, test_reconstruct_multiple_hyperlinks, test_reconstruct_hyperlink_in_heading."
     },
     {
       "id": "US-007",
@@ -112,8 +112,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_in_heading1, test_extract_hyperlink_in_heading2, test_reconstruct_hyperlink_in_heading."
     },
     {
       "id": "US-008",
@@ -128,8 +128,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_in_bullet_list, test_extract_hyperlink_in_numbered_list."
     },
     {
       "id": "US-009",
@@ -144,8 +144,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Test: test_sync_adds_new_hyperlinks."
     },
     {
       "id": "US-010",
@@ -159,8 +159,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Test: test_sync_modifies_hyperlink_url."
     },
     {
       "id": "US-011",
@@ -174,8 +174,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Test: test_sync_removes_hyperlinks."
     },
     {
       "id": "US-012",
@@ -190,8 +190,8 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_extract_empty_hyperlink_text, test_extract_hyperlink_with_no_url, test_extract_hyperlink_long_url, test_extract_bold_italic_hyperlink."
     },
     {
       "id": "US-013",
@@ -206,8 +206,8 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Test: test_validate_sidedoc_with_hyperlinks."
     },
     {
       "id": "US-014",
@@ -222,8 +222,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tests: test_roundtrip_preserves_hyperlinks, test_roundtrip_preserves_brackets_in_link_text."
     },
     {
       "id": "US-015",
@@ -236,8 +236,8 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "README.md updated with Hyperlinks row showing [text](url) syntax."
     },
     {
       "id": "US-016",
@@ -251,8 +251,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Updated index.md, format-specification.md, status.md, and faq.md with hyperlink documentation. Build passes with --strict flag."
     }
   ]
 }

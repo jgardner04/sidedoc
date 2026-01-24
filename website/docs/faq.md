@@ -117,6 +117,7 @@ The MVP focuses on the most common elements. Here's what's supported and what's 
     - Bulleted lists (single level)
     - Numbered lists (single level)
     - Images
+    - Hyperlinks (`[text](url)` syntax)
 
 !!! warning "Preserved but Not Editable"
     These elements are kept intact but editing them in markdown won't work correctly:
@@ -135,7 +136,6 @@ The MVP focuses on the most common elements. Here's what's supported and what's 
     - Track changes and comments
     - Text boxes and shapes
     - Charts
-    - Hyperlinks (coming post-MVP)
 
 ---
 

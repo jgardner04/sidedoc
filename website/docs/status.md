@@ -5,9 +5,9 @@
 Sidedoc MVP is **complete** with all core features implemented and tested.
 
 - **Version:** 0.1.0
-- **Tests:** 156 passing
+- **Tests:** 188 passing
 - **Coverage:** 84%
-- **Completion:** MVP complete - all 30 user stories implemented
+- **Completion:** MVP complete with hyperlink support
 
 ## ✅ Implemented Features
 
@@ -33,6 +33,7 @@ Sidedoc MVP is **complete** with all core features implemented and tested.
 - ✅ Inline formatting (bold, italic, underline) → markdown
 - ✅ Bulleted and numbered lists → markdown
 - ✅ Images extracted to assets directory
+- ✅ Hyperlinks → markdown `[text](url)` syntax
 - ✅ Basic paragraph formatting preserved
 - ✅ Block-level structure maintained
 - ✅ Round-trip testing (extract → build → validate)
@@ -58,7 +59,6 @@ See [Benchmark Suite](benchmarks.md) for usage instructions.
 
 ### Next Priority (v0.2.0)
 - ⏳ Table support
-- ⏳ Hyperlinks
 - ⏳ Nested lists (2+ levels)
 - ⏳ Enhanced style preservation
 
@@ -86,11 +86,10 @@ See [Benchmark Suite](benchmarks.md) for usage instructions.
 
 ## Known Limitations
 
-1. **Tables:** Not yet supported in MVP
-2. **Hyperlinks:** Not yet supported in MVP
-3. **Nested Lists:** Only single-level lists supported
-4. **Complex Formatting:** Multi-column layouts, headers/footers not yet supported
-5. **Track Changes:** Comments and revision history not preserved
+1. **Tables:** Not yet supported
+2. **Nested Lists:** Only single-level lists supported
+3. **Complex Formatting:** Multi-column layouts, headers/footers not yet supported
+4. **Track Changes:** Comments and revision history not preserved
 
 ## Current Workflow
 
@@ -129,7 +128,6 @@ sidedoc build document.sidedoc
 
 ### Version 0.2.0 (Next)
 - Table support
-- Hyperlinks
 - Nested lists (2+ levels)
 - Enhanced style preservation
 
@@ -151,6 +149,5 @@ The project is actively developed and welcoming contributions! See [CONTRIBUTING
 
 ### High-Impact Areas
 - Table support implementation
-- Hyperlink extraction and reconstruction
 - Nested list handling
 - Performance optimization
