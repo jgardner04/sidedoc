@@ -177,12 +177,13 @@ def encode_url_for_markdown(url: str) -> str:
     Returns:
         URL safe for markdown link syntax
     """
-    # Only encode characters that break markdown link syntax
-    # Parentheses would close the link early, spaces need encoding
+    # Encode characters that break markdown link syntax
+    # Spaces need encoding
     result = url.replace(" ", "%20")
-    # Only encode unbalanced or problematic parentheses
-    # For Wikipedia-style URLs like Python_(programming_language), we keep them
-    # but we need to handle edge cases
+    # Parentheses MUST be encoded - they break markdown link syntax
+    # [text](url_(with)_parens) is ambiguous: first ) closes the link
+    result = result.replace("(", "%28")
+    result = result.replace(")", "%29")
     return result
 
 
@@ -335,16 +336,19 @@ def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str
             # Encode URL for markdown
             encoded_url = encode_url_for_markdown(url)
 
+            # Escape special characters in link text that would break markdown
+            escaped_text = escape_markdown_link_text(text)
+
             # Build markdown link with optional bold/italic
             # We put formatting inside the link text: [**text**](url)
             if is_bold and is_italic:
-                link_md = f"[***{text}***]({encoded_url})"
+                link_md = f"[***{escaped_text}***]({encoded_url})"
             elif is_bold:
-                link_md = f"[**{text}**]({encoded_url})"
+                link_md = f"[**{escaped_text}**]({encoded_url})"
             elif is_italic:
-                link_md = f"[*{text}*]({encoded_url})"
+                link_md = f"[*{escaped_text}*]({encoded_url})"
             else:
-                link_md = f"[{text}]({encoded_url})"
+                link_md = f"[{escaped_text}]({encoded_url})"
 
             markdown_parts.append(link_md)
 
