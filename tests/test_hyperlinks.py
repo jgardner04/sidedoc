@@ -308,7 +308,11 @@ def test_extract_hyperlink_in_numbered_list():
 # =============================================================================
 
 def test_extract_hyperlink_with_parentheses_in_url():
-    """Test extracting hyperlink with parentheses in URL (like Wikipedia)."""
+    """Test extracting hyperlink with parentheses in URL (like Wikipedia).
+
+    Parentheses MUST be percent-encoded to avoid breaking markdown link syntax.
+    Without encoding, [text](url_(with)_parens) is ambiguous - the first ) closes the link.
+    """
     def setup(doc):
         para = doc.add_paragraph("See ")
         add_hyperlink(para, "Python", "https://en.wikipedia.org/wiki/Python_(programming_language)")
@@ -318,11 +322,11 @@ def test_extract_hyperlink_with_parentheses_in_url():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # Parentheses in URL should be percent-encoded to avoid breaking markdown
+        # Parentheses in URL MUST be percent-encoded to avoid breaking markdown
         assert "Python" in blocks[0].content
-        # Either the parentheses are encoded or escaped properly
-        assert ("Python_(programming_language)" in blocks[0].content or
-                "Python_%28programming_language%29" in blocks[0].content)
+        # Parentheses must be encoded as %28 and %29
+        assert "Python_%28programming_language%29" in blocks[0].content, \
+            f"Parentheses not encoded in URL: {blocks[0].content}"
     finally:
         Path(docx_path).unlink()
 
@@ -346,7 +350,11 @@ def test_extract_hyperlink_with_spaces_in_url():
 
 
 def test_extract_hyperlink_with_special_chars_in_text():
-    """Test extracting hyperlink with markdown special chars in text."""
+    """Test extracting hyperlink with markdown special chars in text.
+
+    Brackets MUST be escaped because they break markdown link syntax.
+    [text with [brackets]](url) is invalid - the inner [ and ] interfere with parsing.
+    """
     def setup(doc):
         para = doc.add_paragraph("Link: ")
         add_hyperlink(para, "text with [brackets] and *asterisks*", "https://example.com/special")
@@ -356,11 +364,12 @@ def test_extract_hyperlink_with_special_chars_in_text():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # Special chars in link text should be escaped
+        # Special chars in link text MUST be escaped
         assert "https://example.com/special" in blocks[0].content
-        # The brackets and asterisks should be escaped in the markdown
-        # Either escaped with backslash or the text preserved somehow
-        assert "brackets" in blocks[0].content
+        # Brackets MUST be escaped with backslash to avoid breaking link syntax
+        assert "\\[brackets\\]" in blocks[0].content, \
+            f"Brackets not escaped in link text: {blocks[0].content}"
+        # Asterisks are fine (they indicate formatting)
         assert "asterisks" in blocks[0].content
     finally:
         Path(docx_path).unlink()
@@ -655,6 +664,91 @@ def test_reconstruct_hyperlink_in_heading():
         Path(output_docx.name).unlink()
 
 
+def test_reconstruct_bold_hyperlink():
+    """Test reconstructing a bold hyperlink preserves bold formatting.
+
+    When we have markdown like [**bold text**](url), the reconstructed docx
+    should have a hyperlink with bold text, not literal asterisks.
+    """
+    markdown = "Click [**here**](https://example.com) for more info."
+
+    sidedoc_path = create_sidedoc_with_hyperlinks(markdown)
+    output_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    output_docx.close()
+
+    try:
+        build_docx_from_sidedoc(sidedoc_path, output_docx.name)
+
+        doc = Document(output_docx.name)
+        para = doc.paragraphs[0]
+
+        # Check for hyperlink
+        para_xml = para._element
+        hyperlinks = para_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hyperlink')
+        assert len(hyperlinks) >= 1, "Expected hyperlink in paragraph"
+
+        # Check that the hyperlink text doesn't contain literal asterisks
+        hyperlink = hyperlinks[0]
+        # Get all text elements in the hyperlink
+        text_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        hyperlink_text = "".join(t.text or "" for t in text_elems)
+        assert "**" not in hyperlink_text, \
+            f"Asterisks should not appear in reconstructed hyperlink text: '{hyperlink_text}'"
+        assert "here" in hyperlink_text, \
+            f"Link text 'here' should be present: '{hyperlink_text}'"
+
+        # Check that bold formatting is applied
+        bold_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}b')
+        assert len(bold_elems) >= 1, \
+            "Bold formatting should be applied to hyperlink"
+
+    finally:
+        Path(sidedoc_path).unlink()
+        Path(output_docx.name).unlink()
+
+
+def test_reconstruct_italic_hyperlink():
+    """Test reconstructing an italic hyperlink preserves italic formatting.
+
+    When we have markdown like [*italic text*](url), the reconstructed docx
+    should have a hyperlink with italic text, not literal asterisks.
+    """
+    markdown = "Read [*this*](https://example.com) article."
+
+    sidedoc_path = create_sidedoc_with_hyperlinks(markdown)
+    output_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    output_docx.close()
+
+    try:
+        build_docx_from_sidedoc(sidedoc_path, output_docx.name)
+
+        doc = Document(output_docx.name)
+        para = doc.paragraphs[0]
+
+        # Check for hyperlink
+        para_xml = para._element
+        hyperlinks = para_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hyperlink')
+        assert len(hyperlinks) >= 1, "Expected hyperlink in paragraph"
+
+        # Check that the hyperlink text doesn't contain literal asterisks
+        hyperlink = hyperlinks[0]
+        text_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        hyperlink_text = "".join(t.text or "" for t in text_elems)
+        assert "*" not in hyperlink_text, \
+            f"Asterisks should not appear in reconstructed hyperlink text: '{hyperlink_text}'"
+        assert "this" in hyperlink_text, \
+            f"Link text 'this' should be present: '{hyperlink_text}'"
+
+        # Check that italic formatting is applied
+        italic_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}i')
+        assert len(italic_elems) >= 1, \
+            "Italic formatting should be applied to hyperlink"
+
+    finally:
+        Path(sidedoc_path).unlink()
+        Path(output_docx.name).unlink()
+
+
 def test_roundtrip_preserves_hyperlinks():
     """Test that extract->build round-trip preserves hyperlinks."""
     # Create a document with hyperlinks
@@ -908,3 +1002,118 @@ def test_validate_sidedoc_with_hyperlinks():
     finally:
         Path(original_docx).unlink()
         Path(temp_sidedoc.name).unlink()
+
+
+# =============================================================================
+# Test: Bracket unescaping in round-trip
+# =============================================================================
+
+def test_roundtrip_preserves_brackets_in_link_text():
+    """Test that brackets in link text survive extract->build round-trip.
+
+    When extraction escapes brackets ([brackets] → \\[brackets\\]),
+    reconstruction must unescape them to avoid literal backslashes
+    appearing in the reconstructed document.
+    """
+    # Create a document with a hyperlink that contains brackets in the text
+    def setup(doc):
+        para = doc.add_paragraph("See ")
+        add_hyperlink(para, "text with [brackets] inside", "https://example.com/brackets")
+        para.add_run(".")
+
+    original_docx = create_hyperlink_docx(setup)
+
+    # Extract to sidedoc
+    blocks, image_data = extract_blocks(original_docx)
+    styles = extract_styles(original_docx, blocks)
+    content_md = blocks_to_markdown(blocks)
+
+    # Verify extraction escaped the brackets
+    assert "\\[brackets\\]" in content_md, \
+        f"Expected brackets to be escaped in extracted markdown: {content_md}"
+
+    temp_sidedoc = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
+    temp_sidedoc.close()
+    create_sidedoc_archive(temp_sidedoc.name, content_md, blocks, styles, original_docx, image_data)
+
+    # Rebuild
+    output_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    output_docx.close()
+    build_docx_from_sidedoc(temp_sidedoc.name, output_docx.name)
+
+    try:
+        # Open the rebuilt document and check the hyperlink text
+        doc = Document(output_docx.name)
+        para = doc.paragraphs[0]
+
+        # Get the hyperlink text from the XML
+        para_xml = para._element
+        hyperlinks = para_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hyperlink')
+        assert len(hyperlinks) >= 1, "Expected at least one hyperlink"
+
+        # Get all text elements in the hyperlink
+        hyperlink = hyperlinks[0]
+        text_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        hyperlink_text = "".join(t.text or "" for t in text_elems)
+
+        # The hyperlink text should NOT contain backslashes
+        assert "\\" not in hyperlink_text, \
+            f"Backslashes should not appear in reconstructed hyperlink text: '{hyperlink_text}'"
+
+        # The hyperlink text should contain the original brackets
+        assert "[brackets]" in hyperlink_text, \
+            f"Original brackets should be preserved: '{hyperlink_text}'"
+
+    finally:
+        Path(original_docx).unlink()
+        Path(temp_sidedoc.name).unlink()
+        Path(output_docx.name).unlink()
+
+
+# =============================================================================
+# Test: Bold+italic hyperlink reconstruction
+# =============================================================================
+
+def test_reconstruct_bold_italic_hyperlink():
+    """Test reconstructing a bold and italic hyperlink preserves both formats.
+
+    When we have markdown like [***bold italic text***](url), the reconstructed
+    docx should have a hyperlink with both bold and italic formatting.
+    """
+    markdown = "Click [***here***](https://example.com) for info."
+
+    sidedoc_path = create_sidedoc_with_hyperlinks(markdown)
+    output_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    output_docx.close()
+
+    try:
+        build_docx_from_sidedoc(sidedoc_path, output_docx.name)
+
+        doc = Document(output_docx.name)
+        para = doc.paragraphs[0]
+
+        # Check for hyperlink
+        para_xml = para._element
+        hyperlinks = para_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}hyperlink')
+        assert len(hyperlinks) >= 1, "Expected hyperlink in paragraph"
+
+        # Check that the hyperlink text doesn't contain literal asterisks
+        hyperlink = hyperlinks[0]
+        text_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        hyperlink_text = "".join(t.text or "" for t in text_elems)
+        assert "***" not in hyperlink_text, \
+            f"Triple asterisks should not appear in reconstructed hyperlink text: '{hyperlink_text}'"
+        assert "here" in hyperlink_text, \
+            f"Link text 'here' should be present: '{hyperlink_text}'"
+
+        # Check that both bold and italic formatting are applied
+        bold_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}b')
+        italic_elems = hyperlink.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}i')
+        assert len(bold_elems) >= 1, \
+            "Bold formatting should be applied to hyperlink"
+        assert len(italic_elems) >= 1, \
+            "Italic formatting should be applied to hyperlink"
+
+    finally:
+        Path(sidedoc_path).unlink()
+        Path(output_docx.name).unlink()

@@ -19,13 +19,19 @@ from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
 
 
 # Regex to match markdown hyperlinks: [text](url)
-HYPERLINK_PATTERN = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
+# The link text pattern handles escaped brackets (e.g., \[ and \]) by matching either:
+# - any character except ] or \
+# - OR a backslash followed by any character (which handles \[ and \])
+HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
 
 # Standard hyperlink color (blue)
 HYPERLINK_COLOR = "0563C1"
 
 
-def add_hyperlink_to_paragraph(paragraph: Any, text: str, url: str) -> None:
+def add_hyperlink_to_paragraph(
+    paragraph: Any, text: str, url: str,
+    bold: bool = False, italic: bool = False
+) -> None:
     """Add a hyperlink to a paragraph.
 
     Creates a proper w:hyperlink element with the text and URL.
@@ -34,6 +40,8 @@ def add_hyperlink_to_paragraph(paragraph: Any, text: str, url: str) -> None:
         paragraph: python-docx Paragraph object
         text: Display text for the hyperlink
         url: URL the hyperlink points to
+        bold: Whether the hyperlink text should be bold
+        italic: Whether the hyperlink text should be italic
     """
     # Decode percent-encoded URLs for storage in relationship
     decoded_url = unquote(url)
@@ -66,6 +74,16 @@ def add_hyperlink_to_paragraph(paragraph: Any, text: str, url: str) -> None:
     underline.set(qn('w:val'), 'single')
     rPr.append(underline)
 
+    # Add bold formatting if requested
+    if bold:
+        bold_elem = OxmlElement('w:b')
+        rPr.append(bold_elem)
+
+    # Add italic formatting if requested
+    if italic:
+        italic_elem = OxmlElement('w:i')
+        rPr.append(italic_elem)
+
     run.append(rPr)
 
     # Add the text
@@ -82,10 +100,56 @@ def add_hyperlink_to_paragraph(paragraph: Any, text: str, url: str) -> None:
     paragraph._p.append(hyperlink)
 
 
+def parse_link_text_formatting(link_text: str) -> tuple[str, bool, bool]:
+    """Parse formatting markers from link text.
+
+    Handles markdown formatting markers like **bold**, *italic*, ***bold italic***.
+
+    Args:
+        link_text: The raw link text that may contain markdown formatting markers
+
+    Returns:
+        Tuple of (plain_text, is_bold, is_italic)
+    """
+    text = link_text
+    is_bold = False
+    is_italic = False
+
+    # Check for bold+italic: ***text*** or ___text___
+    if (text.startswith("***") and text.endswith("***") and len(text) > 6):
+        text = text[3:-3]
+        is_bold = True
+        is_italic = True
+    elif (text.startswith("___") and text.endswith("___") and len(text) > 6):
+        text = text[3:-3]
+        is_bold = True
+        is_italic = True
+    # Check for bold: **text** or __text__
+    elif (text.startswith("**") and text.endswith("**") and len(text) > 4):
+        text = text[2:-2]
+        is_bold = True
+    elif (text.startswith("__") and text.endswith("__") and len(text) > 4):
+        text = text[2:-2]
+        is_bold = True
+    # Check for italic: *text* or _text_
+    elif (text.startswith("*") and text.endswith("*") and len(text) > 2):
+        text = text[1:-1]
+        is_italic = True
+    elif (text.startswith("_") and text.endswith("_") and len(text) > 2):
+        text = text[1:-1]
+        is_italic = True
+
+    # Unescape brackets that were escaped during extraction
+    text = text.replace("\\[", "[").replace("\\]", "]")
+
+    return text, is_bold, is_italic
+
+
 def add_text_with_hyperlinks(paragraph: Any, content: str) -> None:
     """Add text content to a paragraph, converting markdown hyperlinks.
 
     Parses [text](url) patterns and creates proper hyperlinks.
+    Also handles formatting markers inside link text like [**bold**](url).
 
     Args:
         paragraph: python-docx Paragraph object
@@ -99,10 +163,15 @@ def add_text_with_hyperlinks(paragraph: Any, content: str) -> None:
         if before_text:
             paragraph.add_run(before_text)
 
-        # Add the hyperlink
+        # Get the link text and URL
         link_text = match.group(1)
         link_url = match.group(2)
-        add_hyperlink_to_paragraph(paragraph, link_text, link_url)
+
+        # Parse formatting from link text
+        plain_text, is_bold, is_italic = parse_link_text_formatting(link_text)
+
+        # Add the hyperlink with formatting
+        add_hyperlink_to_paragraph(paragraph, plain_text, link_url, bold=is_bold, italic=is_italic)
 
         last_end = match.end()
 
