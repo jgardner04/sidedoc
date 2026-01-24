@@ -188,6 +188,7 @@ Created: quarterly_report_updated.docx
 | Paragraphs | Plain text | Preserves paragraph breaks |
 | Bold | `**text**` | Inline formatting |
 | Italic | `*text*` | Inline formatting |
+| Hyperlinks | `[text](url)` | Clickable links preserved |
 | Bulleted lists | `- item` | Single level for MVP |
 | Numbered lists | `1. item` | Single level for MVP |
 | Images | `![alt](path)` | Copied to assets/ |

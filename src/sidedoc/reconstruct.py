@@ -1,17 +1,114 @@
 """Reconstruct Word documents from sidedoc format."""
 
 import json
+import re
 import zipfile
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.document import Document as DocumentType
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 import mistune
 from sidedoc.models import Block, Style
 from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
+
+
+# Regex to match markdown hyperlinks: [text](url)
+HYPERLINK_PATTERN = re.compile(r'\[([^\]]*)\]\(([^)]+)\)')
+
+# Standard hyperlink color (blue)
+HYPERLINK_COLOR = "0563C1"
+
+
+def add_hyperlink_to_paragraph(paragraph: Any, text: str, url: str) -> None:
+    """Add a hyperlink to a paragraph.
+
+    Creates a proper w:hyperlink element with the text and URL.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        text: Display text for the hyperlink
+        url: URL the hyperlink points to
+    """
+    # Decode percent-encoded URLs for storage in relationship
+    decoded_url = unquote(url)
+
+    # Get the document part to create relationships
+    part = paragraph.part
+
+    # Create the relationship for the hyperlink
+    r_id = part.relate_to(
+        decoded_url,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+        is_external=True
+    )
+
+    # Create the hyperlink element
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+
+    # Create a run for the text
+    run = OxmlElement('w:r')
+
+    # Add run properties (hyperlink styling: blue color and underline)
+    rPr = OxmlElement('w:rPr')
+
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), HYPERLINK_COLOR)
+    rPr.append(color)
+
+    underline = OxmlElement('w:u')
+    underline.set(qn('w:val'), 'single')
+    rPr.append(underline)
+
+    run.append(rPr)
+
+    # Add the text
+    text_elem = OxmlElement('w:t')
+    text_elem.text = text
+    # Preserve spaces
+    text_elem.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+    run.append(text_elem)
+
+    # Add run to hyperlink
+    hyperlink.append(run)
+
+    # Add hyperlink to paragraph
+    paragraph._p.append(hyperlink)
+
+
+def add_text_with_hyperlinks(paragraph: Any, content: str) -> None:
+    """Add text content to a paragraph, converting markdown hyperlinks.
+
+    Parses [text](url) patterns and creates proper hyperlinks.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        content: Text content that may contain markdown hyperlinks
+    """
+    last_end = 0
+
+    for match in HYPERLINK_PATTERN.finditer(content):
+        # Add text before the hyperlink
+        before_text = content[last_end:match.start()]
+        if before_text:
+            paragraph.add_run(before_text)
+
+        # Add the hyperlink
+        link_text = match.group(1)
+        link_url = match.group(2)
+        add_hyperlink_to_paragraph(paragraph, link_text, link_url)
+
+        last_end = match.end()
+
+    # Add any remaining text after the last hyperlink
+    if last_end < len(content):
+        paragraph.add_run(content[last_end:])
 
 
 def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
@@ -83,6 +180,18 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     return blocks
 
 
+def has_hyperlinks(content: str) -> bool:
+    """Check if content contains markdown hyperlinks.
+
+    Args:
+        content: Text content to check
+
+    Returns:
+        True if hyperlinks are present
+    """
+    return bool(HYPERLINK_PATTERN.search(content))
+
+
 def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_dir: Optional[Path] = None) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -102,7 +211,13 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
             style_name = f"Heading {block.level}"
             # Remove markdown markers
             text = block.content.lstrip("#").strip()
-            para = doc.add_paragraph(text, style=style_name)
+
+            # Check for hyperlinks in heading
+            if has_hyperlinks(text):
+                para = doc.add_paragraph(style=style_name)
+                add_text_with_hyperlinks(para, text)
+            else:
+                para = doc.add_paragraph(text, style=style_name)
         elif block.type == "image":
             # Handle image blocks
             if block.image_path and assets_dir:
@@ -122,10 +237,20 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                 # No assets directory or image_path - add placeholder
                 para = doc.add_paragraph("[Image]")
         elif block.type == "paragraph":
-            para = doc.add_paragraph(block.content)
+            # Check for hyperlinks in paragraph
+            if has_hyperlinks(block.content):
+                para = doc.add_paragraph()
+                add_text_with_hyperlinks(para, block.content)
+            else:
+                para = doc.add_paragraph(block.content)
         else:
             # Default to paragraph for unknown types
-            para = doc.add_paragraph(block.content)
+            # Check for hyperlinks
+            if has_hyperlinks(block.content):
+                para = doc.add_paragraph()
+                add_text_with_hyperlinks(para, block.content)
+            else:
+                para = doc.add_paragraph(block.content)
 
         # Apply styling if available
         block_style = styles.get("block_styles", {}).get(block.id, {})
