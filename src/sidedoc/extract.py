@@ -4,11 +4,18 @@ import hashlib
 import io
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote, unquote
 from docx import Document
 from docx.shared import Pt
+from docx.oxml.ns import qn
 from PIL import Image
 from sidedoc.models import Block, Style
 from sidedoc.constants import MAX_IMAGE_SIZE
+
+
+# XML namespaces used in Office Open XML documents
+WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
 def generate_block_id(index: int) -> str:
@@ -159,66 +166,247 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
     return None
 
 
-def extract_inline_formatting(paragraph: Any) -> tuple[str, list[dict[str, Any]] | None]:
-    """Extract inline formatting from paragraph runs.
+def encode_url_for_markdown(url: str) -> str:
+    """Encode a URL for safe inclusion in markdown link syntax.
+
+    Percent-encodes parentheses and spaces that would break markdown [text](url) format.
+
+    Args:
+        url: The URL to encode
+
+    Returns:
+        URL safe for markdown link syntax
+    """
+    # Encode characters that break markdown link syntax
+    # Spaces need encoding
+    result = url.replace(" ", "%20")
+    # Parentheses MUST be encoded - they break markdown link syntax
+    # [text](url_(with)_parens) is ambiguous: first ) closes the link
+    result = result.replace("(", "%28")
+    result = result.replace(")", "%29")
+    return result
+
+
+def escape_markdown_link_text(text: str) -> str:
+    """Escape special markdown characters in link text.
+
+    Args:
+        text: The link text to escape
+
+    Returns:
+        Escaped text safe for markdown link syntax
+    """
+    # Escape brackets which would break link syntax
+    result = text.replace("[", "\\[").replace("]", "\\]")
+    return result
+
+
+def get_hyperlink_url(hyperlink_elem: Any, doc_part: Any) -> Optional[str]:
+    """Extract the URL from a hyperlink XML element.
+
+    Args:
+        hyperlink_elem: The w:hyperlink XML element
+        doc_part: Document part for accessing relationships
+
+    Returns:
+        The URL string, or None if not found
+    """
+    # Get the relationship ID from the hyperlink element
+    r_id = hyperlink_elem.get(qn('r:id'))
+    if r_id and r_id in doc_part.rels:
+        rel = doc_part.rels[r_id]
+        # External hyperlinks have target_ref (the URL)
+        if hasattr(rel, '_target') and rel._target:
+            return str(rel._target)
+        # Some versions use target_ref
+        if hasattr(rel, 'target_ref') and rel.target_ref:
+            return str(rel.target_ref)
+    return None
+
+
+def is_formatting_enabled(rPr: Any, format_tag: str) -> bool:
+    """Check if a formatting element is enabled in run properties.
+
+    In Office Open XML, formatting can be:
+    - Present without val attribute: enabled (e.g., <w:b/>)
+    - Present with val="0" or val="false": disabled (e.g., <w:b w:val="0"/>)
+    - Present with val="1" or val="true": enabled (e.g., <w:b w:val="1"/>)
+    - Absent: inherit from style (we treat as disabled)
+
+    Args:
+        rPr: The w:rPr run properties element
+        format_tag: The tag name without namespace (e.g., 'b', 'i', 'u')
+
+    Returns:
+        True if the formatting is enabled, False otherwise
+    """
+    if rPr is None:
+        return False
+
+    elem = rPr.find(f'{{{WORDPROCESSINGML_NS}}}{format_tag}')
+    if elem is None:
+        return False
+
+    # Check the val attribute
+    val = elem.get(qn('w:val'))
+    if val is None:
+        # Element present without val attribute means enabled
+        return True
+    # Check for explicit false values
+    if val.lower() in ('0', 'false', 'none'):
+        return False
+    return True
+
+
+def extract_hyperlink_text_and_formatting(hyperlink_elem: Any) -> tuple[str, bool, bool]:
+    """Extract text and formatting from a hyperlink XML element.
+
+    Args:
+        hyperlink_elem: The w:hyperlink XML element
+
+    Returns:
+        Tuple of (text, is_bold, is_italic)
+    """
+    text_parts = []
+    is_bold = False
+    is_italic = False
+
+    # Find all w:r (run) elements within the hyperlink
+    for run_elem in hyperlink_elem.findall(f'.//{{{WORDPROCESSINGML_NS}}}r'):
+        # Check for bold/italic in run properties
+        rPr = run_elem.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+        if is_formatting_enabled(rPr, 'b'):
+            is_bold = True
+        if is_formatting_enabled(rPr, 'i'):
+            is_italic = True
+
+        # Get text from w:t elements
+        for text_elem in run_elem.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
+            if text_elem.text:
+                text_parts.append(text_elem.text)
+
+    return "".join(text_parts), is_bold, is_italic
+
+
+def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
+    """Extract inline formatting from paragraph runs, including hyperlinks.
 
     Args:
         paragraph: python-docx paragraph object
+        doc_part: Document part for accessing hyperlink relationships
 
     Returns:
         Tuple of (markdown_content, inline_formatting_list)
-        markdown_content has bold/italic converted to markdown
-        inline_formatting_list records underline and other formatting
+        markdown_content has bold/italic converted to markdown and hyperlinks to [text](url)
+        inline_formatting_list records underline, hyperlinks, and other formatting
     """
     markdown_parts = []
     inline_formatting: list[dict[str, Any]] = []
     plain_text_position = 0  # Position in plain text without markdown markers
 
-    # Process each run (formatted text segment) in the paragraph
-    # Why runs: Word stores formatting at the "run" level - each run is a segment
-    # of text with consistent formatting. A paragraph with "Hello **world**" has
-    # two runs: one for "Hello " and one for "world" with bold formatting.
-    for run in paragraph.runs:
-        text = run.text
-        if not text:
-            continue
+    # Get the paragraph's XML element to access hyperlinks
+    para_elem = paragraph._element
 
-        # Extract formatting flags from the run
-        # Why check "is True": python-docx returns None for unset properties, False
-        # for explicitly disabled, and True for enabled. We only want explicit True.
-        is_bold = run.bold is True
-        is_italic = run.italic is True
-        is_underline = run.underline is True
+    # Process all child elements in order (runs and hyperlinks)
+    # Why iterate XML: python-docx's paragraph.runs doesn't include hyperlink content
+    # because hyperlinks are separate XML elements (w:hyperlink) containing their own runs.
+    # We need to walk the XML to get content in the correct order.
+    for child in para_elem:
+        tag = child.tag
 
-        # Build markdown with bold/italic markers
-        # Why markdown: Bold and italic are well-supported in markdown, so we convert
-        # them to markdown syntax for AI-friendly editing.
-        markdown_text = text
-        if is_bold and is_italic:
-            markdown_text = f"***{text}***"
-        elif is_bold:
-            markdown_text = f"**{text}**"
-        elif is_italic:
-            markdown_text = f"*{text}*"
+        if tag == f'{{{WORDPROCESSINGML_NS}}}hyperlink':
+            # This is a hyperlink element
+            if doc_part is None:
+                continue
 
-        # Record underline in inline_formatting (positions are in plain text without markdown)
-        # Why separate: Markdown doesn't have standard underline syntax, so we store
-        # it separately in inline_formatting with character positions. The positions
-        # refer to the plain text (without ** or * markers) so they remain valid
-        # when we convert markdown back to docx.
-        if is_underline:
+            url = get_hyperlink_url(child, doc_part)
+            if url is None:
+                # No valid URL, just extract text
+                text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                if text:
+                    markdown_parts.append(text)
+                    plain_text_position += len(text)
+                continue
+
+            text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+            if not text:
+                # Empty hyperlink text, skip
+                continue
+
+            # Encode URL for markdown
+            encoded_url = encode_url_for_markdown(url)
+
+            # Escape special characters in link text that would break markdown
+            escaped_text = escape_markdown_link_text(text)
+
+            # Build markdown link with optional bold/italic
+            # We put formatting inside the link text: [**text**](url)
+            if is_bold and is_italic:
+                link_md = f"[***{escaped_text}***]({encoded_url})"
+            elif is_bold:
+                link_md = f"[**{escaped_text}**]({encoded_url})"
+            elif is_italic:
+                link_md = f"[*{escaped_text}*]({encoded_url})"
+            else:
+                link_md = f"[{escaped_text}]({encoded_url})"
+
+            markdown_parts.append(link_md)
+
+            # Record hyperlink in inline_formatting
             inline_formatting.append({
-                "type": "underline",
+                "type": "hyperlink",
                 "start": plain_text_position,
                 "end": plain_text_position + len(text),
-                "underline": True
+                "url": url
             })
 
-        markdown_parts.append(markdown_text)
-        # Track plain text position, not markdown position
-        # Why plain text: The inline_formatting positions need to match the text
-        # without markdown markers, so we only count the actual text length
-        plain_text_position += len(text)
+            plain_text_position += len(text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            # This is a regular run element
+            # We need to get text and formatting from the XML directly
+            text_parts = []
+            # Process all children in order to preserve breaks
+            for run_child in child:
+                run_child_tag = run_child.tag
+                if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
+                    if run_child.text:
+                        text_parts.append(run_child.text)
+                elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
+                    # Line break element
+                    text_parts.append('\n')
+
+            text = "".join(text_parts)
+            if not text:
+                continue
+
+            # Check formatting in run properties using is_formatting_enabled
+            # which properly handles val="0" meaning disabled
+            rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+            is_bold = is_formatting_enabled(rPr, 'b')
+            is_italic = is_formatting_enabled(rPr, 'i')
+            is_underline = is_formatting_enabled(rPr, 'u')
+
+            # Build markdown with bold/italic markers
+            markdown_text = text
+            if is_bold and is_italic:
+                markdown_text = f"***{text}***"
+            elif is_bold:
+                markdown_text = f"**{text}**"
+            elif is_italic:
+                markdown_text = f"*{text}*"
+
+            # Record underline in inline_formatting
+            if is_underline:
+                inline_formatting.append({
+                    "type": "underline",
+                    "start": plain_text_position,
+                    "end": plain_text_position + len(text),
+                    "underline": True
+                })
+
+            markdown_parts.append(markdown_text)
+            plain_text_position += len(text)
 
     markdown_content = "".join(markdown_parts)
     return markdown_content, inline_formatting if inline_formatting else None
@@ -276,7 +464,7 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
             list_number_counter = 0
             previous_list_type = None
         else:
-            text_content, inline_formatting = extract_inline_formatting(paragraph)
+            text_content, inline_formatting = extract_inline_formatting(paragraph, doc.part)
 
             if style_name.startswith("Heading"):
                 # Extract heading level (e.g., "Heading 1" -> 1)

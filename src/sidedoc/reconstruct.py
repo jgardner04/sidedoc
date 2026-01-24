@@ -1,17 +1,183 @@
 """Reconstruct Word documents from sidedoc format."""
 
 import json
+import re
 import zipfile
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.document import Document as DocumentType
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 import mistune
 from sidedoc.models import Block, Style
 from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
+
+
+# Regex to match markdown hyperlinks: [text](url)
+# The link text pattern handles escaped brackets (e.g., \[ and \]) by matching either:
+# - any character except ] or \
+# - OR a backslash followed by any character (which handles \[ and \])
+HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
+
+# Standard hyperlink color (blue)
+HYPERLINK_COLOR = "0563C1"
+
+
+def add_hyperlink_to_paragraph(
+    paragraph: Any, text: str, url: str,
+    bold: bool = False, italic: bool = False
+) -> None:
+    """Add a hyperlink to a paragraph.
+
+    Creates a proper w:hyperlink element with the text and URL.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        text: Display text for the hyperlink
+        url: URL the hyperlink points to
+        bold: Whether the hyperlink text should be bold
+        italic: Whether the hyperlink text should be italic
+    """
+    # Decode percent-encoded URLs for storage in relationship
+    decoded_url = unquote(url)
+
+    # Get the document part to create relationships
+    part = paragraph.part
+
+    # Create the relationship for the hyperlink
+    r_id = part.relate_to(
+        decoded_url,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+        is_external=True
+    )
+
+    # Create the hyperlink element
+    hyperlink = OxmlElement('w:hyperlink')
+    hyperlink.set(qn('r:id'), r_id)
+
+    # Create a run for the text
+    run = OxmlElement('w:r')
+
+    # Add run properties (hyperlink styling: blue color and underline)
+    rPr = OxmlElement('w:rPr')
+
+    color = OxmlElement('w:color')
+    color.set(qn('w:val'), HYPERLINK_COLOR)
+    rPr.append(color)
+
+    underline = OxmlElement('w:u')
+    underline.set(qn('w:val'), 'single')
+    rPr.append(underline)
+
+    # Add bold formatting if requested
+    if bold:
+        bold_elem = OxmlElement('w:b')
+        rPr.append(bold_elem)
+
+    # Add italic formatting if requested
+    if italic:
+        italic_elem = OxmlElement('w:i')
+        rPr.append(italic_elem)
+
+    run.append(rPr)
+
+    # Add the text
+    text_elem = OxmlElement('w:t')
+    text_elem.text = text
+    # Preserve spaces
+    text_elem.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+    run.append(text_elem)
+
+    # Add run to hyperlink
+    hyperlink.append(run)
+
+    # Add hyperlink to paragraph
+    paragraph._p.append(hyperlink)
+
+
+def parse_link_text_formatting(link_text: str) -> tuple[str, bool, bool]:
+    """Parse formatting markers from link text.
+
+    Handles markdown formatting markers like **bold**, *italic*, ***bold italic***.
+
+    Args:
+        link_text: The raw link text that may contain markdown formatting markers
+
+    Returns:
+        Tuple of (plain_text, is_bold, is_italic)
+    """
+    text = link_text
+    is_bold = False
+    is_italic = False
+
+    # Check for bold+italic: ***text*** or ___text___
+    if (text.startswith("***") and text.endswith("***") and len(text) > 6):
+        text = text[3:-3]
+        is_bold = True
+        is_italic = True
+    elif (text.startswith("___") and text.endswith("___") and len(text) > 6):
+        text = text[3:-3]
+        is_bold = True
+        is_italic = True
+    # Check for bold: **text** or __text__
+    elif (text.startswith("**") and text.endswith("**") and len(text) > 4):
+        text = text[2:-2]
+        is_bold = True
+    elif (text.startswith("__") and text.endswith("__") and len(text) > 4):
+        text = text[2:-2]
+        is_bold = True
+    # Check for italic: *text* or _text_
+    elif (text.startswith("*") and text.endswith("*") and len(text) > 2):
+        text = text[1:-1]
+        is_italic = True
+    elif (text.startswith("_") and text.endswith("_") and len(text) > 2):
+        text = text[1:-1]
+        is_italic = True
+
+    # Unescape brackets that were escaped during extraction
+    text = text.replace("\\[", "[").replace("\\]", "]")
+
+    return text, is_bold, is_italic
+
+
+def add_text_with_hyperlinks(paragraph: Any, content: str) -> None:
+    """Add text content to a paragraph, converting markdown hyperlinks.
+
+    Parses [text](url) patterns and creates proper hyperlinks.
+    Also handles formatting markers inside link text like [**bold**](url).
+
+    Args:
+        paragraph: python-docx Paragraph object
+        content: Text content that may contain markdown hyperlinks
+    """
+    last_end = 0
+
+    for match in HYPERLINK_PATTERN.finditer(content):
+        # Add text before the hyperlink
+        before_text = content[last_end:match.start()]
+        if before_text:
+            paragraph.add_run(before_text)
+
+        # Get the link text and URL
+        link_text = match.group(1)
+        link_url = match.group(2)
+
+        # Parse formatting from link text
+        plain_text, is_bold, is_italic = parse_link_text_formatting(link_text)
+
+        # Add the hyperlink with formatting
+        add_hyperlink_to_paragraph(paragraph, plain_text, link_url, bold=is_bold, italic=is_italic)
+
+        last_end = match.end()
+
+    # Add any remaining text after the last hyperlink
+    if last_end < len(content):
+        paragraph.add_run(content[last_end:])
 
 
 def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
@@ -83,6 +249,18 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     return blocks
 
 
+def has_hyperlinks(content: str) -> bool:
+    """Check if content contains markdown hyperlinks.
+
+    Args:
+        content: Text content to check
+
+    Returns:
+        True if hyperlinks are present
+    """
+    return bool(HYPERLINK_PATTERN.search(content))
+
+
 def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_dir: Optional[Path] = None) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -102,7 +280,13 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
             style_name = f"Heading {block.level}"
             # Remove markdown markers
             text = block.content.lstrip("#").strip()
-            para = doc.add_paragraph(text, style=style_name)
+
+            # Check for hyperlinks in heading
+            if has_hyperlinks(text):
+                para = doc.add_paragraph(style=style_name)
+                add_text_with_hyperlinks(para, text)
+            else:
+                para = doc.add_paragraph(text, style=style_name)
         elif block.type == "image":
             # Handle image blocks
             if block.image_path and assets_dir:
@@ -122,10 +306,20 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                 # No assets directory or image_path - add placeholder
                 para = doc.add_paragraph("[Image]")
         elif block.type == "paragraph":
-            para = doc.add_paragraph(block.content)
+            # Check for hyperlinks in paragraph
+            if has_hyperlinks(block.content):
+                para = doc.add_paragraph()
+                add_text_with_hyperlinks(para, block.content)
+            else:
+                para = doc.add_paragraph(block.content)
         else:
             # Default to paragraph for unknown types
-            para = doc.add_paragraph(block.content)
+            # Check for hyperlinks
+            if has_hyperlinks(block.content):
+                para = doc.add_paragraph()
+                add_text_with_hyperlinks(para, block.content)
+            else:
+                para = doc.add_paragraph(block.content)
 
         # Apply styling if available
         block_style = styles.get("block_styles", {}).get(block.id, {})
