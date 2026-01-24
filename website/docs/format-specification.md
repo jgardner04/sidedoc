@@ -68,6 +68,12 @@ Maps content to document structure. Enables reconstruction and sync.
           "type": "bold",
           "start": 12,
           "end": 26
+        },
+        {
+          "type": "hyperlink",
+          "start": 30,
+          "end": 45,
+          "url": "https://example.com"
         }
       ]
     }
@@ -108,6 +114,15 @@ Stores formatting that should be preserved but isn't represented in markdown.
           "bold": true,
           "italic": false,
           "underline": false
+        },
+        {
+          "start": 30,
+          "end": 45,
+          "bold": false,
+          "italic": false,
+          "underline": true,
+          "color": "0563C1",
+          "is_hyperlink": true
         }
       ]
     }
@@ -149,6 +164,7 @@ Metadata about the sidedoc container.
 | Bulleted lists | `- item` | List Bullet style | Single level |
 | Numbered lists | `1. item` | List Number style | Single level |
 | Images | `![alt](path)` | Inline picture | Copied to assets/ |
+| Hyperlinks | `[text](url)` | Hyperlink element | Clickable links preserved |
 
 ### Preserved but Not Editable
 
