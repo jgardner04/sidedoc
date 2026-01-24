@@ -34,11 +34,12 @@ class BaseTask(ABC):
     """
 
     @abstractmethod
-    def execute(self, content: str) -> TaskResult:
+    def execute(self, content: str, model: str) -> TaskResult:
         """Execute the task on the given document content.
 
         Args:
             content: The document content to process.
+            model: The LLM model identifier (e.g., 'claude-sonnet-4-20250514', 'ollama/llama3').
 
         Returns:
             TaskResult with execution metrics and result.

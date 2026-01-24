@@ -26,7 +26,7 @@ class TestBenchmarkRequirements:
             "click",
             "python-docx",
             "tiktoken",
-            "anthropic",
+            "litellm",
             "azure-ai-formrecognizer",
             "pypandoc",
             "pdf2image",

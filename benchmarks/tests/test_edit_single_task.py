@@ -51,17 +51,17 @@ class TestSingleEditTask:
         from benchmarks.tasks.edit_single import SingleEditTask
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Edited content here")]
-        mock_response.usage.input_tokens = 150
-        mock_response.usage.output_tokens = 75
+        mock_choice = MagicMock()
+        mock_choice.message.content = "Edited content here"
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 150
+        mock_response.usage.completion_tokens = 75
 
-        with patch("benchmarks.tasks.edit_single.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_single.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SingleEditTask(edit_instruction="Make it shorter")
-            result = task.execute("Original content that is long")
+            result = task.execute("Original content that is long", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
             assert result.prompt_tokens == 150
@@ -73,22 +73,22 @@ class TestSingleEditTask:
         from benchmarks.tasks.edit_single import SingleEditTask
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Edited")]
-        mock_response.usage.input_tokens = 50
-        mock_response.usage.output_tokens = 20
+        mock_choice = MagicMock()
+        mock_choice.message.content = "Edited"
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 50
+        mock_response.usage.completion_tokens = 20
 
         test_instruction = "Add more details about XYZ"
         test_content = "Document content ABC123"
 
-        with patch("benchmarks.tasks.edit_single.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_single.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SingleEditTask(edit_instruction=test_instruction)
-            task.execute(test_content)
+            task.execute(test_content, "claude-sonnet-4-20250514")
 
-            call_args = mock_client.messages.create.call_args
+            call_args = mock_litellm.completion.call_args
             call_str = str(call_args)
 
             # Both instruction and content should be in the call
@@ -100,13 +100,11 @@ class TestSingleEditTask:
         from benchmarks.tasks.base import TaskResult
         from benchmarks.tasks.edit_single import SingleEditTask
 
-        with patch("benchmarks.tasks.edit_single.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.side_effect = Exception("Connection failed")
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_single.litellm") as mock_litellm:
+            mock_litellm.completion.side_effect = Exception("Connection failed")
 
             task = SingleEditTask(edit_instruction="Edit this")
-            result = task.execute("Content")
+            result = task.execute("Content", "claude-sonnet-4-20250514")
 
             assert isinstance(result, TaskResult)
             assert result.error is not None
@@ -119,16 +117,16 @@ class TestSingleEditTask:
         edited_text = "This is the edited version of the document"
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=edited_text)]
-        mock_response.usage.input_tokens = 100
-        mock_response.usage.output_tokens = 50
+        mock_choice = MagicMock()
+        mock_choice.message.content = edited_text
+        mock_response.choices = [mock_choice]
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
 
-        with patch("benchmarks.tasks.edit_single.anthropic") as mock_anthropic:
-            mock_client = MagicMock()
-            mock_client.messages.create.return_value = mock_response
-            mock_anthropic.Anthropic.return_value = mock_client
+        with patch("benchmarks.tasks.edit_single.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
 
             task = SingleEditTask(edit_instruction="Improve clarity")
-            result = task.execute("Original document")
+            result = task.execute("Original document", "claude-sonnet-4-20250514")
 
             assert result.result_text == edited_text

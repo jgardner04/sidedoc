@@ -1,10 +1,10 @@
 """Summarization task (US-018).
 
-This module provides the SummarizeTask which uses the Anthropic API
+This module provides the SummarizeTask which uses LiteLLM
 to generate bullet point summaries of document content.
 """
 
-import anthropic
+import litellm
 
 from benchmarks.tasks.base import BaseTask, TaskResult
 
@@ -12,8 +12,8 @@ from benchmarks.tasks.base import BaseTask, TaskResult
 class SummarizeTask(BaseTask):
     """Task that summarizes document content in 3-5 bullet points.
 
-    Uses the Anthropic API (Claude) to generate summaries.
-    Reads ANTHROPIC_API_KEY from environment.
+    Uses LiteLLM for unified access to multiple LLM providers.
+    Provider-specific API keys are read from environment variables.
     """
 
     SUMMARIZATION_PROMPT = (
@@ -21,22 +21,19 @@ class SummarizeTask(BaseTask):
         "Focus on the key points and main ideas."
     )
 
-    def __init__(self) -> None:
-        """Initialize the summarization task."""
-        self._client = anthropic.Anthropic()
-
-    def execute(self, content: str) -> TaskResult:
+    def execute(self, content: str, model: str) -> TaskResult:
         """Execute the summarization task on the given content.
 
         Args:
             content: The document content to summarize.
+            model: The LLM model identifier (e.g., 'claude-sonnet-4-20250514', 'ollama/llama3').
 
         Returns:
             TaskResult with summary and token counts.
         """
         try:
-            message = self._client.messages.create(
-                model="claude-sonnet-4-20250514",
+            response = litellm.completion(
+                model=model,
                 max_tokens=1024,
                 messages=[
                     {
@@ -47,14 +44,19 @@ class SummarizeTask(BaseTask):
             )
 
             result_text = ""
-            if message.content:
-                first_block = message.content[0]
-                if hasattr(first_block, "text"):
-                    result_text = first_block.text
+            if response.choices and response.choices[0].message:
+                result_text = response.choices[0].message.content or ""
+
+            # Get token usage from response
+            prompt_tokens = 0
+            completion_tokens = 0
+            if response.usage:
+                prompt_tokens = response.usage.prompt_tokens or 0
+                completion_tokens = response.usage.completion_tokens or 0
 
             return TaskResult(
-                prompt_tokens=message.usage.input_tokens,
-                completion_tokens=message.usage.output_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 result_text=result_text,
                 error=None,
             )

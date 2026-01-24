@@ -110,6 +110,7 @@ class BenchmarkExecutor:
         pipelines: list[str],
         tasks: list[str],
         corpus: str,
+        model: str = "claude-sonnet-4-20250514",
     ) -> None:
         """Initialize the benchmark executor.
 
@@ -117,10 +118,12 @@ class BenchmarkExecutor:
             pipelines: List of pipeline names to run.
             tasks: List of task names to run.
             corpus: Corpus type (synthetic, real, all).
+            model: LLM model identifier for task execution.
         """
         self.pipelines = pipelines
         self.tasks = tasks
         self.corpus = corpus
+        self.model = model
 
     def run(self) -> dict[str, Any]:
         """Run the benchmark suite.
@@ -158,6 +161,7 @@ class BenchmarkExecutor:
                 "pipelines": self.pipelines,
                 "tasks": self.tasks,
                 "corpus": self.corpus,
+                "model": self.model,
                 "documents": [str(d) for d in documents],
             },
             "results": results,
@@ -192,7 +196,7 @@ class BenchmarkExecutor:
 
             # Get task and execute
             task = get_task(task_name)
-            task_result = task.execute(content)
+            task_result = task.execute(content, self.model)
 
             metrics["prompt_tokens"] = task_result.prompt_tokens
             metrics["completion_tokens"] = task_result.completion_tokens
