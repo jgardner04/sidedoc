@@ -72,7 +72,7 @@ See [Benchmark Suite](benchmarks.md) for usage instructions.
 ## Test Coverage
 
 ```
-156 tests passing with 84% coverage across:
+188 tests passing with 84% coverage across:
 - Extract functionality (docx → sidedoc)
 - Build/reconstruct functionality (sidedoc → docx)
 - Sync functionality (content changes → docx update)
