@@ -1260,3 +1260,111 @@ def test_different_block_types_not_matched():
 
     # Different types should never match, regardless of content similarity
     assert "block-1" not in matches
+
+
+# Tests for table block handling in sync
+
+
+def test_sync_handles_table_blocks() -> None:
+    """Verify sync creates actual tables, not raw GFM text.
+
+    This is a critical test: table blocks must result in actual Table objects
+    in the docx, not paragraphs containing raw GFM pipe syntax.
+    """
+    from docx.table import Table
+
+    table_content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+    new_blocks = [
+        Block(
+            id="block-new-1",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash=compute_hash(table_content),
+        ),
+    ]
+
+    styles = {"block_styles": {}}
+    matches = {}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        generate_updated_docx(new_blocks, matches, styles, str(output_path))
+
+        # Verify docx was created
+        assert output_path.exists()
+
+        # Verify it contains a table, not a paragraph with GFM
+        doc = Document(str(output_path))
+
+        # Should have a table
+        assert len(doc.tables) == 1, f"Expected 1 table, got {len(doc.tables)}"
+
+        # Verify table content
+        table = doc.tables[0]
+        assert len(table.rows) == 2  # header + 1 data row
+        assert len(table.columns) == 2
+
+        # Check cell content
+        assert table.cell(0, 0).text == "Name"
+        assert table.cell(0, 1).text == "Age"
+        assert table.cell(1, 0).text == "Alice"
+        assert table.cell(1, 1).text == "30"
+
+        # Should NOT have paragraphs with GFM pipe syntax
+        for para in doc.paragraphs:
+            assert "|" not in para.text, f"Found raw GFM in paragraph: {para.text}"
+
+
+def test_sync_handles_mixed_blocks_with_table() -> None:
+    """Verify sync handles documents with paragraphs and tables together."""
+    from docx.table import Table
+
+    table_content = "| Col1 | Col2 |\n| --- | --- |\n| A | B |"
+    new_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content="Before the table.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=17,
+            content_hash=compute_hash("Before the table."),
+        ),
+        Block(
+            id="block-2",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=1,
+            content_start=18,
+            content_end=18 + len(table_content),
+            content_hash=compute_hash(table_content),
+        ),
+        Block(
+            id="block-3",
+            type="paragraph",
+            content="After the table.",
+            docx_paragraph_index=2,
+            content_start=100,
+            content_end=116,
+            content_hash=compute_hash("After the table."),
+        ),
+    ]
+
+    styles = {"block_styles": {}}
+    matches = {}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        generate_updated_docx(new_blocks, matches, styles, str(output_path))
+
+        doc = Document(str(output_path))
+
+        # Should have 2 paragraphs and 1 table
+        assert len(doc.tables) == 1
+        # Paragraphs include those before and after table
+        para_texts = [p.text for p in doc.paragraphs if p.text.strip()]
+        assert "Before the table." in para_texts
+        assert "After the table." in para_texts

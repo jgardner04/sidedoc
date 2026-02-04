@@ -8,11 +8,16 @@ from pathlib import Path
 from typing import Optional, Any
 from docx import Document
 from docx.shared import Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
-from sidedoc.constants import MAX_ASSET_SIZE, SIMILARITY_THRESHOLD
+from sidedoc.constants import (
+    MAX_ASSET_SIZE,
+    SIMILARITY_THRESHOLD,
+    ALIGNMENT_STRING_TO_ENUM,
+    DEFAULT_ALIGNMENT,
+)
+from sidedoc.reconstruct import create_table_from_gfm
 
 
 def match_blocks(
@@ -268,20 +273,24 @@ def _get_block_style(
     return {}
 
 
-def _create_paragraph_from_block(doc: Any, block: Block) -> Any:
-    """Create a paragraph from a block based on its type.
+def _create_paragraph_from_block(doc: Any, block: Block, styles: dict[str, Any]) -> Optional[Any]:
+    """Create a paragraph or table from a block based on its type.
 
     Args:
         doc: python-docx Document object
-        block: Block to create paragraph from
+        block: Block to create paragraph/table from
+        styles: Style information dictionary with block_styles
 
     Returns:
-        python-docx Paragraph object
+        python-docx Paragraph object, or None for tables
     """
     if block.type == "heading" and block.level:
         text = block.content.lstrip("#").strip()
         style_name = f"Heading {block.level}"
         return doc.add_paragraph(text, style=style_name)
+    elif block.type == "table":
+        create_table_from_gfm(doc, block.content, styles, block.id)
+        return None
     elif block.type == "paragraph":
         if "**" in block.content or "*" in block.content:
             para = doc.add_paragraph()
@@ -308,15 +317,9 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     if "font_size" in block_style and para.style:
         para.style.font.size = Pt(block_style["font_size"])
 
-    alignment = block_style.get("alignment", "left")
-    alignment_map = {
-        "left": WD_ALIGN_PARAGRAPH.LEFT,
-        "center": WD_ALIGN_PARAGRAPH.CENTER,
-        "right": WD_ALIGN_PARAGRAPH.RIGHT,
-        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
-    }
-    if alignment in alignment_map:
-        para.alignment = alignment_map[alignment]
+    alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
+    if alignment in ALIGNMENT_STRING_TO_ENUM:
+        para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
 def generate_updated_docx(
@@ -332,6 +335,7 @@ def generate_updated_docx(
     - New blocks receive default formatting based on type
     - Deleted blocks are omitted (not in new_blocks)
     - Inline formatting from markdown is applied
+    - Table blocks create actual Table objects
 
     Args:
         new_blocks: List of new Block objects from edited content.md
@@ -344,8 +348,9 @@ def generate_updated_docx(
 
     for block in new_blocks:
         block_style = _get_block_style(block, new_to_old, styles)
-        para = _create_paragraph_from_block(doc, block)
-        _apply_block_formatting(para, block_style)
+        para = _create_paragraph_from_block(doc, block, styles)
+        if para is not None:
+            _apply_block_formatting(para, block_style)
 
     doc.save(output_path)
 
