@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
 
-**Status:** MVP complete - all 30 user stories implemented and passing
+**Status:** MVP complete with hyperlink support. Phase 2 (Table Support) in progress.
 
 ## Development Philosophy
 
@@ -80,7 +80,8 @@ For any new feature or bug fix:
 
 ## Specifications
 
-- [Product Requirements Document](docs/slidedoc-prd.md) — Full PRD with format specification, CLI interface, sync algorithm, and implementation phases
+- [Tables PRD](docs/tables-prd.md) — Phase 2 table support requirements
+- [PRD Status](docs/prd.json) — Current feature tracking
 
 ## Architecture
 
@@ -89,12 +90,13 @@ Package structure:
 ```
 src/sidedoc/
 ├── __init__.py
-├── cli.py              # CLI entry points (click)
-├── extract.py          # docx → sidedoc
+├── cli.py              # CLI entry points (click), includes validate command
+├── constants.py        # Shared constants (image limits, etc.)
+├── extract.py          # docx → sidedoc (paragraphs, tables, images)
+├── models.py           # Block, Style, Manifest dataclasses
+├── package.py          # ZIP archive handling
 ├── reconstruct.py      # sidedoc → docx
 ├── sync.py             # edited content → updated docx
-├── validate.py         # verify sidedoc integrity
-├── models.py           # data structures
 └── utils.py            # shared utilities
 ```
 
@@ -103,6 +105,32 @@ src/sidedoc/
 - **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
 - **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
 - **Sync:** After editing content.md, update the .docx while preserving original formatting
+
+### Block Types
+
+| Type | Markdown Format | Notes |
+|------|-----------------|-------|
+| `heading` | `# Title` | Levels 1-6 supported |
+| `paragraph` | Plain text | Inline formatting: `**bold**`, `*italic*` |
+| `list` | `- bullet` or `1. numbered` | |
+| `image` | `![alt](assets/image.png)` | |
+| `table` | GFM pipe tables | Phase 2 feature |
+| `hyperlink` | `[text](url)` | Inline within other blocks |
+
+### Table Support (Phase 2)
+
+Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
+
+```markdown
+| Name | Role | Start Date |
+| --- | --- | --- |
+| Alice | Engineer | 2024-01-15 |
+```
+
+- **Alignment:** `:---|` (left), `:---:|` (center), `---:|` (right)
+- **Escaping:** Pipe characters in content escaped as `\|`
+- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments
+- **Styling:** `table_formatting` in Style stores column_widths, table_alignment
 
 ## Sidedoc Format
 

@@ -8,11 +8,11 @@ from typing import Any, Optional
 class Block:
     """Represents a content block in a sidedoc document.
 
-    Blocks can be headings, paragraphs, lists, or images.
+    Blocks can be headings, paragraphs, lists, images, or tables.
     """
 
     id: str
-    type: str  # "heading", "paragraph", "list", "image"
+    type: str  # "heading", "paragraph", "list", "image", "table"
     content: str
     docx_paragraph_index: int
     content_start: int
@@ -21,6 +21,7 @@ class Block:
     level: Optional[int] = None  # For headings (1-6)
     image_path: Optional[str] = None  # For images
     inline_formatting: Optional[list[dict[str, Any]]] = None
+    table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, docx_table_index
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Style:
     """Represents formatting information for a block.
 
     Stores font, size, alignment, and inline formatting.
+    For tables, includes table_formatting with column_widths, table_alignment, etc.
     """
 
     block_id: str
@@ -38,6 +40,7 @@ class Style:
     bold: Optional[bool] = None
     italic: Optional[bool] = None
     underline: Optional[bool] = None
+    table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style
 
 
 @dataclass

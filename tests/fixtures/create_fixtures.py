@@ -134,6 +134,47 @@ def create_images_docx() -> None:
     print("✓ Created images.docx")
 
 
+def create_tables_simple_docx() -> None:
+    """Create tables_simple.docx with a basic 3x3 table.
+
+    Table structure:
+    | Name  | Role     | Start Date |
+    |-------|----------|------------|
+    | Alice | Engineer | 2024-01-15 |
+    | Bob   | Designer | 2024-02-01 |
+    """
+    doc = Document()
+
+    doc.add_heading("Simple Table Example", level=1)
+    doc.add_paragraph("This document contains a basic table.")
+
+    # Create a 3x3 table (3 rows, 3 columns)
+    table = doc.add_table(rows=3, cols=3)
+
+    # Header row
+    header_cells = table.rows[0].cells
+    header_cells[0].text = "Name"
+    header_cells[1].text = "Role"
+    header_cells[2].text = "Start Date"
+
+    # Data row 1
+    row1_cells = table.rows[1].cells
+    row1_cells[0].text = "Alice"
+    row1_cells[1].text = "Engineer"
+    row1_cells[2].text = "2024-01-15"
+
+    # Data row 2
+    row2_cells = table.rows[2].cells
+    row2_cells[0].text = "Bob"
+    row2_cells[1].text = "Designer"
+    row2_cells[2].text = "2024-02-01"
+
+    doc.add_paragraph("Text after the table.")
+
+    doc.save(str(FIXTURES_DIR / "tables_simple.docx"))
+    print("✓ Created tables_simple.docx")
+
+
 def create_complex_docx() -> None:
     """Create complex.docx with all supported elements combined."""
     doc = Document()
@@ -181,4 +222,5 @@ if __name__ == "__main__":
     create_formatted_docx()
     create_images_docx()
     create_complex_docx()
+    create_tables_simple_docx()
     print("\nAll fixtures created successfully!")
