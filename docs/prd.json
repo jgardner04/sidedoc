@@ -1,258 +1,338 @@
 {
   "project": "Sidedoc",
-  "branchName": "ralph/hyperlink-support",
-  "description": "Add hyperlink support to Sidedoc - extract, preserve, and sync clickable links using markdown [text](url) syntax",
+  "branchName": "ralph/track-changes-support",
+  "description": "Add bidirectional track changes support to Sidedoc - extract, preserve, and sync Word revision tracking using CriticMarkup syntax",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Create hyperlinks test fixture",
-      "description": "As a developer, I need test fixtures with hyperlinks so that automated tests can verify the feature.",
+      "title": "Create track changes test fixtures",
+      "description": "As a developer, I need test fixtures with track changes so that automated tests can verify the feature.",
       "acceptanceCriteria": [
-        "Create tests/fixtures/hyperlinks.docx with various hyperlink scenarios",
-        "Include: simple link, multiple links per paragraph, formatted link text (bold link)",
-        "Include: links in headings, links in list items",
-        "Include: long URL (>100 chars), URL with special characters (?&=)",
-        "Document fixture contents in a comment block in test file",
+        "Create tests/fixtures/track_changes_simple.docx with single insertion and single deletion",
+        "Create tests/fixtures/track_changes_paragraph.docx with multiple changes in one paragraph",
+        "Create tests/fixtures/track_changes_multiauthor.docx with changes from different authors",
+        "Include track change metadata (author, date) in all fixtures",
+        "Document fixture contents in test file comments",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Fixture created at tests/fixtures/hyperlinks.docx. Verified by test_extract_hyperlinks_fixture."
+      "notes": "Created track_changes_simple.docx, track_changes_paragraph.docx, track_changes_multiauthor.docx. All fixtures include author and date metadata. Tests verify w:ins and w:del elements exist."
     },
     {
       "id": "US-002",
-      "title": "Extract hyperlinks from docx paragraphs",
-      "description": "As an AI developer, I want hyperlinks extracted as markdown syntax so that I can read and process linked content efficiently.",
+      "title": "Add TrackChange model to models.py",
+      "description": "As a developer, I need data structures to represent track changes so that metadata can be stored and retrieved.",
       "acceptanceCriteria": [
-        "Hyperlinks in docx paragraphs are extracted as [visible text](url) in content.md",
-        "Access hyperlinks via paragraph._element XML using w:hyperlink elements",
-        "Look up actual URL from document.part.rels using relationship ID",
-        "Multiple hyperlinks in a single paragraph are all extracted correctly",
-        "Unit tests verify extraction with hyperlinks.docx fixture",
+        "Add TrackChange dataclass with fields: type (insertion/deletion), start, end, author, date, revision_id",
+        "Add deleted_text field for deletion type",
+        "Add track_changes list field to Block dataclass",
+        "Add TrackChangesConfig to manifest with enabled, source_had_revisions, default_author fields",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Implemented in extract.py. Tests: test_extract_simple_hyperlink, test_extract_multiple_hyperlinks, test_extract_hyperlinks_fixture."
+      "notes": "Added TrackChange, TrackChangesConfig dataclasses to models.py. Added track_changes field to Block. All tests pass."
     },
     {
       "id": "US-003",
-      "title": "Handle hyperlink URL encoding",
-      "description": "As a developer, I need URLs properly escaped so that markdown parsing works correctly.",
+      "title": "Add CriticMarkup patterns to constants.py",
+      "description": "As a developer, I need regex patterns for parsing CriticMarkup syntax.",
       "acceptanceCriteria": [
-        "Parentheses in URLs are percent-encoded: url%28with%29parens",
-        "Spaces in URLs are percent-encoded: url%20with%20spaces",
-        "Special markdown characters in link text are escaped: [text with \\[brackets\\]](url)",
-        "Unicode characters in URLs are preserved or properly encoded",
-        "Unit tests cover URL encoding edge cases",
+        "Add INSERTION_PATTERN for {++text++} syntax",
+        "Add DELETION_PATTERN for {--text--} syntax",
+        "Add SUBSTITUTION_PATTERN for {~~old~>new~~} syntax",
+        "Patterns handle nested content correctly",
+        "Unit tests verify pattern matching",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Tests: test_extract_hyperlink_with_parentheses_in_url, test_extract_hyperlink_with_spaces_in_url, test_extract_hyperlink_with_special_chars_in_text."
+      "notes": "Added INSERTION_PATTERN, DELETION_PATTERN, SUBSTITUTION_PATTERN to constants.py. All 13 pattern tests pass."
     },
     {
       "id": "US-004",
-      "title": "Store hyperlink positions in structure.json",
-      "description": "As a developer, I need hyperlink positions tracked so that sync can map changes back correctly.",
+      "title": "Extract w:ins elements from docx paragraphs",
+      "description": "As an AI developer, I want insertions extracted as CriticMarkup syntax so that AI can see pending changes.",
       "acceptanceCriteria": [
-        "Add hyperlink entries to inline_formatting array in structure.json",
-        "Each hyperlink entry has: type='hyperlink', start, end, url",
-        "Positions are relative to paragraph content (not document)",
-        "Multiple hyperlinks in same paragraph each have separate entries",
-        "Unit tests verify structure.json contains hyperlink metadata",
+        "Detect w:ins elements in paragraph XML",
+        "Extract inserted text and convert to {++text++} in content.md",
+        "Extract author attribute from w:ins element",
+        "Extract date attribute from w:ins element",
+        "Store insertion metadata in structure.json track_changes array",
+        "Unit tests verify extraction with track_changes_simple.docx fixture",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Tests: test_hyperlink_stores_position_in_inline_formatting, test_multiple_hyperlinks_store_positions."
+      "notes": "Implemented in extract.py. Extracts w:ins elements as {++text++} CriticMarkup. Stores author, date, revision_id in track_changes array. All 5 tests pass."
     },
     {
       "id": "US-005",
-      "title": "Store hyperlink formatting in styles.json",
-      "description": "As a developer, I need hyperlink formatting stored so that links maintain their appearance after round-trip.",
+      "title": "Extract w:del elements from docx paragraphs",
+      "description": "As an AI developer, I want deletions extracted as CriticMarkup syntax so that AI can see pending changes.",
       "acceptanceCriteria": [
-        "Add is_hyperlink boolean to run entries in styles.json",
-        "Store hyperlink color (default Word blue is #0563C1)",
-        "Store underline style for hyperlinks",
-        "Runs within hyperlinks preserve their formatting (bold, italic)",
-        "Unit tests verify styles.json contains hyperlink formatting",
+        "Detect w:del elements in paragraph XML",
+        "Extract deleted text from w:delText elements",
+        "Convert to {--text--} in content.md",
+        "Store deleted_text in track change metadata",
+        "Extract author and date attributes",
+        "Store deletion metadata in structure.json track_changes array",
+        "Unit tests verify extraction with track_changes_simple.docx fixture",
         "Typecheck passes"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Bold/italic formatting within hyperlinks preserved. Tests: test_extract_bold_hyperlink, test_extract_italic_hyperlink, test_reconstruct_bold_hyperlink, test_reconstruct_italic_hyperlink."
+      "notes": "Implemented in extract.py. Extracts w:del elements as {--text--} CriticMarkup. Stores deleted_text, author, date, revision_id. All 5 tests pass."
     },
     {
       "id": "US-006",
-      "title": "Reconstruct hyperlinks in docx from markdown",
-      "description": "As a user, I want hyperlinks in the rebuilt docx to be clickable so that the document functions as expected.",
+      "title": "Handle multiple track changes in single paragraph",
+      "description": "As a user, I want multiple track changes in one paragraph to all be extracted correctly.",
       "acceptanceCriteria": [
-        "Parse markdown [text](url) syntax during build",
-        "Create docx hyperlink elements with correct relationship IDs",
-        "Hyperlink text displays correctly in rebuilt document",
-        "Clicking the link opens the URL (verify manually or document in test)",
-        "Apply stored formatting from styles.json or use Word defaults (blue, underlined)",
-        "Unit tests verify hyperlinks appear in rebuilt docx XML",
+        "Extract all insertions and deletions from a single paragraph",
+        "Maintain correct order of changes in output",
+        "Calculate correct start/end positions for each change",
+        "Store all changes in track_changes array with correct positions",
+        "Unit tests verify with track_changes_paragraph.docx fixture",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Implemented in reconstruct.py. Tests: test_reconstruct_simple_hyperlink, test_reconstruct_multiple_hyperlinks, test_reconstruct_hyperlink_in_heading."
+      "notes": "Implemented in extract.py. Handles multiple insertions/deletions in single paragraph. Maintains correct order and positions. Multi-author support verified. All 5 tests pass."
     },
     {
       "id": "US-007",
-      "title": "Handle hyperlinks in headings",
-      "description": "As a user, I want hyperlinks in headings to work correctly so that linked section titles are supported.",
+      "title": "Detect track changes mode from source document",
+      "description": "As a user, I want sidedoc to automatically detect whether source had track changes enabled.",
       "acceptanceCriteria": [
-        "Hyperlinks in H1-H6 headings extract correctly",
-        "Heading formatting is preserved alongside hyperlink",
-        "Hyperlinks in headings rebuild correctly",
-        "Unit tests cover hyperlinks in heading blocks",
+        "Check document for any w:ins or w:del elements",
+        "Set source_had_revisions boolean in manifest.json",
+        "Set track_changes.enabled based on detection",
+        "Unit tests verify detection for documents with and without changes",
         "Typecheck passes"
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Tests: test_extract_hyperlink_in_heading1, test_extract_hyperlink_in_heading2, test_reconstruct_hyperlink_in_heading."
+      "notes": "Implemented detect_track_changes() in extract.py. Scans document for w:ins/w:del elements. All 5 tests pass."
     },
     {
       "id": "US-008",
-      "title": "Handle hyperlinks in lists",
-      "description": "As a user, I want hyperlinks within list items to work correctly so that bulleted/numbered lists with references are supported.",
+      "title": "Handle track changes in headings",
+      "description": "As a user, I want track changes in headings to extract and reconstruct correctly.",
       "acceptanceCriteria": [
-        "Hyperlinks in bulleted list items extract correctly",
-        "Hyperlinks in numbered list items extract correctly",
-        "Multiple hyperlinks in a single list item are handled",
-        "Hyperlinks rebuild correctly within list context",
-        "Unit tests verify list hyperlink handling",
+        "Track changes in H1-H6 headings extract correctly",
+        "Heading level is preserved alongside track changes",
+        "Create tests/fixtures/track_changes_headings.docx with changes in headings",
+        "Unit tests verify heading track change handling",
         "Typecheck passes"
       ],
       "priority": 8,
       "passes": true,
-      "notes": "Tests: test_extract_hyperlink_in_bullet_list, test_extract_hyperlink_in_numbered_list."
+      "notes": "Track changes in H1-H6 headings work correctly. Created track_changes_headings.docx fixture. All 4 tests pass."
     },
     {
       "id": "US-009",
-      "title": "Sync new hyperlinks from edited markdown",
-      "description": "As an AI agent, I want to add new hyperlinks via markdown and have them appear in the synced docx.",
+      "title": "Handle track changes in list items",
+      "description": "As a user, I want track changes in bulleted and numbered lists to work correctly.",
       "acceptanceCriteria": [
-        "Adding [text](url) syntax in content.md creates new hyperlink in docx after sync",
-        "New hyperlinks use default formatting (blue #0563C1, underlined)",
-        "New hyperlinks are clickable in rebuilt docx",
-        "structure.json updated with new hyperlink positions",
-        "Unit tests verify new hyperlink sync",
+        "Track changes in bulleted list items extract correctly",
+        "Track changes in numbered list items extract correctly",
+        "Multiple track changes in a single list item are handled",
+        "Create tests/fixtures/track_changes_lists.docx with changes in lists",
+        "Unit tests verify list track change handling",
         "Typecheck passes"
       ],
       "priority": 9,
       "passes": true,
-      "notes": "Test: test_sync_adds_new_hyperlinks."
+      "notes": "Track changes in bulleted and numbered lists work correctly. Created track_changes_lists.docx fixture. All 5 tests pass."
     },
     {
       "id": "US-010",
-      "title": "Sync modified hyperlinks",
-      "description": "As an AI agent, I want to modify hyperlink text or URLs and have those changes reflected in the synced docx.",
+      "title": "Reconstruct w:ins elements in docx from CriticMarkup",
+      "description": "As a user, I want CriticMarkup insertions to become track changes in rebuilt docx.",
       "acceptanceCriteria": [
-        "Changing link text in markdown updates visible text in docx",
-        "Changing URL in markdown updates hyperlink target",
-        "Existing hyperlink formatting is preserved where possible",
-        "Unit tests verify modified hyperlink sync",
+        "Parse {++text++} syntax during build",
+        "Create w:ins XML elements with correct structure",
+        "Set w:id attribute on w:ins elements",
+        "Set w:author attribute from stored metadata",
+        "Set w:date attribute from stored metadata",
+        "Track changes are visible in Microsoft Word",
+        "Unit tests verify w:ins elements in rebuilt docx XML",
         "Typecheck passes"
       ],
       "priority": 10,
       "passes": true,
-      "notes": "Test: test_sync_modifies_hyperlink_url."
+      "notes": "Implemented parse_criticmarkup(), create_ins_element(), add_text_with_track_changes() in reconstruct.py. All 3 tests pass."
     },
     {
       "id": "US-011",
-      "title": "Sync removed hyperlinks",
-      "description": "As an AI agent, I want to remove hyperlinks by removing markdown syntax and have the text remain as plain text.",
+      "title": "Reconstruct w:del elements in docx from CriticMarkup",
+      "description": "As a user, I want CriticMarkup deletions to become track changes in rebuilt docx.",
       "acceptanceCriteria": [
-        "Removing [text](url) syntax but keeping 'text' removes hyperlink",
-        "Plain text remains in docx at same position",
-        "Plain text uses paragraph's base formatting (not hyperlink blue)",
-        "Unit tests verify hyperlink removal sync",
+        "Parse {--text--} syntax during build",
+        "Create w:del XML elements with correct structure",
+        "Create w:delText elements for deleted content",
+        "Set w:id, w:author, w:date attributes",
+        "Deletions are visible and functional in Microsoft Word",
+        "Unit tests verify w:del elements in rebuilt docx XML",
         "Typecheck passes"
       ],
       "priority": 11,
       "passes": true,
-      "notes": "Test: test_sync_removes_hyperlinks."
+      "notes": "Implemented create_del_element() with w:delText support. All 3 tests pass."
     },
     {
       "id": "US-012",
-      "title": "Handle edge cases in hyperlink extraction",
-      "description": "As a developer, I need edge cases handled gracefully so that extraction doesn't fail on complex documents.",
+      "title": "Round-trip integration test for track changes",
+      "description": "As a developer, I need integration tests proving track changes survive extract->build round-trip.",
       "acceptanceCriteria": [
-        "Empty hyperlinks (no visible text) are skipped with warning",
-        "Hyperlinks with no URL are treated as plain text",
-        "Very long URLs (>2000 chars) are preserved correctly",
-        "Nested formatting within hyperlinks (bold link text) is preserved",
-        "Unit tests cover all edge cases",
+        "Integration test: extract track_changes_simple.docx, build new docx, compare",
+        "All track changes present in rebuilt docx",
+        "Author and date attributes preserved",
+        "Inserted/deleted text matches original",
         "Typecheck passes"
       ],
       "priority": 12,
       "passes": true,
-      "notes": "Tests: test_extract_empty_hyperlink_text, test_extract_hyperlink_with_no_url, test_extract_hyperlink_long_url, test_extract_bold_italic_hyperlink."
+      "notes": "Round-trip tests verify track changes survive extract->build cycle. Author, date, and track change elements preserved. All 3 tests pass."
     },
     {
       "id": "US-013",
-      "title": "Validate hyperlinks in sidedoc",
-      "description": "As a user, I want validation to check hyperlink integrity so that I catch issues before building.",
+      "title": "Parse CriticMarkup during sync",
+      "description": "As an AI agent, I want to use CriticMarkup syntax in content.md to explicitly mark insertions and deletions.",
       "acceptanceCriteria": [
-        "sidedoc validate checks hyperlink positions in structure.json are valid",
-        "Validation passes for documents with valid hyperlinks",
-        "Clear error message if hyperlink position exceeds content length",
-        "Validation warns (non-blocking) for obviously malformed URLs",
-        "Unit tests cover validation scenarios",
+        "{++new text++} in edited content.md creates insertion in docx after sync",
+        "{--removed text--} in edited content.md creates deletion in docx after sync",
+        "New track changes use configured author name",
+        "New track changes use current timestamp",
+        "Unit tests verify CriticMarkup sync creates track changes",
         "Typecheck passes"
       ],
       "priority": 13,
       "passes": true,
-      "notes": "Test: test_validate_sidedoc_with_hyperlinks."
+      "notes": "Added sync_sidedoc_to_docx() function in sync.py. Parses CriticMarkup syntax and creates w:ins/w:del elements with configurable author and current timestamp. All 5 tests pass."
     },
     {
       "id": "US-014",
-      "title": "Round-trip integration test for hyperlinks",
-      "description": "As a developer, I need an integration test proving hyperlinks survive extract->build round-trip.",
+      "title": "Parse CriticMarkup substitution syntax",
+      "description": "As an AI agent, I want to use substitution syntax for combined delete+insert operations.",
       "acceptanceCriteria": [
-        "Integration test: extract hyperlinks.docx, build new docx, compare",
-        "All hyperlinks present in rebuilt docx",
-        "Hyperlink URLs match original",
-        "Hyperlink visible text matches original",
-        "Test passes in CI",
+        "{~~old~>new~~} creates deletion for 'old' and insertion for 'new'",
+        "Both changes linked with same revision context",
+        "Unit tests verify substitution parsing",
         "Typecheck passes"
       ],
       "priority": 14,
       "passes": true,
-      "notes": "Tests: test_roundtrip_preserves_hyperlinks, test_roundtrip_preserves_brackets_in_link_text."
+      "notes": "parse_criticmarkup() in reconstruct.py already handles substitution syntax. Expands {~~old~>new~~} into deletion and insertion segments. All 4 tests pass."
     },
     {
       "id": "US-015",
-      "title": "Update README with hyperlink support",
-      "description": "As a user, I want documentation updated so that I understand hyperlink support is available.",
+      "title": "AI edits appear as tracked changes when source had revisions",
+      "description": "As a document owner, I want AI edits to appear as tracked changes so I can review them in Word.",
       "acceptanceCriteria": [
-        "README.md 'Supported Elements' table includes Hyperlinks row",
-        "Show markdown syntax: [text](url)",
-        "Note any limitations (no mailto, no internal anchors)",
+        "When source doc had track changes, AI modifications create new tracked changes",
+        "New insertions get w:ins elements with configured author name",
+        "Removed content gets w:del elements with configured author name",
+        "Timestamps reflect when sync was performed",
+        "Integration test confirms AI edits are reviewable in Word",
         "Typecheck passes"
       ],
       "priority": 15,
       "passes": true,
-      "notes": "README.md updated with Hyperlinks row showing [text](url) syntax."
+      "notes": "sync_sidedoc_to_docx() creates w:ins and w:del elements for all CriticMarkup with configured author and current timestamp. All 4 tests pass."
     },
     {
       "id": "US-016",
-      "title": "Update docs site with hyperlink feature",
-      "description": "As a potential user, I want the docs site updated so that I know Sidedoc supports hyperlinks.",
+      "title": "Add --track-changes CLI option to extract command",
+      "description": "As a user, I want CLI options to control track changes behavior during extraction.",
       "acceptanceCriteria": [
-        "Docs site Features page lists hyperlink support",
-        "Format Specification page documents hyperlink handling in structure.json and styles.json",
-        "Include example showing hyperlink extraction and reconstruction",
-        "Docs site builds without errors",
+        "Add --track-changes flag to force enable track changes mode",
+        "Add --no-track-changes flag to force disable (accept all)",
+        "Flags override auto-detection",
+        "Unit tests verify CLI option handling",
         "Typecheck passes"
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Updated index.md, format-specification.md, status.md, and faq.md with hyperlink documentation. Build passes with --strict flag."
+      "notes": "Added --track-changes/--no-track-changes flags to extract command. Added track_changes parameter to extract_blocks() and extract_paragraph_accept_all() for accepting all changes. All 3 tests pass."
+    },
+    {
+      "id": "US-017",
+      "title": "Add --author CLI option to sync command",
+      "description": "As an enterprise user, I want to configure the author name for AI-generated changes.",
+      "acceptanceCriteria": [
+        "Add --author NAME option to sync command",
+        "Default author is 'Sidedoc AI' when not specified",
+        "Author name appears correctly in Word's track changes pane",
+        "Unit tests verify author attribution",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Added --author option to sync command with default 'Sidedoc AI'. Updated sync to use sync_sidedoc_to_docx() for track changes support. All 2 tests pass."
+    },
+    {
+      "id": "US-018",
+      "title": "Validate track changes in sidedoc validate command",
+      "description": "As a user, I want validation to check track change integrity.",
+      "acceptanceCriteria": [
+        "sidedoc validate checks track change positions are within block bounds",
+        "Validation verifies track change metadata is complete (author, date)",
+        "Clear error messages for track change validation failures",
+        "Validation passes for documents with valid track changes",
+        "Unit tests cover validation scenarios",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "Added _validate_track_changes() helper and integrated into validate command. Checks positions within block bounds and metadata completeness. All 3 tests pass."
+    },
+    {
+      "id": "US-019",
+      "title": "Handle CriticMarkup with nested markdown formatting",
+      "description": "As an AI agent, I want CriticMarkup to work with nested formatting like bold or italic.",
+      "acceptanceCriteria": [
+        "{++**bold text**++} creates bold insertion",
+        "{--*italic*--} creates italic deletion",
+        "Nested formatting preserved in rebuilt docx",
+        "Unit tests verify nested formatting handling",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": "CriticMarkup regex patterns already handle nested markdown formatting correctly. The content inside {++...++} and {--...--} is preserved as-is. All 4 tests pass."
+    },
+    {
+      "id": "US-020",
+      "title": "Error handling for invalid CriticMarkup syntax",
+      "description": "As a user, I want clear error messages when CriticMarkup syntax is invalid.",
+      "acceptanceCriteria": [
+        "Unclosed {++ produces clear error message",
+        "Unclosed {-- produces clear error message",
+        "Malformed {~~old~>new~~} produces clear error message",
+        "Error messages include line number and context",
+        "Unit tests cover error handling scenarios",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": "Added validate_criticmarkup() function that checks for unclosed/malformed CriticMarkup syntax with line numbers. parse_criticmarkup() gracefully handles invalid syntax by treating it as text. All 6 tests pass."
+    },
+    {
+      "id": "US-021",
+      "title": "Update README with track changes support",
+      "description": "As a user, I want documentation updated so that I understand track changes support is available.",
+      "acceptanceCriteria": [
+        "README.md 'Supported Elements' table includes Track Changes row",
+        "Document CriticMarkup syntax: {++insert++}, {--delete--}, {~~old~>new~~}",
+        "Note limitations (no formatting changes, no comments yet)",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "README.md already contained complete track changes documentation including: Supported Elements table row, CriticMarkup syntax section with full examples, CLI options, and limitations section. Fixed type errors in sync.py and cli.py to pass mypy."
     }
   ]
 }

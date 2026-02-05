@@ -31,3 +31,26 @@ MAX_ASSET_SIZE = 50 * 1024 * 1024
 # Blocks at the same position must have at least this similarity to be considered edits
 # Below this threshold, they are treated as delete + add operations
 SIMILARITY_THRESHOLD = 0.7
+
+# =============================================================================
+# CriticMarkup Patterns
+# =============================================================================
+# These regex patterns parse CriticMarkup syntax for track changes.
+# See: http://criticmarkup.com/spec.php
+#
+# Syntax:
+#   - Insertion: {++inserted text++}
+#   - Deletion:  {--deleted text--}
+#   - Substitution: {~~old text~>new text~~}
+
+# Matches {++text++} - captures the inserted text (group 1)
+# Uses non-greedy matching to handle multiple insertions in one line
+INSERTION_PATTERN = r"\{\+\+(.+?)\+\+\}"
+
+# Matches {--text--} - captures the deleted text (group 1)
+# Uses non-greedy matching to handle multiple deletions in one line
+DELETION_PATTERN = r"\{--(.+?)--\}"
+
+# Matches {~~old~>new~~} - captures old text (group 1) and new text (group 2)
+# Uses non-greedy matching for both parts
+SUBSTITUTION_PATTERN = r"\{~~(.+?)~>(.+?)~~\}"

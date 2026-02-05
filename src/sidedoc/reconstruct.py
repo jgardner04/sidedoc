@@ -14,8 +14,13 @@ from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import mistune
-from sidedoc.models import Block, Style
-from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
+from sidedoc.models import Block, Style, TrackChange
+from sidedoc.constants import (
+    DEFAULT_IMAGE_WIDTH_INCHES,
+    INSERTION_PATTERN,
+    DELETION_PATTERN,
+    SUBSTITUTION_PATTERN,
+)
 
 
 # Regex to match markdown hyperlinks: [text](url)
@@ -24,8 +29,296 @@ from sidedoc.constants import DEFAULT_IMAGE_WIDTH_INCHES
 # - OR a backslash followed by any character (which handles \[ and \])
 HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
 
+# Word processing ML namespace
+WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+# XML namespace for preserving whitespace
+XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
+
 # Standard hyperlink color (blue)
 HYPERLINK_COLOR = "0563C1"
+
+
+def parse_criticmarkup(text: str) -> list[tuple[str, str]]:
+    """Parse CriticMarkup syntax into segments.
+
+    Identifies insertions {++text++}, deletions {--text--}, and substitutions {~~old~>new~~}
+    in the text and returns a list of segments with their types.
+
+    Args:
+        text: Text that may contain CriticMarkup syntax
+
+    Returns:
+        List of (type, content) tuples where type is "text", "insertion", "deletion", or "substitution"
+    """
+    segments: list[tuple[str, str]] = []
+    last_end = 0
+
+    # Compile patterns
+    ins_pattern = re.compile(INSERTION_PATTERN)
+    del_pattern = re.compile(DELETION_PATTERN)
+    sub_pattern = re.compile(SUBSTITUTION_PATTERN)
+
+    # Find all matches with their positions
+    all_matches: list[tuple[int, int, str, str, Optional[str]]] = []
+
+    for match in ins_pattern.finditer(text):
+        all_matches.append((match.start(), match.end(), "insertion", match.group(1), None))
+
+    for match in del_pattern.finditer(text):
+        all_matches.append((match.start(), match.end(), "deletion", match.group(1), None))
+
+    for match in sub_pattern.finditer(text):
+        # Substitution has two parts: old text and new text
+        all_matches.append((match.start(), match.end(), "substitution", match.group(1), match.group(2)))
+
+    # Sort by position
+    all_matches.sort(key=lambda x: x[0])
+
+    for start, end, match_type, content, new_content in all_matches:
+        # Add any text before this match
+        if start > last_end:
+            segments.append(("text", text[last_end:start]))
+
+        if match_type == "substitution":
+            # Substitution expands to deletion followed by insertion
+            segments.append(("deletion", content))
+            if new_content:
+                segments.append(("insertion", new_content))
+        else:
+            segments.append((match_type, content))
+
+        last_end = end
+
+    # Add remaining text after last match
+    if last_end < len(text):
+        segments.append(("text", text[last_end:]))
+
+    # If no CriticMarkup was found, return the whole text as a single segment
+    if not segments:
+        segments.append(("text", text))
+
+    return segments
+
+
+def create_ins_element(text: str, author: str, date: str, revision_id: str) -> Any:
+    """Create a w:ins XML element for track change insertion.
+
+    Args:
+        text: The inserted text
+        author: Author who made the change
+        date: ISO 8601 timestamp
+        revision_id: Unique revision ID
+
+    Returns:
+        lxml Element representing the w:ins element
+    """
+    ins = OxmlElement("w:ins")
+    ins.set(qn("w:id"), revision_id)
+    ins.set(qn("w:author"), author)
+    ins.set(qn("w:date"), date)
+
+    # Create run inside insertion
+    run = OxmlElement("w:r")
+    ins.append(run)
+
+    # Create text element
+    t = OxmlElement("w:t")
+    t.text = text
+    t.set(XML_SPACE_NS, "preserve")
+    run.append(t)
+
+    return ins
+
+
+def create_del_element(text: str, author: str, date: str, revision_id: str) -> Any:
+    """Create a w:del XML element for track change deletion.
+
+    Args:
+        text: The deleted text
+        author: Author who made the change
+        date: ISO 8601 timestamp
+        revision_id: Unique revision ID
+
+    Returns:
+        lxml Element representing the w:del element
+    """
+    del_elem = OxmlElement("w:del")
+    del_elem.set(qn("w:id"), revision_id)
+    del_elem.set(qn("w:author"), author)
+    del_elem.set(qn("w:date"), date)
+
+    # Create run inside deletion
+    run = OxmlElement("w:r")
+    del_elem.append(run)
+
+    # Create delText element (not regular w:t)
+    del_text = OxmlElement("w:delText")
+    del_text.text = text
+    del_text.set(XML_SPACE_NS, "preserve")
+    run.append(del_text)
+
+    return del_elem
+
+
+def add_text_with_track_changes(
+    paragraph: Any,
+    content: str,
+    track_changes: Optional[list[TrackChange]] = None,
+    default_author: str = "Sidedoc AI",
+    default_date: str = "",
+) -> None:
+    """Add text content with track changes to a paragraph.
+
+    Parses CriticMarkup syntax and creates appropriate w:ins and w:del elements.
+    If track_changes metadata is provided, uses those author/date values.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        content: Text content with CriticMarkup syntax
+        track_changes: Optional list of TrackChange metadata
+        default_author: Default author for new track changes
+        default_date: Default date for new track changes
+    """
+    from datetime import datetime
+
+    if not default_date:
+        default_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    segments = parse_criticmarkup(content)
+
+    # Create a mapping from track change content to metadata
+    tc_lookup: dict[tuple[str, str], TrackChange] = {}
+    if track_changes:
+        for tc in track_changes:
+            if tc.type == "deletion" and tc.deleted_text:
+                tc_lookup[("deletion", tc.deleted_text)] = tc
+            elif tc.type == "insertion":
+                # For insertions, we need to figure out the text from position
+                # This is approximate - we'll use the content between positions
+                pass
+
+    revision_counter = [1]  # Use list to allow modification in nested function
+
+    def get_next_revision_id() -> str:
+        rid = str(revision_counter[0])
+        revision_counter[0] += 1
+        return rid
+
+    para_elem = paragraph._p
+
+    for seg_type, seg_content in segments:
+        if seg_type == "text":
+            # Regular text - add as run
+            if seg_content:
+                run = OxmlElement("w:r")
+                t = OxmlElement("w:t")
+                t.text = seg_content
+                t.set(XML_SPACE_NS, "preserve")
+                run.append(t)
+                para_elem.append(run)
+
+        elif seg_type == "insertion":
+            # Look up metadata or use defaults
+            author = default_author
+            date = default_date
+            revision_id = get_next_revision_id()
+
+            # Try to find matching track change
+            if track_changes:
+                for tc in track_changes:
+                    if tc.type == "insertion":
+                        author = tc.author
+                        date = tc.date
+                        revision_id = tc.revision_id or get_next_revision_id()
+                        break
+
+            ins_elem = create_ins_element(seg_content, author, date, revision_id)
+            para_elem.append(ins_elem)
+
+        elif seg_type == "deletion":
+            # Look up metadata or use defaults
+            author = default_author
+            date = default_date
+            revision_id = get_next_revision_id()
+
+            # Try to find matching track change
+            key = ("deletion", seg_content)
+            if key in tc_lookup:
+                tc = tc_lookup[key]
+                author = tc.author
+                date = tc.date
+                revision_id = tc.revision_id or get_next_revision_id()
+            elif track_changes:
+                for tc in track_changes:
+                    if tc.type == "deletion" and tc.deleted_text == seg_content:
+                        author = tc.author
+                        date = tc.date
+                        revision_id = tc.revision_id or get_next_revision_id()
+                        break
+
+            del_elem = create_del_element(seg_content, author, date, revision_id)
+            para_elem.append(del_elem)
+
+
+def has_criticmarkup(content: str) -> bool:
+    """Check if content contains CriticMarkup syntax.
+
+    Args:
+        content: Text content to check
+
+    Returns:
+        True if CriticMarkup is present
+    """
+    return bool(
+        re.search(INSERTION_PATTERN, content)
+        or re.search(DELETION_PATTERN, content)
+        or re.search(SUBSTITUTION_PATTERN, content)
+    )
+
+
+def validate_criticmarkup(content: str) -> list[str]:
+    """Validate CriticMarkup syntax and return any errors.
+
+    Checks for:
+    - Unclosed {++ (missing ++})
+    - Unclosed {-- (missing --})
+    - Malformed {~~ (missing ~> or ~~})
+
+    Args:
+        content: Text content to validate
+
+    Returns:
+        List of error messages (empty if no errors)
+    """
+    errors: list[str] = []
+    lines = content.split('\n')
+
+    for line_num, line in enumerate(lines, 1):
+        # Check for unclosed insertions
+        ins_opens = line.count('{++')
+        ins_closes = len(re.findall(r'\+\+\}', line))
+        if ins_opens > ins_closes:
+            errors.append(f"Line {line_num}: Unclosed insertion {{++ (missing ++}})")
+
+        # Check for unclosed deletions
+        del_opens = line.count('{--')
+        del_closes = len(re.findall(r'--\}', line))
+        if del_opens > del_closes:
+            errors.append(f"Line {line_num}: Unclosed deletion {{-- (missing --}})")
+
+        # Check for malformed substitutions
+        sub_opens = line.count('{~~')
+        sub_closes = len(re.findall(r'~~\}', line))
+        if sub_opens > sub_closes:
+            errors.append(f"Line {line_num}: Unclosed substitution {{~~ (missing ~~}})")
+
+        # Check for substitution missing ~> separator
+        for match in re.finditer(r'\{~~([^~]*)~~\}', line):
+            if '~>' not in match.group(1):
+                errors.append(f"Line {line_num}: Malformed substitution (missing ~> separator)")
+
+    return errors
 
 
 def add_hyperlink_to_paragraph(
@@ -281,8 +574,11 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
             # Remove markdown markers
             text = block.content.lstrip("#").strip()
 
-            # Check for hyperlinks in heading
-            if has_hyperlinks(text):
+            # Check for CriticMarkup first
+            if has_criticmarkup(text):
+                para = doc.add_paragraph(style=style_name)
+                add_text_with_track_changes(para, text, block.track_changes)
+            elif has_hyperlinks(text):
                 para = doc.add_paragraph(style=style_name)
                 add_text_with_hyperlinks(para, text)
             else:
@@ -306,16 +602,22 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                 # No assets directory or image_path - add placeholder
                 para = doc.add_paragraph("[Image]")
         elif block.type == "paragraph":
-            # Check for hyperlinks in paragraph
-            if has_hyperlinks(block.content):
+            # Check for CriticMarkup first
+            if has_criticmarkup(block.content):
+                para = doc.add_paragraph()
+                add_text_with_track_changes(para, block.content, block.track_changes)
+            elif has_hyperlinks(block.content):
                 para = doc.add_paragraph()
                 add_text_with_hyperlinks(para, block.content)
             else:
                 para = doc.add_paragraph(block.content)
         else:
             # Default to paragraph for unknown types
-            # Check for hyperlinks
-            if has_hyperlinks(block.content):
+            # Check for CriticMarkup first
+            if has_criticmarkup(block.content):
+                para = doc.add_paragraph()
+                add_text_with_track_changes(para, block.content, block.track_changes)
+            elif has_hyperlinks(block.content):
                 para = doc.add_paragraph()
                 add_text_with_hyperlinks(para, block.content)
             else:
@@ -373,6 +675,24 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         # Parse markdown to blocks
         blocks = parse_markdown_to_blocks(content_md)
+
+        # Enrich blocks with track changes data from structure.json
+        structure_blocks = structure_data.get("blocks", [])
+        for block, struct_block in zip(blocks, structure_blocks):
+            # Transfer track changes if present
+            if "track_changes" in struct_block and struct_block["track_changes"]:
+                block.track_changes = [
+                    TrackChange(
+                        type=tc["type"],
+                        start=tc["start"],
+                        end=tc["end"],
+                        author=tc["author"],
+                        date=tc["date"],
+                        revision_id=tc.get("revision_id", ""),
+                        deleted_text=tc.get("deleted_text"),
+                    )
+                    for tc in struct_block["track_changes"]
+                ]
 
         # Create document with assets directory
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir)

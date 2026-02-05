@@ -38,6 +38,18 @@ def create_sidedoc_archive(
                 "level": block.level,
                 "image_path": block.image_path,
                 "inline_formatting": block.inline_formatting,
+                "track_changes": [
+                    {
+                        "type": tc.type,
+                        "start": tc.start,
+                        "end": tc.end,
+                        "author": tc.author,
+                        "date": tc.date,
+                        "revision_id": tc.revision_id,
+                        "deleted_text": tc.deleted_text,
+                    }
+                    for tc in block.track_changes
+                ] if block.track_changes else None,
             }
             for block in blocks
         ]

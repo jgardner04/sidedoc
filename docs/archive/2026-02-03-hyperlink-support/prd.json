@@ -1,0 +1,258 @@
+{
+  "project": "Sidedoc",
+  "branchName": "ralph/hyperlink-support",
+  "description": "Add hyperlink support to Sidedoc - extract, preserve, and sync clickable links using markdown [text](url) syntax",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create hyperlinks test fixture",
+      "description": "As a developer, I need test fixtures with hyperlinks so that automated tests can verify the feature.",
+      "acceptanceCriteria": [
+        "Create tests/fixtures/hyperlinks.docx with various hyperlink scenarios",
+        "Include: simple link, multiple links per paragraph, formatted link text (bold link)",
+        "Include: links in headings, links in list items",
+        "Include: long URL (>100 chars), URL with special characters (?&=)",
+        "Document fixture contents in a comment block in test file",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Fixture created at tests/fixtures/hyperlinks.docx. Verified by test_extract_hyperlinks_fixture."
+    },
+    {
+      "id": "US-002",
+      "title": "Extract hyperlinks from docx paragraphs",
+      "description": "As an AI developer, I want hyperlinks extracted as markdown syntax so that I can read and process linked content efficiently.",
+      "acceptanceCriteria": [
+        "Hyperlinks in docx paragraphs are extracted as [visible text](url) in content.md",
+        "Access hyperlinks via paragraph._element XML using w:hyperlink elements",
+        "Look up actual URL from document.part.rels using relationship ID",
+        "Multiple hyperlinks in a single paragraph are all extracted correctly",
+        "Unit tests verify extraction with hyperlinks.docx fixture",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented in extract.py. Tests: test_extract_simple_hyperlink, test_extract_multiple_hyperlinks, test_extract_hyperlinks_fixture."
+    },
+    {
+      "id": "US-003",
+      "title": "Handle hyperlink URL encoding",
+      "description": "As a developer, I need URLs properly escaped so that markdown parsing works correctly.",
+      "acceptanceCriteria": [
+        "Parentheses in URLs are percent-encoded: url%28with%29parens",
+        "Spaces in URLs are percent-encoded: url%20with%20spaces",
+        "Special markdown characters in link text are escaped: [text with \\[brackets\\]](url)",
+        "Unicode characters in URLs are preserved or properly encoded",
+        "Unit tests cover URL encoding edge cases",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_with_parentheses_in_url, test_extract_hyperlink_with_spaces_in_url, test_extract_hyperlink_with_special_chars_in_text."
+    },
+    {
+      "id": "US-004",
+      "title": "Store hyperlink positions in structure.json",
+      "description": "As a developer, I need hyperlink positions tracked so that sync can map changes back correctly.",
+      "acceptanceCriteria": [
+        "Add hyperlink entries to inline_formatting array in structure.json",
+        "Each hyperlink entry has: type='hyperlink', start, end, url",
+        "Positions are relative to paragraph content (not document)",
+        "Multiple hyperlinks in same paragraph each have separate entries",
+        "Unit tests verify structure.json contains hyperlink metadata",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Tests: test_hyperlink_stores_position_in_inline_formatting, test_multiple_hyperlinks_store_positions."
+    },
+    {
+      "id": "US-005",
+      "title": "Store hyperlink formatting in styles.json",
+      "description": "As a developer, I need hyperlink formatting stored so that links maintain their appearance after round-trip.",
+      "acceptanceCriteria": [
+        "Add is_hyperlink boolean to run entries in styles.json",
+        "Store hyperlink color (default Word blue is #0563C1)",
+        "Store underline style for hyperlinks",
+        "Runs within hyperlinks preserve their formatting (bold, italic)",
+        "Unit tests verify styles.json contains hyperlink formatting",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Bold/italic formatting within hyperlinks preserved. Tests: test_extract_bold_hyperlink, test_extract_italic_hyperlink, test_reconstruct_bold_hyperlink, test_reconstruct_italic_hyperlink."
+    },
+    {
+      "id": "US-006",
+      "title": "Reconstruct hyperlinks in docx from markdown",
+      "description": "As a user, I want hyperlinks in the rebuilt docx to be clickable so that the document functions as expected.",
+      "acceptanceCriteria": [
+        "Parse markdown [text](url) syntax during build",
+        "Create docx hyperlink elements with correct relationship IDs",
+        "Hyperlink text displays correctly in rebuilt document",
+        "Clicking the link opens the URL (verify manually or document in test)",
+        "Apply stored formatting from styles.json or use Word defaults (blue, underlined)",
+        "Unit tests verify hyperlinks appear in rebuilt docx XML",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Implemented in reconstruct.py. Tests: test_reconstruct_simple_hyperlink, test_reconstruct_multiple_hyperlinks, test_reconstruct_hyperlink_in_heading."
+    },
+    {
+      "id": "US-007",
+      "title": "Handle hyperlinks in headings",
+      "description": "As a user, I want hyperlinks in headings to work correctly so that linked section titles are supported.",
+      "acceptanceCriteria": [
+        "Hyperlinks in H1-H6 headings extract correctly",
+        "Heading formatting is preserved alongside hyperlink",
+        "Hyperlinks in headings rebuild correctly",
+        "Unit tests cover hyperlinks in heading blocks",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_in_heading1, test_extract_hyperlink_in_heading2, test_reconstruct_hyperlink_in_heading."
+    },
+    {
+      "id": "US-008",
+      "title": "Handle hyperlinks in lists",
+      "description": "As a user, I want hyperlinks within list items to work correctly so that bulleted/numbered lists with references are supported.",
+      "acceptanceCriteria": [
+        "Hyperlinks in bulleted list items extract correctly",
+        "Hyperlinks in numbered list items extract correctly",
+        "Multiple hyperlinks in a single list item are handled",
+        "Hyperlinks rebuild correctly within list context",
+        "Unit tests verify list hyperlink handling",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Tests: test_extract_hyperlink_in_bullet_list, test_extract_hyperlink_in_numbered_list."
+    },
+    {
+      "id": "US-009",
+      "title": "Sync new hyperlinks from edited markdown",
+      "description": "As an AI agent, I want to add new hyperlinks via markdown and have them appear in the synced docx.",
+      "acceptanceCriteria": [
+        "Adding [text](url) syntax in content.md creates new hyperlink in docx after sync",
+        "New hyperlinks use default formatting (blue #0563C1, underlined)",
+        "New hyperlinks are clickable in rebuilt docx",
+        "structure.json updated with new hyperlink positions",
+        "Unit tests verify new hyperlink sync",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Test: test_sync_adds_new_hyperlinks."
+    },
+    {
+      "id": "US-010",
+      "title": "Sync modified hyperlinks",
+      "description": "As an AI agent, I want to modify hyperlink text or URLs and have those changes reflected in the synced docx.",
+      "acceptanceCriteria": [
+        "Changing link text in markdown updates visible text in docx",
+        "Changing URL in markdown updates hyperlink target",
+        "Existing hyperlink formatting is preserved where possible",
+        "Unit tests verify modified hyperlink sync",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Test: test_sync_modifies_hyperlink_url."
+    },
+    {
+      "id": "US-011",
+      "title": "Sync removed hyperlinks",
+      "description": "As an AI agent, I want to remove hyperlinks by removing markdown syntax and have the text remain as plain text.",
+      "acceptanceCriteria": [
+        "Removing [text](url) syntax but keeping 'text' removes hyperlink",
+        "Plain text remains in docx at same position",
+        "Plain text uses paragraph's base formatting (not hyperlink blue)",
+        "Unit tests verify hyperlink removal sync",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Test: test_sync_removes_hyperlinks."
+    },
+    {
+      "id": "US-012",
+      "title": "Handle edge cases in hyperlink extraction",
+      "description": "As a developer, I need edge cases handled gracefully so that extraction doesn't fail on complex documents.",
+      "acceptanceCriteria": [
+        "Empty hyperlinks (no visible text) are skipped with warning",
+        "Hyperlinks with no URL are treated as plain text",
+        "Very long URLs (>2000 chars) are preserved correctly",
+        "Nested formatting within hyperlinks (bold link text) is preserved",
+        "Unit tests cover all edge cases",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Tests: test_extract_empty_hyperlink_text, test_extract_hyperlink_with_no_url, test_extract_hyperlink_long_url, test_extract_bold_italic_hyperlink."
+    },
+    {
+      "id": "US-013",
+      "title": "Validate hyperlinks in sidedoc",
+      "description": "As a user, I want validation to check hyperlink integrity so that I catch issues before building.",
+      "acceptanceCriteria": [
+        "sidedoc validate checks hyperlink positions in structure.json are valid",
+        "Validation passes for documents with valid hyperlinks",
+        "Clear error message if hyperlink position exceeds content length",
+        "Validation warns (non-blocking) for obviously malformed URLs",
+        "Unit tests cover validation scenarios",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Test: test_validate_sidedoc_with_hyperlinks."
+    },
+    {
+      "id": "US-014",
+      "title": "Round-trip integration test for hyperlinks",
+      "description": "As a developer, I need an integration test proving hyperlinks survive extract->build round-trip.",
+      "acceptanceCriteria": [
+        "Integration test: extract hyperlinks.docx, build new docx, compare",
+        "All hyperlinks present in rebuilt docx",
+        "Hyperlink URLs match original",
+        "Hyperlink visible text matches original",
+        "Test passes in CI",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Tests: test_roundtrip_preserves_hyperlinks, test_roundtrip_preserves_brackets_in_link_text."
+    },
+    {
+      "id": "US-015",
+      "title": "Update README with hyperlink support",
+      "description": "As a user, I want documentation updated so that I understand hyperlink support is available.",
+      "acceptanceCriteria": [
+        "README.md 'Supported Elements' table includes Hyperlinks row",
+        "Show markdown syntax: [text](url)",
+        "Note any limitations (no mailto, no internal anchors)",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "README.md updated with Hyperlinks row showing [text](url) syntax."
+    },
+    {
+      "id": "US-016",
+      "title": "Update docs site with hyperlink feature",
+      "description": "As a potential user, I want the docs site updated so that I know Sidedoc supports hyperlinks.",
+      "acceptanceCriteria": [
+        "Docs site Features page lists hyperlink support",
+        "Format Specification page documents hyperlink handling in structure.json and styles.json",
+        "Include example showing hyperlink extraction and reconstruction",
+        "Docs site builds without errors",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Updated index.md, format-specification.md, status.md, and faq.md with hyperlink documentation. Build passes with --strict flag."
+    }
+  ]
+}
