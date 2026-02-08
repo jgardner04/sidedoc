@@ -106,6 +106,32 @@ def match_blocks(
     return matches
 
 
+def remap_styles(styles_data: dict[str, Any], matches: dict[str, Block]) -> dict[str, Any]:
+    """Remap block IDs in styles_data based on match mapping.
+
+    When blocks are added/removed during sync, block IDs shift. This function
+    updates styles_data so block_styles keys reflect the new block IDs.
+
+    Args:
+        styles_data: Original styles dict with block_styles keyed by old block IDs
+        matches: Mapping from old block IDs to new Block objects
+
+    Returns:
+        Updated styles_data with remapped block_styles keys
+    """
+    old_block_styles = styles_data.get("block_styles", {})
+    new_block_styles: dict[str, Any] = {}
+
+    for old_id, new_block in matches.items():
+        if old_id in old_block_styles:
+            new_block_styles[new_block.id] = old_block_styles[old_id]
+
+    return {
+        **styles_data,
+        "block_styles": new_block_styles,
+    }
+
+
 def apply_inline_formatting(paragraph: Any, content: str) -> None:
     """Apply inline formatting from markdown to a paragraph.
 
@@ -372,39 +398,32 @@ def update_sidedoc_metadata(
     sidedoc_path: str,
     new_blocks: list[Block],
     new_content: str,
+    matches: Optional[dict[str, Block]] = None,
 ) -> None:
-    """Update metadata files in sidedoc archive after sync.
+    """Update metadata files in a sidedoc directory after sync.
 
-    Regenerates structure.json and updates manifest.json, then repackages the archive.
+    Regenerates structure.json, remaps styles.json, and updates manifest.json.
+    Works with both directory and legacy ZIP formats.
 
     Args:
-        sidedoc_path: Path to .sidedoc file
+        sidedoc_path: Path to .sidedoc directory or legacy ZIP
         new_blocks: Updated list of Block objects from edited content
         new_content: New markdown content
+        matches: Optional mapping from old block IDs to new blocks for style remapping
     """
-    # Read existing files from archive
-    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-        # Read styles.json (preserve it)
-        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
+    from sidedoc.store import SidedocStore, detect_sidedoc_format
 
-        # Read old manifest to preserve some fields
-        old_manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
+    fmt = detect_sidedoc_format(sidedoc_path)
 
-        # Collect any assets (images) to preserve
-        assets = {}
-        for file_info in zip_file.filelist:
-            if file_info.filename.startswith("assets/"):
-                # Validate asset size to prevent ZIP bomb attacks
-                if file_info.file_size > MAX_ASSET_SIZE:
-                    raise ValueError(
-                        f"Asset '{file_info.filename}' exceeds maximum size "
-                        f"({file_info.file_size} bytes > {MAX_ASSET_SIZE} bytes). "
-                        "This may be a malicious ZIP bomb attack."
-                    )
-                assets[file_info.filename] = zip_file.read(file_info.filename)
+    if fmt == "directory":
+        _update_directory_metadata(sidedoc_path, new_blocks, new_content, matches)
+    else:
+        _update_zip_metadata(sidedoc_path, new_blocks, new_content, matches)
 
-    # Generate new structure.json
-    structure_data = {
+
+def _build_structure_data(new_blocks: list[Block]) -> dict:
+    """Build structure.json data from blocks."""
+    return {
         "blocks": [
             {
                 "id": block.id,
@@ -422,41 +441,119 @@ def update_sidedoc_metadata(
         ]
     }
 
-    # Compute new content hash
-    content_hash = hashlib.sha256(new_content.encode()).hexdigest()
 
-    # Update manifest.json
-    manifest_data = {
+def _update_manifest(old_manifest: dict, new_content: str) -> dict:
+    """Build updated manifest data."""
+    content_hash = hashlib.sha256(new_content.encode()).hexdigest()
+    return {
         "sidedoc_version": old_manifest["sidedoc_version"],
-        "created_at": old_manifest["created_at"],  # Preserve original
-        "modified_at": get_iso_timestamp(),  # Update to now
+        "created_at": old_manifest["created_at"],
+        "modified_at": get_iso_timestamp(),
         "source_file": old_manifest["source_file"],
         "source_hash": old_manifest["source_hash"],
-        "content_hash": content_hash,  # Update with new hash
+        "content_hash": content_hash,
         "generator": old_manifest["generator"],
     }
 
-    # Repackage archive with updated files
-    # Write to temp file first, then replace original
+
+def _update_directory_metadata(
+    sidedoc_path: str,
+    new_blocks: list[Block],
+    new_content: str,
+    matches: Optional[dict[str, Block]] = None,
+) -> None:
+    """Update metadata in a sidedoc directory."""
+    dir_path = Path(sidedoc_path)
+
+    # Read existing styles
+    styles_data = json.loads((dir_path / "styles.json").read_text(encoding="utf-8"))
+
+    # Remap styles if matches provided
+    if matches:
+        styles_data = remap_styles(styles_data, matches)
+
+    # Read old manifest if it exists
+    manifest_path = dir_path / "manifest.json"
+    if manifest_path.exists():
+        old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    else:
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": get_iso_timestamp(),
+            "source_file": "unknown",
+            "source_hash": "",
+            "generator": "sidedoc-cli",
+        }
+
+    structure_data = _build_structure_data(new_blocks)
+    manifest_data = _update_manifest(old_manifest, new_content)
+
+    # Write to .tmp files first, then rename for atomicity
+    tmp_files = []
+    try:
+        for name, data in [
+            ("content.md", new_content),
+            ("structure.json", json.dumps(structure_data, indent=2)),
+            ("styles.json", json.dumps(styles_data, indent=2)),
+            ("manifest.json", json.dumps(manifest_data, indent=2)),
+        ]:
+            tmp_path = dir_path / f"{name}.tmp"
+            tmp_files.append((tmp_path, dir_path / name))
+            tmp_path.write_text(data, encoding="utf-8")
+
+        # Rename all atomically
+        for tmp_path, final_path in tmp_files:
+            tmp_path.replace(final_path)
+    except Exception:
+        # Clean up any tmp files on failure
+        for tmp_path, _ in tmp_files:
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def _update_zip_metadata(
+    sidedoc_path: str,
+    new_blocks: list[Block],
+    new_content: str,
+    matches: Optional[dict[str, Block]] = None,
+) -> None:
+    """Update metadata in a legacy ZIP sidedoc archive."""
+    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
+        old_manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
+
+        assets = {}
+        for file_info in zip_file.filelist:
+            if file_info.filename.startswith("assets/"):
+                if file_info.file_size > MAX_ASSET_SIZE:
+                    raise ValueError(
+                        f"Asset '{file_info.filename}' exceeds maximum size "
+                        f"({file_info.file_size} bytes > {MAX_ASSET_SIZE} bytes). "
+                        "This may be a malicious ZIP bomb attack."
+                    )
+                assets[file_info.filename] = zip_file.read(file_info.filename)
+
+    if matches:
+        styles_data = remap_styles(styles_data, matches)
+
+    structure_data = _build_structure_data(new_blocks)
+    manifest_data = _update_manifest(old_manifest, new_content)
+
     with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".sidedoc") as tmp:
         tmp_path = tmp.name
 
     try:
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # Write updated content and metadata
             zip_file.writestr("content.md", new_content)
             zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
             zip_file.writestr("styles.json", json.dumps(styles_data, indent=2))
             zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
-            # Preserve assets
             for asset_path, asset_data in assets.items():
                 zip_file.writestr(asset_path, asset_data)
 
-        # Replace original file with updated one
         Path(tmp_path).replace(sidedoc_path)
     except Exception:
-        # Clean up temp file only if replace failed
         if Path(tmp_path).exists():
             Path(tmp_path).unlink()
         raise

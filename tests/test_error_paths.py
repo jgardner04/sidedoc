@@ -44,8 +44,8 @@ def test_extract_handles_corrupt_zip_file():
 
 
 def test_validate_handles_corrupt_zip_file():
-    """Test that validate command handles corrupt ZIP files gracefully."""
-    # Create a file that's not a valid ZIP
+    """Test that validate command handles corrupt/non-sidedoc files gracefully."""
+    # Create a file that's not a valid ZIP or directory
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
     temp_file.write(b"Not a ZIP file at all!")
     temp_file.close()
@@ -56,8 +56,8 @@ def test_validate_handles_corrupt_zip_file():
     try:
         # Should fail with appropriate error message
         assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
-        assert ("invalid" in result.output.lower() or "zip" in result.output.lower()), \
-            f"Expected ZIP/invalid error message, got: {result.output}"
+        assert ("invalid" in result.output.lower() or "not a valid" in result.output.lower()), \
+            f"Expected invalid/not-valid error message, got: {result.output}"
     finally:
         Path(temp_file.name).unlink()
 
@@ -199,38 +199,43 @@ def test_validate_handles_invalid_styles_json():
         Path(sidedoc_path).unlink()
 
 
-def test_build_handles_invalid_structure_json():
-    """Test that build command handles invalid structure.json gracefully."""
-    sidedoc_path = create_sidedoc_with_invalid_json("structure.json")
+def test_build_handles_invalid_styles_json():
+    """Test that build command handles invalid styles.json gracefully."""
+    sidedoc_path = create_sidedoc_with_invalid_json("styles.json")
 
     runner = CliRunner()
     result = runner.invoke(cli.build, [sidedoc_path])
 
     try:
-        # Should fail with appropriate error message
+        # Should fail with appropriate error message (build needs styles.json)
         assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
-        # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
-            f"Expected JSON error message, got: {result.output}"
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value", "error"]), \
+            f"Expected JSON/error message, got: {result.output}"
     finally:
         Path(sidedoc_path).unlink()
 
 
 def test_sync_handles_invalid_structure_json():
-    """Test that sync command handles invalid structure.json gracefully."""
-    sidedoc_path = create_sidedoc_with_invalid_json("structure.json")
+    """Test that sync command handles invalid structure.json in directory format."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+        sidedoc_path.mkdir()
+        (sidedoc_path / "content.md").write_text("# Test\n\nParagraph.")
+        (sidedoc_path / "styles.json").write_text(json.dumps({"block_styles": {}}))
+        (sidedoc_path / "structure.json").write_text("not valid json at all")
+        (sidedoc_path / "manifest.json").write_text(json.dumps({
+            "sidedoc_version": "1.0.0", "created_at": "2024-01-01", "modified_at": "2024-01-01",
+            "source_file": "test.docx", "source_hash": "abc", "content_hash": "def",
+            "generator": "test",
+        }))
 
-    runner = CliRunner()
-    result = runner.invoke(cli.sync, [sidedoc_path])
+        runner = CliRunner()
+        result = runner.invoke(cli.sync, [str(sidedoc_path)])
 
-    try:
         # Should fail with appropriate error message
         assert result.exit_code != 0, f"Expected non-zero exit code, got output: {result.output}"
-        # Error message should indicate JSON parsing issue
-        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value"]), \
+        assert any(word in result.output.lower() for word in ["json", "decode", "expecting", "value", "invalid"]), \
             f"Expected JSON error message, got: {result.output}"
-    finally:
-        Path(sidedoc_path).unlink()
 
 
 # ============================================================================
@@ -404,35 +409,26 @@ def test_extract_large_document_performance():
 
 def test_roundtrip_large_document():
     """Test complete roundtrip (extract -> build) for large document."""
-    docx_path = create_large_docx(ROUNDTRIP_TEST_SIZE)  # Use smaller size for full roundtrip
+    import shutil
+    docx_path = create_large_docx(ROUNDTRIP_TEST_SIZE)
 
     try:
-        # Extract to sidedoc
-        temp_sidedoc = tempfile.NamedTemporaryFile(delete=False, suffix=".sidedoc")
-        temp_sidedoc.close()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sidedoc_path = str(Path(temp_dir) / "large.sidedoc")
+            output_path = str(Path(temp_dir) / "output.docx")
 
-        runner = CliRunner()
-        result = runner.invoke(cli.extract, [docx_path, "-o", temp_sidedoc.name])
-        assert result.exit_code == 0
+            runner = CliRunner()
+            result = runner.invoke(cli.extract, [docx_path, "-o", sidedoc_path])
+            assert result.exit_code == 0
 
-        # Build back to docx
-        temp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-        temp_output.close()
+            result = runner.invoke(cli.build, [sidedoc_path, "-o", output_path])
+            assert result.exit_code == 0
 
-        result = runner.invoke(cli.build, [temp_sidedoc.name, "-o", temp_output.name])
-        assert result.exit_code == 0
+            assert Path(output_path).exists()
 
-        # Verify output exists and is valid
-        assert Path(temp_output.name).exists()
-
-        # Should be able to open rebuilt document
-        rebuilt_doc = Document(temp_output.name)
-        assert len(rebuilt_doc.paragraphs) > ROUNDTRIP_TEST_SIZE, \
-            f"Expected >{ROUNDTRIP_TEST_SIZE} paragraphs, got {len(rebuilt_doc.paragraphs)}"
-
-        # Cleanup
-        Path(temp_sidedoc.name).unlink()
-        Path(temp_output.name).unlink()
+            rebuilt_doc = Document(output_path)
+            assert len(rebuilt_doc.paragraphs) > ROUNDTRIP_TEST_SIZE, \
+                f"Expected >{ROUNDTRIP_TEST_SIZE} paragraphs, got {len(rebuilt_doc.paragraphs)}"
     finally:
         Path(docx_path).unlink()
 

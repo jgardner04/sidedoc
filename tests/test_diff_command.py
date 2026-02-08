@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 from click.testing import CliRunner
 from sidedoc.cli import main
+from tests.helpers import create_sidedoc_dir
 
 
 def test_diff_command_shows_added_blocks() -> None:
@@ -15,8 +16,6 @@ def test_diff_command_shows_added_blocks() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         sidedoc_path = Path(temp_dir) / "test.sidedoc"
 
-        # Create sidedoc with initial content
-        old_content = "# Title"
         old_structure = {
             "blocks": [
                 {
@@ -32,30 +31,13 @@ def test_diff_command_shows_added_blocks() -> None:
                 }
             ]
         }
-        styles = {"block_styles": {}, "document_defaults": {"font_name": "Arial", "font_size": 11}}
-        manifest = {
-            "sidedoc_version": "1.0.0",
-            "created_at": "2024-01-01T00:00:00+00:00",
-            "modified_at": "2024-01-01T00:00:00+00:00",
-            "source_file": "test.docx",
-            "source_hash": "abc123",
-            "content_hash": "old_hash",
-            "generator": "sidedoc-cli/0.1.0",
-        }
 
-        # Create archive with OLD content in structure
-        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
-            # Write NEW content (added paragraph)
-            zip_file.writestr("content.md", "# Title\n\nNew paragraph added.")
-            zip_file.writestr("structure.json", json.dumps(old_structure))
-            zip_file.writestr("styles.json", json.dumps(styles))
-            zip_file.writestr("manifest.json", json.dumps(manifest))
+        # New content has added paragraph vs old structure
+        create_sidedoc_dir(sidedoc_path, "# Title\n\nNew paragraph added.", old_structure)
 
-        # Run diff command
         result = runner.invoke(main, ["diff", str(sidedoc_path)])
 
         assert result.exit_code == 0
-        # Should show added content
         assert "+" in result.output or "added" in result.output.lower()
 
 
@@ -66,7 +48,6 @@ def test_diff_command_shows_removed_blocks() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         sidedoc_path = Path(temp_dir) / "test.sidedoc"
 
-        # Old structure has 2 blocks
         old_structure = {
             "blocks": [
                 {
@@ -94,25 +75,12 @@ def test_diff_command_shows_removed_blocks() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
-            # New content has only 1 block (paragraph removed)
-            zip_file.writestr("content.md", "# Title")
-            zip_file.writestr("structure.json", json.dumps(old_structure))
-            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zip_file.writestr("manifest.json", json.dumps({
-                "sidedoc_version": "1.0.0",
-                "created_at": "2024-01-01T00:00:00+00:00",
-                "modified_at": "2024-01-01T00:00:00+00:00",
-                "source_file": "test.docx",
-                "source_hash": "abc",
-                "content_hash": "hash",
-                "generator": "sidedoc-cli/0.1.0",
-            }))
+        # New content has only 1 block (paragraph removed)
+        create_sidedoc_dir(sidedoc_path, "# Title", old_structure)
 
         result = runner.invoke(main, ["diff", str(sidedoc_path)])
 
         assert result.exit_code == 0
-        # Should show removed content
         assert "-" in result.output or "removed" in result.output.lower()
 
 
@@ -139,25 +107,11 @@ def test_diff_command_shows_modified_blocks() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
-            # Modified content (different from what structure has)
-            zip_file.writestr("content.md", "Modified text.")
-            zip_file.writestr("structure.json", json.dumps(old_structure))
-            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zip_file.writestr("manifest.json", json.dumps({
-                "sidedoc_version": "1.0.0",
-                "created_at": "2024-01-01T00:00:00+00:00",
-                "modified_at": "2024-01-01T00:00:00+00:00",
-                "source_file": "test.docx",
-                "source_hash": "abc",
-                "content_hash": "hash",
-                "generator": "sidedoc-cli/0.1.0",
-            }))
+        create_sidedoc_dir(sidedoc_path, "Modified text.", old_structure)
 
         result = runner.invoke(main, ["diff", str(sidedoc_path)])
 
         assert result.exit_code == 0
-        # Should show modification or both old and new
         output_lower = result.output.lower()
         assert "modified" in output_lower or ("+" in result.output and "-" in result.output)
 
@@ -176,7 +130,6 @@ def test_diff_command_no_changes() -> None:
 
         content = "# Title\n\nParagraph."
 
-        # Create matching content and structure with REAL hashes
         old_structure = {
             "blocks": [
                 {
@@ -204,23 +157,28 @@ def test_diff_command_no_changes() -> None:
             ]
         }
 
-        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
-            zip_file.writestr("content.md", content)
-            zip_file.writestr("structure.json", json.dumps(old_structure))
-            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
-            zip_file.writestr("manifest.json", json.dumps({
-                "sidedoc_version": "1.0.0",
-                "created_at": "2024-01-01T00:00:00+00:00",
-                "modified_at": "2024-01-01T00:00:00+00:00",
-                "source_file": "test.docx",
-                "source_hash": "abc",
-                "content_hash": "hash",
-                "generator": "sidedoc-cli/0.1.0",
-            }))
+        create_sidedoc_dir(sidedoc_path, content, old_structure)
 
         result = runner.invoke(main, ["diff", str(sidedoc_path)])
 
         assert result.exit_code == 0
-        # Should indicate no changes
         output_lower = result.output.lower()
         assert "no changes" in output_lower or "unchanged" in output_lower
+
+
+def test_diff_rejects_zip_archive() -> None:
+    """Test that diff command rejects ZIP archives."""
+    runner = CliRunner()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_path = Path(temp_dir) / "test.sdoc"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("content.md", "# Title")
+            zf.writestr("structure.json", json.dumps({"blocks": []}))
+            zf.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zf.writestr("manifest.json", json.dumps({}))
+
+        result = runner.invoke(main, ["diff", str(zip_path)])
+
+        assert result.exit_code != 0
+        assert "Cannot diff a ZIP archive" in result.output

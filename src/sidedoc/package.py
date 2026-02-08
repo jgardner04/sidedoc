@@ -8,23 +8,16 @@ from sidedoc.utils import compute_file_hash, get_iso_timestamp
 from sidedoc import __version__
 
 
-def create_sidedoc_archive(
-    output_path: str,
+def _build_metadata(
     content_md: str,
     blocks: list[Block],
     styles: list[Style],
     source_file: str,
-    image_data: dict[str, bytes] | None = None,
-) -> None:
-    """Create a .sidedoc ZIP archive.
+) -> tuple[dict, dict, dict]:
+    """Build structure, styles, and manifest dicts from extraction data.
 
-    Args:
-        output_path: Output path for .sidedoc file
-        content_md: Markdown content
-        blocks: List of Block objects
-        styles: List of Style objects
-        source_file: Original source file path
-        image_data: Optional dict mapping image filenames to image bytes
+    Returns:
+        Tuple of (structure_data, styles_data, manifest_data)
     """
     structure_data = {
         "blocks": [
@@ -83,7 +76,7 @@ def create_sidedoc_archive(
         modified_at=timestamp,
         source_file=Path(source_file).name,
         source_hash=content_hash,
-        content_hash=content_hash,  # Will be updated after writing content.md
+        content_hash=content_hash,
         generator=f"sidedoc-cli/{__version__}",
     )
 
@@ -97,14 +90,74 @@ def create_sidedoc_archive(
         "generator": manifest.generator,
     }
 
-    # Create ZIP archive
+    return structure_data, styles_data, manifest_data
+
+
+def create_sidedoc_archive(
+    output_path: str,
+    content_md: str,
+    blocks: list[Block],
+    styles: list[Style],
+    source_file: str,
+    image_data: dict[str, bytes] | None = None,
+) -> None:
+    """Create a .sidedoc/.sdoc ZIP archive.
+
+    Args:
+        output_path: Output path for archive file
+        content_md: Markdown content
+        blocks: List of Block objects
+        styles: List of Style objects
+        source_file: Original source file path
+        image_data: Optional dict mapping image filenames to image bytes
+    """
+    structure_data, styles_data, manifest_data = _build_metadata(
+        content_md, blocks, styles, source_file
+    )
+
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
         zip_file.writestr("content.md", content_md)
         zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
         zip_file.writestr("styles.json", json.dumps(styles_data, indent=2))
         zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
 
-        # Preserve image assets from the original document
         if image_data:
             for filename, image_bytes in image_data.items():
                 zip_file.writestr(f"assets/{filename}", image_bytes)
+
+
+def create_sidedoc_directory(
+    output_path: str,
+    content_md: str,
+    blocks: list[Block],
+    styles: list[Style],
+    source_file: str,
+    image_data: dict[str, bytes] | None = None,
+) -> None:
+    """Create a .sidedoc directory.
+
+    Args:
+        output_path: Output path for directory
+        content_md: Markdown content
+        blocks: List of Block objects
+        styles: List of Style objects
+        source_file: Original source file path
+        image_data: Optional dict mapping image filenames to image bytes
+    """
+    structure_data, styles_data, manifest_data = _build_metadata(
+        content_md, blocks, styles, source_file
+    )
+
+    out = Path(output_path)
+    out.mkdir(parents=True, exist_ok=True)
+
+    (out / "content.md").write_text(content_md, encoding="utf-8")
+    (out / "structure.json").write_text(json.dumps(structure_data, indent=2), encoding="utf-8")
+    (out / "styles.json").write_text(json.dumps(styles_data, indent=2), encoding="utf-8")
+    (out / "manifest.json").write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+    if image_data:
+        assets_dir = out / "assets"
+        assets_dir.mkdir(exist_ok=True)
+        for filename, image_bytes in image_data.items():
+            (assets_dir / filename).write_bytes(image_bytes)

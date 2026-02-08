@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from docx import Document
 from sidedoc.models import Block
-from sidedoc.sync import match_blocks, generate_updated_docx, update_sidedoc_metadata
+from sidedoc.sync import match_blocks, generate_updated_docx, update_sidedoc_metadata, remap_styles
 
 
 def compute_hash(content: str) -> str:
@@ -1224,6 +1224,81 @@ def test_similarity_threshold_boundary_cases():
 
     matches_high = match_blocks(old_blocks, new_blocks_high)
     assert "block-1" in matches_high, "High similarity should match"
+
+
+def test_remap_styles_remaps_block_ids() -> None:
+    """Test that remap_styles correctly remaps block IDs in styles_data."""
+    styles_data = {
+        "block_styles": {
+            "block-0": {"font_name": "Arial", "font_size": 12, "alignment": "left"},
+            "block-1": {"font_name": "Times New Roman", "font_size": 14, "alignment": "center"},
+        },
+        "document_defaults": {"font_name": "Calibri", "font_size": 11},
+    }
+
+    # Matches map old IDs to new blocks
+    new_block_0 = Block(id="block-0", type="heading", content="# Title", docx_paragraph_index=0,
+                        content_start=0, content_end=7, content_hash="h1", level=1)
+    new_block_1 = Block(id="block-1", type="paragraph", content="Para", docx_paragraph_index=1,
+                        content_start=8, content_end=12, content_hash="h2")
+    matches = {"block-0": new_block_0, "block-1": new_block_1}
+
+    result = remap_styles(styles_data, matches)
+
+    # Styles should now use new block IDs (same in this case since IDs match)
+    assert "block-0" in result["block_styles"]
+    assert "block-1" in result["block_styles"]
+    assert result["document_defaults"] == {"font_name": "Calibri", "font_size": 11}
+
+
+def test_remap_styles_handles_shifted_ids() -> None:
+    """Test that remap_styles handles ID shifts from block additions/removals."""
+    styles_data = {
+        "block_styles": {
+            "block-0": {"font_name": "Arial", "font_size": 12, "alignment": "left"},
+            "block-1": {"font_name": "Courier", "font_size": 10, "alignment": "left"},
+        },
+        "document_defaults": {"font_name": "Calibri", "font_size": 11},
+    }
+
+    # After editing, block-0 matched to block-0 (same), block-1 matched to block-2 (shifted)
+    new_block_0 = Block(id="block-0", type="heading", content="# Title", docx_paragraph_index=0,
+                        content_start=0, content_end=7, content_hash="h1", level=1)
+    new_block_2 = Block(id="block-2", type="paragraph", content="Para", docx_paragraph_index=2,
+                        content_start=20, content_end=24, content_hash="h2")
+    matches = {"block-0": new_block_0, "block-1": new_block_2}
+
+    result = remap_styles(styles_data, matches)
+
+    # block-0 style stays at block-0 (matched to same ID)
+    assert "block-0" in result["block_styles"]
+    assert result["block_styles"]["block-0"]["font_name"] == "Arial"
+    # block-1's style should now be at block-2 (shifted)
+    assert "block-2" in result["block_styles"]
+    assert result["block_styles"]["block-2"]["font_name"] == "Courier"
+    # block-1 should not exist in remapped styles
+    assert "block-1" not in result["block_styles"]
+
+
+def test_remap_styles_drops_unmatched_blocks() -> None:
+    """Test that styles for deleted (unmatched) blocks are dropped."""
+    styles_data = {
+        "block_styles": {
+            "block-0": {"font_name": "Arial", "font_size": 12, "alignment": "left"},
+            "block-1": {"font_name": "Courier", "font_size": 10, "alignment": "left"},
+        },
+        "document_defaults": {"font_name": "Calibri", "font_size": 11},
+    }
+
+    # Only block-0 matched; block-1 was deleted
+    new_block_0 = Block(id="block-0", type="heading", content="# Title", docx_paragraph_index=0,
+                        content_start=0, content_end=7, content_hash="h1", level=1)
+    matches = {"block-0": new_block_0}
+
+    result = remap_styles(styles_data, matches)
+
+    assert "block-0" in result["block_styles"]
+    assert "block-1" not in result["block_styles"]
 
 
 def test_different_block_types_not_matched():
