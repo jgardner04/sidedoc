@@ -34,10 +34,20 @@ def main() -> None:
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", help="Output path for .sidedoc file")
-def extract(input_file: str, output: str | None) -> None:
+@click.option(
+    "--track-changes/--no-track-changes",
+    default=None,
+    help="Force enable/disable track changes extraction. Default: auto-detect",
+)
+def extract(input_file: str, output: str | None, track_changes: bool | None) -> None:
     """Extract a Word document into a sidedoc archive.
 
     Converts document.docx to document.sidedoc (or custom output path).
+
+    Track changes behavior:
+    - Default: Auto-detect track changes in the document
+    - --track-changes: Force extract track changes as CriticMarkup
+    - --no-track-changes: Accept all changes (ignore track changes)
     """
     try:
         if output is None:
@@ -45,7 +55,7 @@ def extract(input_file: str, output: str | None) -> None:
         else:
             output = ensure_sidedoc_extension(output)
 
-        blocks, image_data = extract_blocks(input_file)
+        blocks, image_data = extract_blocks(input_file, track_changes=track_changes)
         styles = extract_styles(input_file, blocks)
         content_md = blocks_to_markdown(blocks)
         create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data)
@@ -128,7 +138,7 @@ def _read_sidedoc_files(input_file: str) -> tuple[str, dict, dict]:
     return content_md, styles_data, old_structure
 
 
-def _convert_structure_to_blocks(old_structure: dict):
+def _convert_structure_to_blocks(old_structure: dict) -> list:
     """Convert structure.json dict to list of Block objects.
 
     Args:
@@ -158,7 +168,7 @@ def _convert_structure_to_blocks(old_structure: dict):
     return old_blocks
 
 
-def _build_output_docx(new_blocks, old_structure: dict, styles_data: dict, output: str) -> None:
+def _build_output_docx(new_blocks: list, old_structure: dict, styles_data: dict, output: str) -> None:
     """Build output docx file from new blocks with formatting preserved.
 
     Args:
@@ -178,13 +188,18 @@ def _build_output_docx(new_blocks, old_structure: dict, styles_data: dict, outpu
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", help="Optional: build updated docx to this path")
-def sync(input_file: str, output: str | None) -> None:
+@click.option("--author", default="Sidedoc AI", help="Author name for track changes (default: 'Sidedoc AI')")
+def sync(input_file: str, output: str | None, author: str) -> None:
     """Sync changes from edited content.md back to the document.
 
     Updates the internal docx representation in the sidedoc archive.
     Optionally builds the updated docx to a specified path.
+
+    CriticMarkup syntax ({++insert++}, {--delete--}, {~~old~>new~~}) in content.md
+    will be converted to track changes in the output docx with the specified author.
     """
     import zipfile
+    from sidedoc.sync import sync_sidedoc_to_docx
 
     try:
         content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
@@ -194,7 +209,9 @@ def sync(input_file: str, output: str | None) -> None:
         click.echo(f"✓ Synced changes in {input_file}")
 
         if output:
-            _build_output_docx(new_blocks, old_structure, styles_data, output)
+            # Use sync_sidedoc_to_docx for track changes support
+            sync_sidedoc_to_docx(input_file, output, author=author)
+            click.echo(f"✓ Built updated document: {output}")
 
         sys.exit(EXIT_SUCCESS)
 
@@ -209,12 +226,69 @@ def sync(input_file: str, output: str | None) -> None:
         sys.exit(EXIT_ERROR)
 
 
+def _validate_track_changes(structure: dict, content: str) -> list[str]:
+    """Validate track changes in structure.json.
+
+    Checks:
+    - Track change positions are within block bounds
+    - Track change metadata is complete (author, date)
+
+    Args:
+        structure: Parsed structure.json data
+        content: Content from content.md
+
+    Returns:
+        List of warning messages (empty if no issues)
+    """
+    warnings = []
+    content_lines = content.split('\n')
+
+    for block in structure.get("blocks", []):
+        block_id = block.get("id", "unknown")
+        track_changes = block.get("track_changes") or []
+        content_start = block.get("content_start", 0)
+        content_end = block.get("content_end", 0)
+        block_length = content_end - content_start
+
+        for i, tc in enumerate(track_changes):
+            tc_type = tc.get("type", "unknown")
+            tc_start = tc.get("start", 0)
+            tc_end = tc.get("end", 0)
+
+            # Check positions are within block bounds
+            if tc_end > block_length:
+                warnings.append(
+                    f"Track change {i+1} in {block_id} has invalid position: "
+                    f"end ({tc_end}) exceeds block length ({block_length})"
+                )
+
+            # Check start is before end
+            if tc_start > tc_end:
+                warnings.append(
+                    f"Track change {i+1} in {block_id} has invalid positions: "
+                    f"start ({tc_start}) is after end ({tc_end})"
+                )
+
+            # Check metadata completeness
+            if not tc.get("author"):
+                warnings.append(
+                    f"Track change {i+1} in {block_id} is missing author metadata"
+                )
+            if not tc.get("date"):
+                warnings.append(
+                    f"Track change {i+1} in {block_id} is missing date metadata"
+                )
+
+    return warnings
+
+
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 def validate(input_file: str) -> None:
     """Validate a sidedoc archive for correctness.
 
-    Checks structure, JSON schemas, content hashes, and asset references.
+    Checks structure, JSON schemas, content hashes, asset references,
+    and track change integrity.
     """
     import zipfile
     import json
@@ -236,6 +310,17 @@ def validate(input_file: str) -> None:
                 except json.JSONDecodeError as e:
                     click.echo(f"✗ Invalid JSON in {json_file}: {e}", err=True)
                     sys.exit(EXIT_INVALID_FORMAT)
+
+            # Validate track changes
+            content = zip_file.read("content.md").decode("utf-8")
+            structure = json.loads(zip_file.read("structure.json").decode("utf-8"))
+            tc_warnings = _validate_track_changes(structure, content)
+
+            if tc_warnings:
+                for warning in tc_warnings:
+                    click.echo(f"⚠ Warning: {warning}", err=True)
+                click.echo(f"✗ Sidedoc archive has {len(tc_warnings)} track change issue(s)")
+                sys.exit(EXIT_INVALID_FORMAT)
 
         click.echo("✓ Sidedoc archive is valid")
         sys.exit(EXIT_SUCCESS)

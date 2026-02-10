@@ -9,7 +9,7 @@ from docx import Document
 from docx.shared import Pt
 from docx.oxml.ns import qn
 from PIL import Image
-from sidedoc.models import Block, Style
+from sidedoc.models import Block, Style, TrackChange
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
@@ -294,6 +294,346 @@ def extract_hyperlink_text_and_formatting(hyperlink_elem: Any) -> tuple[str, boo
                 text_parts.append(text_elem.text)
 
     return "".join(text_parts), is_bold, is_italic
+
+
+def detect_track_changes(docx_path: str) -> bool:
+    """Detect whether a Word document contains track changes.
+
+    Scans the document for any w:ins (insertion) or w:del (deletion) elements
+    to determine if the document has revision tracking.
+
+    Args:
+        docx_path: Path to .docx file
+
+    Returns:
+        True if the document contains any track changes, False otherwise
+    """
+    doc = Document(docx_path)
+
+    for paragraph in doc.paragraphs:
+        para_elem = paragraph._element
+
+        # Check for any insertion elements
+        ins_elements = para_elem.findall(f'.//{{{WORDPROCESSINGML_NS}}}ins')
+        if ins_elements:
+            return True
+
+        # Check for any deletion elements
+        del_elements = para_elem.findall(f'.//{{{WORDPROCESSINGML_NS}}}del')
+        if del_elements:
+            return True
+
+    return False
+
+
+def extract_track_change_metadata(element: Any) -> tuple[str, str, str]:
+    """Extract author, date, and revision_id from a track change element.
+
+    Args:
+        element: The w:ins or w:del XML element
+
+    Returns:
+        Tuple of (author, date, revision_id)
+    """
+    author = element.get(f'{{{WORDPROCESSINGML_NS}}}author') or ""
+    date = element.get(f'{{{WORDPROCESSINGML_NS}}}date') or ""
+    revision_id = element.get(f'{{{WORDPROCESSINGML_NS}}}id') or ""
+    return author, date, revision_id
+
+
+def extract_insertion_text(ins_element: Any) -> str:
+    """Extract text content from a w:ins element.
+
+    Args:
+        ins_element: The w:ins XML element
+
+    Returns:
+        The inserted text
+    """
+    text_parts = []
+    # Find all w:t elements within the insertion
+    for text_elem in ins_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}t'):
+        if text_elem.text:
+            text_parts.append(text_elem.text)
+    return "".join(text_parts)
+
+
+def extract_deletion_text(del_element: Any) -> str:
+    """Extract text content from a w:del element.
+
+    Args:
+        del_element: The w:del XML element
+
+    Returns:
+        The deleted text
+    """
+    text_parts = []
+    # Find all w:delText elements within the deletion
+    for del_text_elem in del_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}delText'):
+        if del_text_elem.text:
+            text_parts.append(del_text_elem.text)
+    return "".join(text_parts)
+
+
+def extract_paragraph_accept_all(
+    para_elem: Any, doc_part: Any = None
+) -> tuple[str, list[dict[str, Any]] | None, None]:
+    """Extract content from a paragraph, accepting all track changes.
+
+    When track changes are disabled (--no-track-changes), this function:
+    - Includes insertion text as plain text (accepts insertions)
+    - Excludes deletion text (accepts deletions, removing the text)
+    - Handles regular runs and hyperlinks normally
+
+    Args:
+        para_elem: The paragraph's XML element
+        doc_part: Document part for accessing hyperlink relationships
+
+    Returns:
+        Tuple of (markdown_content, inline_formatting, None)
+        Note: track_changes is always None as we're accepting all changes
+    """
+    markdown_parts = []
+    inline_formatting: list[dict[str, Any]] = []
+    plain_text_position = 0
+
+    for child in para_elem:
+        tag = child.tag
+
+        if tag == f'{{{WORDPROCESSINGML_NS}}}ins':
+            # Accept insertion: include the text without CriticMarkup
+            inserted_text = extract_insertion_text(child)
+            if inserted_text:
+                markdown_parts.append(inserted_text)
+                plain_text_position += len(inserted_text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}del':
+            # Accept deletion: skip the deleted text (don't include it)
+            pass
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}hyperlink':
+            if doc_part is None:
+                continue
+
+            url = get_hyperlink_url(child, doc_part)
+            if url is None:
+                text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                if text:
+                    markdown_parts.append(text)
+                    plain_text_position += len(text)
+                continue
+
+            text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+            if not text:
+                continue
+
+            encoded_url = encode_url_for_markdown(url)
+            escaped_text = escape_markdown_link_text(text)
+
+            if is_bold and is_italic:
+                link_md = f"[***{escaped_text}***]({encoded_url})"
+            elif is_bold:
+                link_md = f"[**{escaped_text}**]({encoded_url})"
+            elif is_italic:
+                link_md = f"[*{escaped_text}*]({encoded_url})"
+            else:
+                link_md = f"[{escaped_text}]({encoded_url})"
+
+            markdown_parts.append(link_md)
+            plain_text_position += len(text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            # Regular run
+            text_parts = []
+            for t_elem in child.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
+                if t_elem.text:
+                    text_parts.append(t_elem.text)
+
+            if text_parts:
+                run_text = "".join(text_parts)
+                markdown_parts.append(run_text)
+
+                rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+                if rPr is not None:
+                    is_bold = rPr.find(f'{{{WORDPROCESSINGML_NS}}}b') is not None
+                    is_italic = rPr.find(f'{{{WORDPROCESSINGML_NS}}}i') is not None
+
+                    if is_bold or is_italic:
+                        inline_formatting.append({
+                            'start': plain_text_position,
+                            'end': plain_text_position + len(run_text),
+                            'bold': is_bold,
+                            'italic': is_italic,
+                        })
+
+                plain_text_position += len(run_text)
+
+    markdown_content = "".join(markdown_parts)
+    return (
+        markdown_content,
+        inline_formatting if inline_formatting else None,
+        None  # No track changes when accepting all
+    )
+
+
+def extract_paragraph_with_track_changes(
+    para_elem: Any, doc_part: Any = None
+) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
+    """Extract content from a paragraph, including track changes as CriticMarkup.
+
+    This function walks the paragraph XML and handles:
+    - Regular runs (w:r)
+    - Insertions (w:ins) -> converted to {++text++}
+    - Deletions (w:del) -> converted to {--text--}
+    - Hyperlinks (w:hyperlink)
+
+    Args:
+        para_elem: The paragraph's XML element
+        doc_part: Document part for accessing hyperlink relationships
+
+    Returns:
+        Tuple of (markdown_content, inline_formatting, track_changes)
+    """
+    markdown_parts = []
+    inline_formatting: list[dict[str, Any]] = []
+    track_changes: list[TrackChange] = []
+    plain_text_position = 0  # Position in plain text without CriticMarkup markers
+
+    for child in para_elem:
+        tag = child.tag
+
+        if tag == f'{{{WORDPROCESSINGML_NS}}}ins':
+            # This is an insertion element
+            inserted_text = extract_insertion_text(child)
+            if inserted_text:
+                author, date, revision_id = extract_track_change_metadata(child)
+
+                # Add CriticMarkup to markdown
+                criticmarkup = f"{{++{inserted_text}++}}"
+                markdown_parts.append(criticmarkup)
+
+                # Record track change metadata
+                track_changes.append(TrackChange(
+                    type="insertion",
+                    start=plain_text_position,
+                    end=plain_text_position + len(inserted_text),
+                    author=author,
+                    date=date,
+                    revision_id=revision_id,
+                ))
+
+                plain_text_position += len(inserted_text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}del':
+            # This is a deletion element
+            deleted_text = extract_deletion_text(child)
+            if deleted_text:
+                author, date, revision_id = extract_track_change_metadata(child)
+
+                # Add CriticMarkup to markdown
+                criticmarkup = f"{{--{deleted_text}--}}"
+                markdown_parts.append(criticmarkup)
+
+                # Record track change metadata
+                track_changes.append(TrackChange(
+                    type="deletion",
+                    start=plain_text_position,
+                    end=plain_text_position + len(deleted_text),
+                    author=author,
+                    date=date,
+                    revision_id=revision_id,
+                    deleted_text=deleted_text,
+                ))
+
+                # Note: For deletions, the text doesn't contribute to visible content position
+                # But we include it in the CriticMarkup, so advance position
+                plain_text_position += len(deleted_text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}hyperlink':
+            # This is a hyperlink element - handle similarly to extract_inline_formatting
+            if doc_part is None:
+                continue
+
+            url = get_hyperlink_url(child, doc_part)
+            if url is None:
+                text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                if text:
+                    markdown_parts.append(text)
+                    plain_text_position += len(text)
+                continue
+
+            text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+            if not text:
+                continue
+
+            encoded_url = encode_url_for_markdown(url)
+            escaped_text = escape_markdown_link_text(text)
+
+            if is_bold and is_italic:
+                link_md = f"[***{escaped_text}***]({encoded_url})"
+            elif is_bold:
+                link_md = f"[**{escaped_text}**]({encoded_url})"
+            elif is_italic:
+                link_md = f"[*{escaped_text}*]({encoded_url})"
+            else:
+                link_md = f"[{escaped_text}]({encoded_url})"
+
+            markdown_parts.append(link_md)
+
+            inline_formatting.append({
+                "type": "hyperlink",
+                "start": plain_text_position,
+                "end": plain_text_position + len(text),
+                "url": url
+            })
+
+            plain_text_position += len(text)
+
+        elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            # This is a regular run element
+            text_parts = []
+            for run_child in child:
+                run_child_tag = run_child.tag
+                if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
+                    if run_child.text:
+                        text_parts.append(run_child.text)
+                elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
+                    text_parts.append('\n')
+
+            text = "".join(text_parts)
+            if not text:
+                continue
+
+            rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+            is_bold = is_formatting_enabled(rPr, 'b')
+            is_italic = is_formatting_enabled(rPr, 'i')
+            is_underline = is_formatting_enabled(rPr, 'u')
+
+            markdown_text = text
+            if is_bold and is_italic:
+                markdown_text = f"***{text}***"
+            elif is_bold:
+                markdown_text = f"**{text}**"
+            elif is_italic:
+                markdown_text = f"*{text}*"
+
+            if is_underline:
+                inline_formatting.append({
+                    "type": "underline",
+                    "start": plain_text_position,
+                    "end": plain_text_position + len(text),
+                    "underline": True
+                })
+
+            markdown_parts.append(markdown_text)
+            plain_text_position += len(text)
+
+    markdown_content = "".join(markdown_parts)
+    return (
+        markdown_content,
+        inline_formatting if inline_formatting else None,
+        track_changes if track_changes else None
+    )
 
 
 def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
@@ -587,7 +927,9 @@ def _process_paragraph(
     image_counter: int,
     list_number_counter: int,
     previous_list_type: Optional[str],
-    image_data: dict[str, bytes]
+    image_data: dict[str, bytes],
+    extract_track_changes: bool = False,
+    track_changes_explicit: Optional[bool] = None,
 ) -> tuple[Block, int, int, Optional[str], dict[str, bytes]]:
     """Process a single paragraph element.
 
@@ -601,12 +943,15 @@ def _process_paragraph(
         list_number_counter: Counter for numbered lists
         previous_list_type: Type of previous list item
         image_data: Dictionary to store image data
+        extract_track_changes: Whether to extract track changes as CriticMarkup
+        track_changes_explicit: The explicit track_changes parameter (None, True, or False)
 
     Returns:
         Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data)
     """
     style_name = paragraph.style.name if paragraph.style else "Normal"
     image_path = None
+    block_track_changes = None
 
     image_info = extract_image_from_paragraph(paragraph, doc_part, image_counter)
     if image_info:
@@ -630,7 +975,19 @@ def _process_paragraph(
         list_number_counter = 0
         previous_list_type = None
     else:
-        text_content, inline_formatting = extract_inline_formatting(paragraph, doc_part)
+        # Choose extraction function based on track changes mode
+        if extract_track_changes:
+            text_content, inline_formatting, block_track_changes = extract_paragraph_with_track_changes(
+                paragraph._element, doc_part
+            )
+        elif track_changes_explicit is False:
+            # Explicit --no-track-changes: accept all changes
+            text_content, inline_formatting, block_track_changes = extract_paragraph_accept_all(
+                paragraph._element, doc_part
+            )
+        else:
+            # No track changes: use original extraction
+            text_content, inline_formatting = extract_inline_formatting(paragraph, doc_part)
 
         if style_name.startswith("Heading"):
             try:
@@ -677,13 +1034,17 @@ def _process_paragraph(
         content_hash=compute_content_hash(markdown_content),
         level=level_value,
         inline_formatting=inline_formatting,
-        image_path=image_path
+        image_path=image_path,
+        track_changes=block_track_changes,
     )
 
     return block, image_counter, list_number_counter, previous_list_type, image_data
 
 
-def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
+def extract_blocks(
+    docx_path: str,
+    track_changes: Optional[bool] = None,
+) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
     Converts paragraphs, headings, and tables to Block objects with markdown content.
@@ -691,6 +1052,9 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
 
     Args:
         docx_path: Path to .docx file
+        track_changes: Track changes mode. If None, auto-detect based on document.
+                      If True, extract track changes as CriticMarkup.
+                      If False, accept all changes and extract plain text.
 
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
@@ -708,6 +1072,12 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
     block_index = 0
     para_index = 0
     table_index = 0
+
+    # Determine track changes mode
+    # If not specified (None), auto-detect based on document content
+    extract_track_changes = track_changes
+    if extract_track_changes is None:
+        extract_track_changes = detect_track_changes(docx_path)
 
     # Iterate over document body elements in order
     # This correctly interleaves paragraphs and tables
@@ -728,7 +1098,9 @@ def extract_blocks(docx_path: str) -> tuple[list[Block], dict[str, bytes]]:
                 image_counter=image_counter,
                 list_number_counter=list_number_counter,
                 previous_list_type=previous_list_type,
-                image_data=image_data
+                image_data=image_data,
+                extract_track_changes=extract_track_changes,
+                track_changes_explicit=track_changes,
             )
 
             blocks.append(block)
