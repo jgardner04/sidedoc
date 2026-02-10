@@ -59,6 +59,14 @@ ALIGNMENT_NUMERIC_TO_STRING = {
     3: "justify",   # WD_ALIGN_PARAGRAPH.JUSTIFY
 }
 
+# Maximum table dimensions to prevent memory exhaustion from malicious input
+MAX_TABLE_ROWS = 1000
+MAX_TABLE_COLS = 100
+
+# EMU (English Metric Units) conversion constant
+# 1 inch = 914400 EMUs in Office Open XML
+EMUS_PER_INCH = 914400
+
 # GFM separator indicators for alignment
 # Used when converting alignment to GFM table separator row
 GFM_ALIGNMENT_TO_SEPARATOR = {

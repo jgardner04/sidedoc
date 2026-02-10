@@ -18,6 +18,8 @@ from sidedoc.constants import (
     ALIGNMENT_STRING_TO_ENUM,
     GFM_SEPARATOR_PATTERNS,
     DEFAULT_ALIGNMENT,
+    MAX_TABLE_ROWS,
+    MAX_TABLE_COLS,
 )
 
 
@@ -458,12 +460,14 @@ def parse_gfm_table(table_content: str) -> tuple[list[list[str]], list[str]]:
         cells = split_gfm_row(stripped)
         rows.append(cells)
 
+    # Normalize column counts: pad shorter rows to match header column count
+    if rows:
+        header_col_count = len(rows[0])
+        for i in range(1, len(rows)):
+            if len(rows[i]) < header_col_count:
+                rows[i].extend([""] * (header_col_count - len(rows[i])))
+
     return rows, alignments
-
-
-# Maximum table dimensions to prevent memory exhaustion from malicious input
-MAX_TABLE_ROWS = 1000
-MAX_TABLE_COLS = 100
 
 
 def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[str, Any], block_id: str) -> None:

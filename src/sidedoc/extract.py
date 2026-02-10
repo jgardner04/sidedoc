@@ -12,6 +12,9 @@ from PIL import Image
 from sidedoc.models import Block, Style
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
+    MAX_TABLE_ROWS,
+    MAX_TABLE_COLS,
+    EMUS_PER_INCH,
     ALIGNMENT_NUMERIC_TO_STRING,
     GFM_ALIGNMENT_TO_SEPARATOR,
     DEFAULT_ALIGNMENT,
@@ -542,6 +545,12 @@ def extract_table_metadata(table: Any, table_index: int) -> dict[str, Any]:
     num_rows = len(table.rows)
     num_cols = len(table.columns) if num_rows > 0 else 0
 
+    # Validate table dimensions to prevent memory exhaustion
+    if num_rows > MAX_TABLE_ROWS:
+        raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
+    if num_cols > MAX_TABLE_COLS:
+        raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
+
     # Build cells metadata - 2D array of cell info
     cells: list[list[dict[str, Any]]] = []
 
@@ -788,8 +797,8 @@ def extract_table_formatting(table: Any) -> dict[str, Any]:
         # Width is in EMUs (English Metric Units) or can be None
         width = col.width
         if width:
-            # Convert to inches (914400 EMUs per inch)
-            width_inches = width / 914400.0
+            # Convert to inches
+            width_inches = width / EMUS_PER_INCH
             column_widths.append(round(width_inches, 2))
         else:
             # Default width if not specified

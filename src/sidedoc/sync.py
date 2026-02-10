@@ -19,6 +19,9 @@ from sidedoc.constants import (
 )
 from sidedoc.reconstruct import create_table_from_gfm
 
+# Cache the mistune parser at module level to avoid recreating per paragraph
+_MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
+
 
 def match_blocks(
     old_blocks: list[Block], new_blocks: list[Block]
@@ -133,15 +136,12 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
     Returns:
         List of tuples: (text, bold, italic)
     """
-    # Create markdown parser that returns AST instead of HTML
+    # Parse the content using the module-level cached parser
     # Why mistune: It handles nested formatting, escaped characters, and malformed
     # markdown robustly. The AST approach (renderer=None) gives us structured tokens
     # rather than HTML, making it easier to extract formatting information.
-    md = mistune.create_markdown(renderer=None)
-
-    # Parse the content
     try:
-        tokens, _ = md.parse(content)
+        tokens, _ = _MARKDOWN_PARSER.parse(content)
     except Exception:
         # On parse error, return content as plain text (graceful degradation)
         # Why fail gracefully: User-edited markdown may have syntax errors. Better
@@ -403,6 +403,7 @@ def update_sidedoc_metadata(
                 "level": block.level,
                 "image_path": block.image_path,
                 "inline_formatting": block.inline_formatting,
+                "table_metadata": block.table_metadata,
             }
             for block in new_blocks
         ]

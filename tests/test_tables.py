@@ -482,6 +482,65 @@ def test_extract_table_escapes_pipe_characters() -> None:
             f"Roundtrip should preserve pipe: got {reconstructed_table.cell(1, 0).text}"
 
 
+def test_extract_rejects_oversized_table() -> None:
+    """Test that extraction raises ValueError for tables exceeding dimension limits."""
+    import pytest
+    import tempfile
+    from unittest.mock import patch
+    from sidedoc.constants import MAX_TABLE_ROWS, MAX_TABLE_COLS
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a docx with a table exceeding MAX_TABLE_COLS
+        doc = Document()
+        # We can't easily create a 101-column table, so we patch the constant
+        # Create a small table and patch the limit down
+        table = doc.add_table(rows=2, cols=5)
+        table.cell(0, 0).text = "H1"
+        table.cell(0, 1).text = "H2"
+        table.cell(0, 2).text = "H3"
+        table.cell(0, 3).text = "H4"
+        table.cell(0, 4).text = "H5"
+        table.cell(1, 0).text = "A"
+        table.cell(1, 1).text = "B"
+        table.cell(1, 2).text = "C"
+        table.cell(1, 3).text = "D"
+        table.cell(1, 4).text = "E"
+
+        test_path = Path(tmp_dir) / "test_oversized.docx"
+        doc.save(str(test_path))
+
+        # Patch MAX_TABLE_COLS to be smaller than our table
+        with patch("sidedoc.extract.MAX_TABLE_COLS", 3):
+            with pytest.raises(ValueError, match="too many columns"):
+                extract_blocks(str(test_path))
+
+        # Also test rows limit
+        with patch("sidedoc.extract.MAX_TABLE_ROWS", 1):
+            with pytest.raises(ValueError, match="too many rows"):
+                extract_blocks(str(test_path))
+
+
+def test_parse_gfm_table_inconsistent_columns() -> None:
+    """Test that parse_gfm_table normalizes rows with inconsistent column counts."""
+    from sidedoc.reconstruct import parse_gfm_table
+
+    # Table with inconsistent column counts
+    table_content = """| A | B | C |
+| --- | --- | --- |
+| 1 | 2 |
+| X | Y | Z |"""
+
+    rows, alignments = parse_gfm_table(table_content)
+
+    # All rows should be normalized to the header column count (3)
+    assert len(rows) == 3  # header + 2 data rows
+    for row in rows:
+        assert len(row) == 3, f"Row should have 3 columns, got {len(row)}: {row}"
+
+    # The short row should be padded with empty strings
+    assert rows[1] == ["1", "2", ""]
+
+
 def test_extract_table_handles_newlines_in_cells() -> None:
     """Test that newlines in cells are handled gracefully."""
     from docx import Document as DocxDocument

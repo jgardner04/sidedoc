@@ -1318,6 +1318,100 @@ def test_sync_handles_table_blocks() -> None:
             assert "|" not in para.text, f"Found raw GFM in paragraph: {para.text}"
 
 
+def test_sync_preserves_table_metadata() -> None:
+    """Test that update_sidedoc_metadata preserves table_metadata in structure.json.
+
+    This is a regression test for PR #40 review: table_metadata was omitted from
+    the block dict serialization, causing table structure (rows, cols, cells,
+    alignments) to be lost after sync.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc archive
+        old_content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+        old_structure = {
+            "blocks": [
+                {
+                    "id": "block-0",
+                    "type": "table",
+                    "docx_paragraph_index": -1,
+                    "content_start": 0,
+                    "content_end": len(old_content),
+                    "content_hash": compute_hash(old_content),
+                    "level": None,
+                    "image_path": None,
+                    "inline_formatting": None,
+                    "table_metadata": {
+                        "rows": 2,
+                        "cols": 2,
+                        "cells": [[{"row": 0, "col": 0, "content_hash": "h1"},
+                                    {"row": 0, "col": 1, "content_hash": "h2"}],
+                                   [{"row": 1, "col": 0, "content_hash": "h3"},
+                                    {"row": 1, "col": 1, "content_hash": "h4"}]],
+                        "column_alignments": ["left", "left"],
+                        "docx_table_index": 0
+                    }
+                }
+            ]
+        }
+        old_styles = {"block_styles": {}}
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": compute_hash(old_content),
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", old_content)
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps(old_styles))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
+
+        # Create new blocks with table_metadata
+        table_metadata = {
+            "rows": 2,
+            "cols": 2,
+            "cells": [[{"row": 0, "col": 0, "content_hash": "h1"},
+                        {"row": 0, "col": 1, "content_hash": "h2"}],
+                       [{"row": 1, "col": 0, "content_hash": "h3"},
+                        {"row": 1, "col": 1, "content_hash": "h4"}]],
+            "column_alignments": ["left", "left"],
+            "docx_table_index": 0
+        }
+        new_blocks = [
+            Block(
+                id="block-0",
+                type="table",
+                content=old_content,
+                docx_paragraph_index=-1,
+                content_start=0,
+                content_end=len(old_content),
+                content_hash=compute_hash(old_content),
+                table_metadata=table_metadata,
+            ),
+        ]
+
+        # Update metadata
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, old_content)
+
+        # Verify table_metadata is preserved in structure.json
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            structure_data = json.loads(zip_file.read("structure.json"))
+            block_data = structure_data["blocks"][0]
+            assert "table_metadata" in block_data, \
+                "table_metadata should be serialized in structure.json"
+            assert block_data["table_metadata"]["rows"] == 2
+            assert block_data["table_metadata"]["cols"] == 2
+            assert len(block_data["table_metadata"]["cells"]) == 2
+            assert block_data["table_metadata"]["column_alignments"] == ["left", "left"]
+            assert block_data["table_metadata"]["docx_table_index"] == 0
+
+
 def test_sync_handles_mixed_blocks_with_table() -> None:
     """Verify sync handles documents with paragraphs and tables together."""
     from docx.table import Table
