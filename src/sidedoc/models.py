@@ -1,7 +1,35 @@
 """Data models for sidedoc format."""
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Literal, Optional
+
+
+@dataclass
+class TrackChange:
+    """Represents a single track change (insertion or deletion).
+
+    Used to store track change metadata from Word documents in structure.json.
+    """
+
+    type: Literal["insertion", "deletion"]  # Type of track change
+    start: int  # Start position in content (character offset)
+    end: int  # End position in content (character offset)
+    author: str  # Author who made the change
+    date: str  # ISO 8601 timestamp when change was made
+    revision_id: str  # Unique revision ID from Word
+    deleted_text: Optional[str] = None  # Text that was deleted (only for deletions)
+
+
+@dataclass
+class TrackChangesConfig:
+    """Configuration for track changes in a sidedoc document.
+
+    Stored in manifest.json to track whether the document uses track changes.
+    """
+
+    enabled: bool  # Whether track changes mode is enabled for this document
+    source_had_revisions: bool  # Whether source docx had any track changes
+    default_author: str  # Default author name for new changes (e.g., "Sidedoc AI")
 
 
 @dataclass
@@ -21,6 +49,7 @@ class Block:
     level: Optional[int] = None  # For headings (1-6)
     image_path: Optional[str] = None  # For images
     inline_formatting: Optional[list[dict[str, Any]]] = None
+    track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
 
 
 @dataclass

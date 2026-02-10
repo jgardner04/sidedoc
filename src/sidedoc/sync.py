@@ -9,10 +9,24 @@ from typing import Optional, Any
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
-from sidedoc.constants import MAX_ASSET_SIZE, SIMILARITY_THRESHOLD
+from sidedoc.constants import (
+    MAX_ASSET_SIZE,
+    SIMILARITY_THRESHOLD,
+    INSERTION_PATTERN,
+    DELETION_PATTERN,
+    SUBSTITUTION_PATTERN,
+)
+
+# Default author for new track changes created during sync
+DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
+
+# XML namespace for preserving whitespace
+XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
 
 
 def match_blocks(
@@ -147,7 +161,9 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
     # Why paragraph tokens: Mistune wraps inline content in paragraph block tokens.
     # We need to extract the children (inline tokens) to get the actual formatting.
     runs: list[tuple[str, bool, bool]] = []
-    for block_token in tokens:
+    # Cast tokens to list since mistune.parse() returns list[dict[str, Any]]
+    token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
+    for block_token in token_list:
         if block_token.get("type") == "paragraph":
             children = block_token.get("children", [])
             _process_tokens(children, runs, bold=False, italic=False)
@@ -264,7 +280,9 @@ def _get_block_style(
     """
     old_block_id = new_to_old.get(block.id)
     if old_block_id:
-        return styles.get("block_styles", {}).get(old_block_id, {})
+        block_styles: dict[str, Any] = styles.get("block_styles", {})
+        result: dict[str, Any] = block_styles.get(old_block_id, {})
+        return result
     return {}
 
 
@@ -441,3 +459,150 @@ def update_sidedoc_metadata(
         if Path(tmp_path).exists():
             Path(tmp_path).unlink()
         raise
+
+
+def sync_sidedoc_to_docx(
+    sidedoc_path: str,
+    output_path: str,
+    author: Optional[str] = None,
+) -> None:
+    """Sync a sidedoc archive to a Word document with CriticMarkup support.
+
+    Reads the content.md from the sidedoc, parses CriticMarkup syntax, and
+    generates a docx with proper track changes (w:ins and w:del elements).
+
+    Args:
+        sidedoc_path: Path to .sidedoc file
+        output_path: Path for output .docx file
+        author: Author name for new track changes (default: 'Sidedoc AI')
+    """
+    import re
+    from sidedoc.reconstruct import (
+        parse_markdown_to_blocks,
+        has_criticmarkup,
+        parse_criticmarkup,
+    )
+
+    if author is None:
+        author = DEFAULT_SYNC_AUTHOR
+
+    # Get current timestamp for new track changes
+    sync_date = get_iso_timestamp()
+
+    # Read sidedoc contents
+    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+        content_md = zip_file.read("content.md").decode("utf-8")
+        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
+        structure_data = json.loads(zip_file.read("structure.json").decode("utf-8"))
+
+    # Parse markdown to blocks
+    blocks = parse_markdown_to_blocks(content_md)
+
+    # Create document
+    doc = Document()
+    revision_counter = [1]
+
+    def get_next_revision_id() -> str:
+        rid = str(revision_counter[0])
+        revision_counter[0] += 1
+        return rid
+
+    def create_ins_element(text: str, author_name: str, date: str, revision_id: str) -> Any:
+        """Create a w:ins XML element."""
+        ins = OxmlElement("w:ins")
+        ins.set(qn("w:id"), revision_id)
+        ins.set(qn("w:author"), author_name)
+        ins.set(qn("w:date"), date)
+
+        run = OxmlElement("w:r")
+        ins.append(run)
+
+        t = OxmlElement("w:t")
+        t.text = text
+        t.set(XML_SPACE_NS, "preserve")
+        run.append(t)
+
+        return ins
+
+    def create_del_element(text: str, author_name: str, date: str, revision_id: str) -> Any:
+        """Create a w:del XML element."""
+        del_elem = OxmlElement("w:del")
+        del_elem.set(qn("w:id"), revision_id)
+        del_elem.set(qn("w:author"), author_name)
+        del_elem.set(qn("w:date"), date)
+
+        run = OxmlElement("w:r")
+        del_elem.append(run)
+
+        del_text = OxmlElement("w:delText")
+        del_text.text = text
+        del_text.set(XML_SPACE_NS, "preserve")
+        run.append(del_text)
+
+        return del_elem
+
+    def add_text_with_track_changes(para: Any, content: str) -> None:
+        """Add text with CriticMarkup as track changes."""
+        segments = parse_criticmarkup(content)
+        para_elem = para._p
+
+        for seg_type, seg_content in segments:
+            if seg_type == "text":
+                if seg_content:
+                    run = OxmlElement("w:r")
+                    t = OxmlElement("w:t")
+                    t.text = seg_content
+                    t.set(XML_SPACE_NS, "preserve")
+                    run.append(t)
+                    para_elem.append(run)
+
+            elif seg_type == "insertion":
+                ins_elem = create_ins_element(
+                    seg_content, author, sync_date, get_next_revision_id()
+                )
+                para_elem.append(ins_elem)
+
+            elif seg_type == "deletion":
+                del_elem = create_del_element(
+                    seg_content, author, sync_date, get_next_revision_id()
+                )
+                para_elem.append(del_elem)
+
+    for block in blocks:
+        if block.type == "heading" and block.level:
+            style_name = f"Heading {block.level}"
+            text = block.content.lstrip("#").strip()
+
+            if has_criticmarkup(text):
+                para = doc.add_paragraph(style=style_name)
+                add_text_with_track_changes(para, text)
+            else:
+                para = doc.add_paragraph(text, style=style_name)
+        else:
+            content = block.content
+
+            if has_criticmarkup(content):
+                para = doc.add_paragraph()
+                add_text_with_track_changes(para, content)
+            else:
+                para = doc.add_paragraph(content)
+
+        # Apply styling if available
+        block_style = styles_data.get("block_styles", {}).get(block.id, {})
+        if block_style and para.style:
+            if "font_name" in block_style:
+                para.style.font.name = block_style["font_name"]
+            if "font_size" in block_style:
+                para.style.font.size = Pt(block_style["font_size"])
+
+            alignment = block_style.get("alignment", "left")
+            alignment_map = {
+                "left": WD_ALIGN_PARAGRAPH.LEFT,
+                "center": WD_ALIGN_PARAGRAPH.CENTER,
+                "right": WD_ALIGN_PARAGRAPH.RIGHT,
+                "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+            }
+            if alignment in alignment_map:
+                para.alignment = alignment_map[alignment]
+
+    doc.save(output_path)

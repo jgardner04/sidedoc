@@ -192,8 +192,76 @@ Created: quarterly_report_updated.docx
 | Bulleted lists | `- item` | Single level for MVP |
 | Numbered lists | `1. item` | Single level for MVP |
 | Images | `![alt](path)` | Copied to assets/ |
+| Track Changes | CriticMarkup | See Track Changes section |
 
 See the [PRD](docs/slidedoc-prd.md) for full details on supported and unsupported elements.
+
+---
+
+## Track Changes Support
+
+Sidedoc supports bidirectional track changes using [CriticMarkup](http://criticmarkup.com/) syntax:
+
+### CriticMarkup Syntax
+
+| Syntax | Meaning | Example |
+|--------|---------|---------|
+| `{++text++}` | Insertion | `{++added text++}` |
+| `{--text--}` | Deletion | `{--removed text--}` |
+| `{~~old~>new~~}` | Substitution | `{~~old text~>new text~~}` |
+
+### Extraction (docx → sidedoc)
+
+When extracting a Word document with Track Changes:
+- Insertions become `{++text++}` in content.md
+- Deletions become `{--text--}` in content.md
+- Author and date metadata are preserved in structure.json
+
+Use `--track-changes` to force enable or `--no-track-changes` to accept all changes:
+
+```bash
+# Auto-detect track changes (default)
+sidedoc extract document.docx
+
+# Force extract track changes as CriticMarkup
+sidedoc extract document.docx --track-changes
+
+# Accept all changes (ignore track changes)
+sidedoc extract document.docx --no-track-changes
+```
+
+### Sync (edited content.md → docx)
+
+AI agents can use CriticMarkup in content.md to propose changes:
+
+```markdown
+# Before editing
+This is a simple document.
+
+# After AI edits
+This is a {++very ++}simple document with {--removed--} content.
+```
+
+When syncing, CriticMarkup becomes proper Word track changes:
+- `{++text++}` → w:ins elements (insertions)
+- `{--text--}` → w:del elements (deletions)
+- `{~~old~>new~~}` → deletion followed by insertion
+
+Configure the author name for AI-generated changes:
+
+```bash
+# Default author: "Sidedoc AI"
+sidedoc sync document.sidedoc -o output.docx
+
+# Custom author name
+sidedoc sync document.sidedoc -o output.docx --author "Claude AI"
+```
+
+### Limitations
+
+- Track changes only apply to text content (not formatting changes)
+- Comments are not yet supported
+- Move operations are extracted as delete + insert
 
 ---
 
