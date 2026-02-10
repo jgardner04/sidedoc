@@ -5,6 +5,16 @@ This module centralizes magic numbers and configuration values for better mainta
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+# =============================================================================
+# XML Namespace Constants
+# =============================================================================
+
+# Word processing ML namespace (used in extract.py and reconstruct.py)
+WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+# XML namespace for preserving whitespace (used in reconstruct.py and sync.py)
+XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
+
 # Hash display length for CLI output
 # Used when displaying abbreviated hash values in info command
 HASH_DISPLAY_LENGTH = 16
@@ -78,9 +88,10 @@ GFM_ALIGNMENT_TO_SEPARATOR = {
 # GFM separator patterns for detecting alignment
 # (starts_with_colon, ends_with_colon) → alignment
 GFM_SEPARATOR_PATTERNS = {
-    "center": (True, True),   # :---: starts and ends with :
-    "right": (False, True),   # ---: ends with : only
-    "left": (False, False),   # --- (default)
+    (False, False): "left",     # ---
+    (True, False): "left",      # :--- (explicit left)
+    (False, True): "right",     # ---:
+    (True, True): "center",     # :---:
 }
 
 # =============================================================================

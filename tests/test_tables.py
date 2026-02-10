@@ -372,6 +372,62 @@ def test_table_metadata_has_column_alignments() -> None:
 # ============================================================================
 
 
+def test_parse_markdown_table_escaped_pipe_column_count() -> None:
+    """Test that escaped pipes don't inflate column count in parse_markdown_to_blocks."""
+    markdown = """| Test\\|Pipe | Normal |
+| --- | --- |
+| A | B |"""
+
+    blocks = parse_markdown_to_blocks(markdown)
+    table_blocks = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks) == 1
+
+    assert table_blocks[0].table_metadata is not None
+    assert table_blocks[0].table_metadata["cols"] == 2, (
+        f"Expected 2 columns, got {table_blocks[0].table_metadata['cols']}"
+    )
+
+
+def test_parse_markdown_table_metadata_includes_column_alignments() -> None:
+    """Test that parse_markdown_to_blocks includes column_alignments in table_metadata."""
+    markdown = """| Left | Center | Right |
+| :--- | :---: | ---: |
+| A | B | C |"""
+
+    blocks = parse_markdown_to_blocks(markdown)
+    table_blocks = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks) == 1
+
+    metadata = table_blocks[0].table_metadata
+    assert metadata is not None
+    assert "column_alignments" in metadata, "table_metadata should have 'column_alignments'"
+    assert metadata["column_alignments"] == ["left", "center", "right"]
+
+
+def test_parse_markdown_table_metadata_default_alignments() -> None:
+    """Test that default alignments are recorded when no alignment indicators."""
+    markdown = """| A | B |
+| --- | --- |
+| 1 | 2 |"""
+
+    blocks = parse_markdown_to_blocks(markdown)
+    table_blocks = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks) == 1
+
+    metadata = table_blocks[0].table_metadata
+    assert metadata is not None
+    assert "column_alignments" in metadata
+    assert metadata["column_alignments"] == ["left", "left"]
+
+
+def test_parse_gfm_alignment_colon_left_explicit() -> None:
+    """Test that :--- (explicit left) is parsed correctly as left alignment."""
+    from sidedoc.reconstruct import parse_gfm_alignments
+
+    result = parse_gfm_alignments("| :--- | :--- |")
+    assert result == ["left", "left"], f"Expected ['left', 'left'], got {result}"
+
+
 def test_parse_gfm_alignment_indicators() -> None:
     """Test that GFM alignment indicators are parsed correctly."""
     from sidedoc.reconstruct import parse_gfm_alignments
@@ -541,6 +597,26 @@ def test_parse_gfm_table_inconsistent_columns() -> None:
     assert rows[1] == ["1", "2", ""]
 
 
+def test_parse_gfm_table_truncates_long_rows() -> None:
+    """Test that parse_gfm_table truncates data rows longer than header."""
+    from sidedoc.reconstruct import parse_gfm_table
+
+    table_content = """| A | B |
+| --- | --- |
+| 1 | 2 | 3 | extra |
+| X | Y |"""
+
+    rows, alignments = parse_gfm_table(table_content)
+
+    # All rows should be truncated/normalized to the header column count (2)
+    assert len(rows) == 3  # header + 2 data rows
+    for row in rows:
+        assert len(row) == 2, f"Row should have 2 columns, got {len(row)}: {row}"
+
+    # The long row should be truncated
+    assert rows[1] == ["1", "2"]
+
+
 def test_extract_table_handles_newlines_in_cells() -> None:
     """Test that newlines in cells are handled gracefully."""
     from docx import Document as DocxDocument
@@ -573,3 +649,60 @@ def test_extract_table_handles_newlines_in_cells() -> None:
         # Each line should be a valid table row
         for line in lines:
             assert line.strip().startswith("|") and line.strip().endswith("|")
+
+
+# ============================================================================
+# Bug fix: docx_table_index should increment for multiple tables
+# ============================================================================
+
+
+def test_parse_markdown_multiple_tables_have_distinct_indices() -> None:
+    """Test that multiple tables get distinct docx_table_index values."""
+    markdown = """| A | B |
+| --- | --- |
+| 1 | 2 |
+
+| X | Y |
+| --- | --- |
+| 3 | 4 |"""
+
+    blocks = parse_markdown_to_blocks(markdown)
+    table_blocks = [b for b in blocks if b.type == "table"]
+
+    assert len(table_blocks) == 2, f"Expected 2 tables, got {len(table_blocks)}"
+
+    assert table_blocks[0].table_metadata is not None
+    assert table_blocks[1].table_metadata is not None
+
+    assert table_blocks[0].table_metadata["docx_table_index"] == 0, \
+        f"First table should have index 0, got {table_blocks[0].table_metadata['docx_table_index']}"
+    assert table_blocks[1].table_metadata["docx_table_index"] == 1, \
+        f"Second table should have index 1, got {table_blocks[1].table_metadata['docx_table_index']}"
+
+
+# ============================================================================
+# Bug fix: dimension validation in parse_markdown_to_blocks
+# ============================================================================
+
+
+def test_parse_markdown_to_blocks_rejects_oversized_table() -> None:
+    """Test that parse_markdown_to_blocks rejects tables exceeding dimension limits."""
+    import pytest
+    from unittest.mock import patch
+
+    # Table with 3 data rows + header = 4 total rows, 2 columns
+    markdown = """| A | B |
+| --- | --- |
+| 1 | 2 |
+| 3 | 4 |
+| 5 | 6 |"""
+
+    # Patch MAX_TABLE_ROWS to 2 (header + 1 data row max)
+    with patch("sidedoc.reconstruct.MAX_TABLE_ROWS", 2):
+        with pytest.raises(ValueError, match="too many rows"):
+            parse_markdown_to_blocks(markdown)
+
+    # Patch MAX_TABLE_COLS to 1
+    with patch("sidedoc.reconstruct.MAX_TABLE_COLS", 1):
+        with pytest.raises(ValueError, match="too many columns"):
+            parse_markdown_to_blocks(markdown)

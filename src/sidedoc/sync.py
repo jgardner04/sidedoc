@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Optional, Any
 from docx import Document
 from docx.shared import Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import mistune
@@ -22,6 +21,7 @@ from sidedoc.constants import (
     INSERTION_PATTERN,
     DELETION_PATTERN,
     SUBSTITUTION_PATTERN,
+    XML_SPACE_NS,
 )
 from sidedoc.reconstruct import create_table_from_gfm
 
@@ -30,9 +30,6 @@ _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
 
 # Default author for new track changes created during sync
 DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
-
-# XML namespace for preserving whitespace
-XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
 
 
 def match_blocks(
@@ -573,6 +570,7 @@ def sync_sidedoc_to_docx(
                 para_elem.append(del_elem)
 
     for block in blocks:
+        para = None
         if block.type == "heading" and block.level:
             style_name = f"Heading {block.level}"
             text = block.content.lstrip("#").strip()
@@ -582,6 +580,8 @@ def sync_sidedoc_to_docx(
                 add_text_with_track_changes(para, text)
             else:
                 para = doc.add_paragraph(text, style=style_name)
+        elif block.type == "table":
+            create_table_from_gfm(doc, block.content, styles_data, block.id)
         else:
             content = block.content
 
@@ -591,22 +591,17 @@ def sync_sidedoc_to_docx(
             else:
                 para = doc.add_paragraph(content)
 
-        # Apply styling if available
-        block_style = styles_data.get("block_styles", {}).get(block.id, {})
-        if block_style and para.style:
-            if "font_name" in block_style:
-                para.style.font.name = block_style["font_name"]
-            if "font_size" in block_style:
-                para.style.font.size = Pt(block_style["font_size"])
+        # Apply styling if available (only for paragraph-based blocks)
+        if para is not None:
+            block_style = styles_data.get("block_styles", {}).get(block.id, {})
+            if block_style and para.style:
+                if "font_name" in block_style:
+                    para.style.font.name = block_style["font_name"]
+                if "font_size" in block_style:
+                    para.style.font.size = Pt(block_style["font_size"])
 
-            alignment = block_style.get("alignment", "left")
-            alignment_map = {
-                "left": WD_ALIGN_PARAGRAPH.LEFT,
-                "center": WD_ALIGN_PARAGRAPH.CENTER,
-                "right": WD_ALIGN_PARAGRAPH.RIGHT,
-                "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
-            }
-            if alignment in alignment_map:
-                para.alignment = alignment_map[alignment]
+                alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
+                if alignment in ALIGNMENT_STRING_TO_ENUM:
+                    para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
     doc.save(output_path)

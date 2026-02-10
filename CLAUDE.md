@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
 
-**Status:** MVP complete with hyperlink and track changes support. Phase 2 (Table Support) in progress.
+**Status:** MVP complete with hyperlink, track changes, and table support (extraction, reconstruction, sync).
 
 ## Development Philosophy
 
@@ -116,7 +116,7 @@ src/sidedoc/
 | `paragraph` | Plain text | Inline formatting: `**bold**`, `*italic*` |
 | `list` | `- bullet` or `1. numbered` | |
 | `image` | `![alt](assets/image.png)` | |
-| `table` | GFM pipe tables | Phase 2 feature |
+| `table` | GFM pipe tables | |
 | `hyperlink` | `[text](url)` | Inline within other blocks |
 
 ### Table Support (Phase 2)
@@ -129,9 +129,9 @@ Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
 | Alice | Engineer | 2024-01-15 |
 ```
 
-- **Alignment:** `:---|` (left), `:---:|` (center), `---:|` (right)
+- **Alignment:** `---` (default left), `:---|` (explicit left), `:---:|` (center), `---:|` (right)
 - **Escaping:** Pipe characters in content escaped as `\|`
-- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments
+- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index
 - **Styling:** `table_formatting` in Style stores column_widths, table_alignment
 
 ## Sidedoc Format
@@ -176,6 +176,6 @@ sidedoc diff document.sidedoc                    # Show content changes
 
 - Python 3.11+
 - python-docx — Document handling
-- mistune or marko — Markdown parsing
+- mistune — Markdown parsing
 - click — CLI framework
 - pytest — Testing

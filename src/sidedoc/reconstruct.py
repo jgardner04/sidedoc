@@ -24,6 +24,8 @@ from sidedoc.constants import (
     INSERTION_PATTERN,
     DELETION_PATTERN,
     SUBSTITUTION_PATTERN,
+    WORDPROCESSINGML_NS,
+    XML_SPACE_NS,
 )
 
 
@@ -32,12 +34,6 @@ from sidedoc.constants import (
 # - any character except ] or \
 # - OR a backslash followed by any character (which handles \[ and \])
 HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
-
-# Word processing ML namespace
-WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-
-# XML namespace for preserving whitespace
-XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
 
 # Standard hyperlink color (blue)
 HYPERLINK_COLOR = "0563C1"
@@ -500,7 +496,6 @@ def parse_gfm_alignments(separator_line: str) -> list[str]:
     alignments = []
 
     for cell in cells:
-        cell = cell.strip()
         if not cell:
             continue
 
@@ -508,11 +503,9 @@ def parse_gfm_alignments(separator_line: str) -> list[str]:
         starts_colon = cell.startswith(":")
         ends_colon = cell.endswith(":")
 
-        detected = DEFAULT_ALIGNMENT
-        for align, (expected_start, expected_end) in GFM_SEPARATOR_PATTERNS.items():
-            if starts_colon == expected_start and ends_colon == expected_end:
-                detected = align
-                break
+        detected = GFM_SEPARATOR_PATTERNS.get(
+            (starts_colon, ends_colon), DEFAULT_ALIGNMENT
+        )
         alignments.append(detected)
 
     return alignments
@@ -536,7 +529,6 @@ def is_table_separator_line(line: str) -> bool:
 
     for cell in cells:
         # Each cell should be only dashes with optional colons for alignment
-        cell = cell.strip()
         if not cell:
             continue
         # Remove alignment colons
@@ -567,6 +559,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     lines = markdown_content.split("\n")
     block_id = 0
     content_position = 0
+    table_index = 0
     i = 0
 
     while i < len(lines):
@@ -594,7 +587,16 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
 
                 # Parse table dimensions
                 num_rows = len(table_lines) - 1  # Subtract separator row
-                num_cols = len([c for c in stripped_line.split("|") if c.strip()])
+                num_cols = len(split_gfm_row(stripped_line))
+
+                # Validate table dimensions
+                if num_rows > MAX_TABLE_ROWS:
+                    raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
+                if num_cols > MAX_TABLE_COLS:
+                    raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
+
+                # Parse column alignments from separator line
+                column_alignments = parse_gfm_alignments(next_line)
 
                 block = Block(
                     id=f"block-{block_id}",
@@ -608,11 +610,13 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                         "rows": num_rows,
                         "cols": num_cols,
                         "cells": [],
-                        "docx_table_index": 0
+                        "column_alignments": column_alignments,
+                        "docx_table_index": table_index
                     }
                 )
                 blocks.append(block)
                 block_id += 1
+                table_index += 1
                 content_position += len(table_content) + 1
                 i = j
                 continue
@@ -752,12 +756,14 @@ def parse_gfm_table(table_content: str) -> tuple[list[list[str]], list[str]]:
         cells = split_gfm_row(stripped)
         rows.append(cells)
 
-    # Normalize column counts: pad shorter rows to match header column count
+    # Normalize column counts: pad shorter rows / truncate longer rows to match header
     if rows:
         header_col_count = len(rows[0])
         for i in range(1, len(rows)):
             if len(rows[i]) < header_col_count:
                 rows[i].extend([""] * (header_col_count - len(rows[i])))
+            elif len(rows[i]) > header_col_count:
+                rows[i] = rows[i][:header_col_count]
 
     return rows, alignments
 
@@ -780,9 +786,9 @@ def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[st
         return
 
     num_rows = len(rows)
-    num_cols = max(len(row) for row in rows) if rows else 0
+    num_cols = max(len(row) for row in rows)
 
-    if num_rows == 0 or num_cols == 0:
+    if num_cols == 0:
         return
 
     # Validate table dimensions to prevent memory exhaustion

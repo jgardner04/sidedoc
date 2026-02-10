@@ -18,11 +18,11 @@ from sidedoc.constants import (
     ALIGNMENT_NUMERIC_TO_STRING,
     GFM_ALIGNMENT_TO_SEPARATOR,
     DEFAULT_ALIGNMENT,
+    WORDPROCESSINGML_NS,
 )
 
 
 # XML namespaces used in Office Open XML documents
-WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 

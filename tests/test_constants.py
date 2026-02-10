@@ -35,11 +35,9 @@ def test_gfm_alignment_roundtrip() -> None:
         starts_colon = separator.startswith(":")
         ends_colon = separator.endswith(":")
 
-        detected = DEFAULT_ALIGNMENT
-        for align, (expected_start, expected_end) in GFM_SEPARATOR_PATTERNS.items():
-            if starts_colon == expected_start and ends_colon == expected_end:
-                detected = align
-                break
+        detected = GFM_SEPARATOR_PATTERNS.get(
+            (starts_colon, ends_colon), DEFAULT_ALIGNMENT
+        )
 
         assert detected == alignment, (
             f"Alignment '{alignment}' -> separator '{separator}' -> detected '{detected}'"
@@ -67,6 +65,16 @@ def test_alignment_enum_values_are_correct() -> None:
     assert ALIGNMENT_STRING_TO_ENUM["center"] == WD_ALIGN_PARAGRAPH.CENTER
     assert ALIGNMENT_STRING_TO_ENUM["right"] == WD_ALIGN_PARAGRAPH.RIGHT
     assert ALIGNMENT_STRING_TO_ENUM["justify"] == WD_ALIGN_PARAGRAPH.JUSTIFY
+
+
+def test_gfm_separator_patterns_cover_all_colon_combinations() -> None:
+    """Verify all 4 boolean (starts_colon, ends_colon) tuples are keys."""
+    from sidedoc.constants import GFM_SEPARATOR_PATTERNS
+
+    expected_keys = {(False, False), (True, False), (False, True), (True, True)}
+    assert set(GFM_SEPARATOR_PATTERNS.keys()) == expected_keys, (
+        f"GFM_SEPARATOR_PATTERNS should cover all 4 colon combos, got {set(GFM_SEPARATOR_PATTERNS.keys())}"
+    )
 
 
 def test_gfm_separators_are_valid() -> None:
