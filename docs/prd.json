@@ -135,8 +135,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixture created at tests/fixtures/tables_formatted.docx with blue header row (D9E2F3), accent borders (4472C4), and alternating gray shading (F2F2F2). Test: test_tables_formatted_fixture_exists."
     },
     {
       "id": "US-T10",
@@ -150,8 +150,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented extract_cell_shading() in extract.py. Cell styles stored in table_formatting.cell_styles keyed by 'row,col'. Tests: test_extract_cell_background_colors, test_extract_cell_shading_only_stores_non_default."
     },
     {
       "id": "US-T11",
@@ -165,8 +165,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented apply_cell_shading() and _apply_cell_styles() in reconstruct.py. Validates hex color format. Tests: test_reconstruct_applies_cell_background_colors, test_formatted_table_roundtrip."
     },
     {
       "id": "US-T12",
@@ -181,8 +181,8 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented extract_cell_borders() in extract.py. Added VALID_BORDER_STYLES, HEX_COLOR_PATTERN, MAX_BORDER_WIDTH to constants.py. Tests: test_extract_cell_border_styles."
     },
     {
       "id": "US-T13",
@@ -196,8 +196,8 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented apply_cell_borders() in reconstruct.py. Validates border style against whitelist, width bounds, and hex color format. Tests: test_reconstruct_applies_cell_borders, test_formatted_table_roundtrip."
     },
     {
       "id": "US-T14",
@@ -211,8 +211,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Sync now passes old block ID for style lookup via create_table_from_gfm, preserving cell_styles (shading, borders) during sync. Tests: test_sync_table_cell_edit_preserves_formatting."
     },
     {
       "id": "US-T15",
@@ -227,8 +227,8 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added _extract_cell_text_with_formatting() in extract.py for extracting bold/italic from cell runs. Modified create_table_from_gfm() to detect and apply inline formatting using apply_inline_formatting(). Tests: test_extract_inline_formatting_in_cells, test_reconstruct_inline_formatting_in_cells."
     },
     {
       "id": "US-T16",
@@ -242,8 +242,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Adding rows works naturally via GFM editing — create_table_from_gfm rebuilds from new content. Tests: test_sync_add_row_to_table."
     },
     {
       "id": "US-T17",
@@ -257,8 +257,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Removing rows works naturally via GFM editing — create_table_from_gfm rebuilds from new content. Tests: test_sync_remove_row_from_table."
     },
     {
       "id": "US-T18",
@@ -272,8 +272,8 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Adding columns works naturally via GFM editing — create_table_from_gfm rebuilds from new content. Tests: test_sync_add_column_to_table."
     },
     {
       "id": "US-T19",
@@ -286,8 +286,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Removing columns works naturally via GFM editing — create_table_from_gfm rebuilds from new content. Tests: test_sync_remove_column_from_table."
     },
     {
       "id": "US-T20",
@@ -301,8 +301,8 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixture created at tests/fixtures/tables_merged.docx with horizontal merge (row 0 across 3 cols) and vertical merge (rows 2-3, col 0). Tests: test_tables_merged_fixture_exists."
     },
     {
       "id": "US-T21",
@@ -317,8 +317,8 @@
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented extract_merged_cells() in extract.py using raw XML tc elements (avoids python-docx merged cell aliasing). Detects gridSpan and vMerge restart/continue. Tests: test_extract_merged_cells_metadata."
     },
     {
       "id": "US-T22",
@@ -332,8 +332,8 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Modified create_table_from_gfm() to accept table_metadata parameter and apply merges via cell.merge() with bounds validation. Updated all 3 call sites. Tests: test_reconstruct_applies_merged_cells."
     },
     {
       "id": "US-T23",
@@ -347,8 +347,8 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented header_rows extraction (detects tblHeader in trPr) and application (sets tblHeader during reconstruction). Default 1 for GFM. Tests: test_extract_header_row_count, test_reconstruct_sets_header_rows."
     },
     {
       "id": "US-T24",
@@ -363,8 +363,8 @@
         "Typecheck passes"
       ],
       "priority": 24,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented _validate_tables() in cli.py. Checks row/col count match between metadata and content, validates merged cell bounds. Called from validate command alongside _validate_track_changes(). Tests: test_validate_detects_table_dimension_mismatch."
     },
     {
       "id": "US-T25",
@@ -379,8 +379,8 @@
         "Typecheck passes"
       ],
       "priority": 25,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "All edge cases handled: header-only tables extract correctly, 15-col tables work, 100-row tables extract in <5s. Tests: test_empty_table_extraction, test_wide_table_extraction, test_tall_table_extraction."
     },
     {
       "id": "US-T26",
@@ -393,8 +393,8 @@
         "Typecheck passes"
       ],
       "priority": 26,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Updated README.md: added Tables to Supported Elements table, added Table Support section with GFM syntax example, features list, and limitations."
     },
     {
       "id": "US-T27",
@@ -408,8 +408,8 @@
         "Typecheck passes"
       ],
       "priority": 27,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added 3 roundtrip tests: simple table, formatted table (shading+borders survive), and cell edit sync roundtrip. Tests: test_roundtrip_simple_table, test_roundtrip_formatted_table, test_roundtrip_cell_edit_sync."
     }
   ]
 }

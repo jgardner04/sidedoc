@@ -95,6 +95,29 @@ GFM_SEPARATOR_PATTERNS = {
 }
 
 # =============================================================================
+# Cell Formatting Constants
+# =============================================================================
+
+# Valid border styles for cell borders (whitelist for security)
+VALID_BORDER_STYLES = frozenset({
+    'single', 'double', 'dashed', 'dotted', 'thick',
+    'hairline', 'dashSmallGap', 'dotDash', 'dotDotDash',
+    'triple', 'thinThickSmallGap', 'thickThinSmallGap',
+    'thinThickThinSmallGap', 'thinThickMediumGap',
+    'thickThinMediumGap', 'thinThickThinMediumGap',
+    'thinThickLargeGap', 'thickThinLargeGap',
+    'thinThickThinLargeGap', 'wave', 'doubleWave',
+    'dashDotStroked', 'threeDEmboss', 'threeDEngrave',
+    'outset', 'inset', 'nil', 'none',
+})
+
+# Regex for validating hex color values
+HEX_COLOR_PATTERN = r'^[0-9A-Fa-f]{6}$'
+
+# Maximum border width in eighths of a point (12pt)
+MAX_BORDER_WIDTH = 96
+
+# =============================================================================
 # CriticMarkup Patterns
 # =============================================================================
 # These regex patterns parse CriticMarkup syntax for track changes.

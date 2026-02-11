@@ -113,3 +113,40 @@ def test_cli_executable_installed():
     )
     assert result.returncode == 0
     assert "0.1.0" in result.stdout or "0.1.0" in result.stderr
+
+
+def test_convert_structure_to_blocks_preserves_table_metadata():
+    """Test that _convert_structure_to_blocks includes table_metadata from structure.json.
+
+    Regression test: table_metadata was missing from the Block constructor,
+    causing table blocks loaded from structure.json to lose their metadata.
+    """
+    from sidedoc.cli import _convert_structure_to_blocks
+
+    structure = {
+        "blocks": [{
+            "id": "block-0",
+            "type": "table",
+            "docx_paragraph_index": -1,
+            "content_start": 0,
+            "content_end": 50,
+            "content_hash": "abc123",
+            "level": None,
+            "image_path": None,
+            "inline_formatting": None,
+            "table_metadata": {
+                "rows": 3,
+                "cols": 2,
+                "cells": [],
+                "column_alignments": ["left", "left"],
+                "docx_table_index": 0,
+            },
+        }]
+    }
+
+    blocks = _convert_structure_to_blocks(structure)
+    assert len(blocks) == 1
+    assert blocks[0].table_metadata is not None, \
+        "table_metadata should be preserved when converting from structure.json"
+    assert blocks[0].table_metadata["rows"] == 3
+    assert blocks[0].table_metadata["cols"] == 2

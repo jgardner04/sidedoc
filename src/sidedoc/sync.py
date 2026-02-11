@@ -7,26 +7,13 @@ import zipfile
 from pathlib import Path
 from typing import Optional, Any
 from docx import Document
-from docx.shared import Pt
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
-import mistune
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
 from sidedoc.constants import (
     MAX_ASSET_SIZE,
     SIMILARITY_THRESHOLD,
-    ALIGNMENT_STRING_TO_ENUM,
-    DEFAULT_ALIGNMENT,
-    INSERTION_PATTERN,
-    DELETION_PATTERN,
-    SUBSTITUTION_PATTERN,
-    XML_SPACE_NS,
 )
-from sidedoc.reconstruct import create_table_from_gfm
-
-# Cache the mistune parser at module level to avoid recreating per paragraph
-_MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
+from sidedoc.reconstruct import create_table_from_gfm, apply_inline_formatting, _apply_block_formatting
 
 # Default author for new track changes created during sync
 DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
@@ -132,148 +119,6 @@ def remap_styles(styles_data: dict[str, Any], matches: dict[str, Block]) -> dict
     }
 
 
-def apply_inline_formatting(paragraph: Any, content: str) -> None:
-    """Apply inline formatting from markdown to a paragraph.
-
-    Uses mistune for robust markdown parsing to handle:
-    - Nested formatting (**bold *italic* text**)
-    - Escaped asterisks (\\*literal\\*)
-    - Malformed markdown (graceful degradation)
-
-    Args:
-        paragraph: python-docx Paragraph object
-        content: Text content with markdown formatting
-    """
-    # Parse the content to extract formatting runs
-    runs = _parse_inline_markdown(content)
-
-    # Apply each run to the paragraph
-    if not runs:
-        paragraph.add_run(content)
-    else:
-        for text, bold, italic in runs:
-            run = paragraph.add_run(text)
-            if bold:
-                run.bold = True
-            if italic:
-                run.italic = True
-
-
-def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
-    """Parse inline markdown formatting using mistune.
-
-    Returns a list of (text, is_bold, is_italic) tuples representing
-    the text runs with their formatting.
-
-    Args:
-        content: Markdown text to parse
-
-    Returns:
-        List of tuples: (text, bold, italic)
-    """
-    # Parse the content using the module-level cached parser
-    # Why mistune: It handles nested formatting, escaped characters, and malformed
-    # markdown robustly. The AST approach (renderer=None) gives us structured tokens
-    # rather than HTML, making it easier to extract formatting information.
-    try:
-        tokens, _ = _MARKDOWN_PARSER.parse(content)
-    except Exception:
-        # On parse error, return content as plain text (graceful degradation)
-        # Why fail gracefully: User-edited markdown may have syntax errors. Better
-        # to preserve the text without formatting than to crash.
-        return [(content, False, False)]
-
-    # Extract inline content from paragraph tokens
-    # Why paragraph tokens: Mistune wraps inline content in paragraph block tokens.
-    # We need to extract the children (inline tokens) to get the actual formatting.
-    runs: list[tuple[str, bool, bool]] = []
-    # Cast tokens to list since mistune.parse() returns list[dict[str, Any]]
-    token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
-    for block_token in token_list:
-        if block_token.get("type") == "paragraph":
-            children = block_token.get("children", [])
-            _process_tokens(children, runs, bold=False, italic=False)
-        else:
-            # Handle other block types by extracting raw text
-            # Why this fallback: If mistune generates non-paragraph blocks (e.g., from
-            # malformed markdown), we still want to preserve the text content
-            raw = block_token.get("raw", "")
-            if raw:
-                runs.append((raw, False, False))
-
-    return runs if runs else [(content, False, False)]
-
-
-def _process_tokens(
-    tokens: list[dict[str, Any]],
-    runs: list[tuple[str, bool, bool]],
-    bold: bool,
-    italic: bool,
-) -> None:
-    """Recursively process mistune tokens into text runs.
-
-    Args:
-        tokens: List of mistune inline tokens
-        runs: Output list to append runs to
-        bold: Whether current context is bold
-        italic: Whether current context is italic
-    """
-    for token in tokens:
-        token_type = token.get("type", "")
-
-        if token_type == "text":
-            # Plain text - use current formatting state
-            # Why track state: Nested formatting like **bold *and italic*** requires
-            # passing the parent's formatting state down through recursion
-            raw = token.get("raw", "")
-            if raw:
-                runs.append((raw, bold, italic))
-
-        elif token_type == "strong":
-            # Bold - recurse with bold=True
-            # Why recurse: This handles nested formatting. When we encounter **bold**,
-            # we need to process any child tokens (like *italic*) with bold=True so
-            # they inherit the bold state
-            children = token.get("children", [])
-            _process_tokens(children, runs, bold=True, italic=italic)
-
-        elif token_type == "emphasis":
-            # Italic - recurse with italic=True
-            # Why recurse: Same as bold - handles nested formatting like *italic **and bold***
-            children = token.get("children", [])
-            _process_tokens(children, runs, bold=bold, italic=True)
-
-        elif token_type == "codespan":
-            # Inline code - treat as plain text
-            # Why plain text: We don't format code differently in docx, just preserve
-            # the text content. The backticks are already removed by mistune.
-            raw = token.get("raw", "")
-            if raw:
-                runs.append((raw, bold, italic))
-
-        elif token_type == "softbreak" or token_type == "linebreak":
-            # Line breaks - add space or newline
-            # Why space: In Word, soft breaks typically render as spaces within a
-            # paragraph rather than actual line breaks
-            runs.append((" ", bold, italic))
-
-        else:
-            # Unknown token type - try to extract text/raw content
-            # Why graceful degradation: Mistune may introduce new token types or
-            # the markdown may have unexpected syntax. Rather than crash, we try
-            # to extract any text content we can find.
-            # This handles escapes (\*) and other edge cases
-            raw = token.get("raw", "")
-            children = token.get("children", [])
-
-            if children:
-                # If there are children, process them recursively
-                _process_tokens(children, runs, bold, italic)
-            elif raw:
-                # Otherwise, just add the raw text
-                runs.append((raw, bold, italic))
-
-
 def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
     """Create reverse mapping from new block IDs to old block IDs.
 
@@ -312,13 +157,16 @@ def _get_block_style(
     return {}
 
 
-def _create_paragraph_from_block(doc: Any, block: Block, styles: dict[str, Any]) -> Optional[Any]:
+def _create_paragraph_from_block(
+    doc: Any, block: Block, styles: dict[str, Any], old_block_id: str | None = None
+) -> Optional[Any]:
     """Create a paragraph or table from a block based on its type.
 
     Args:
         doc: python-docx Document object
         block: Block to create paragraph/table from
         styles: Style information dictionary with block_styles
+        old_block_id: Resolved old block ID for style lookup during sync
 
     Returns:
         python-docx Paragraph object, or None for tables
@@ -328,7 +176,10 @@ def _create_paragraph_from_block(doc: Any, block: Block, styles: dict[str, Any])
         style_name = f"Heading {block.level}"
         return doc.add_paragraph(text, style=style_name)
     elif block.type == "table":
-        create_table_from_gfm(doc, block.content, styles, block.id)
+        # Use old block ID for style lookup if available (during sync),
+        # otherwise fall back to new block ID
+        style_id = old_block_id if old_block_id else block.id
+        create_table_from_gfm(doc, block.content, styles, style_id, block.table_metadata)
         return None
     elif block.type == "paragraph":
         if "**" in block.content or "*" in block.content:
@@ -339,26 +190,6 @@ def _create_paragraph_from_block(doc: Any, block: Block, styles: dict[str, Any])
             return doc.add_paragraph(block.content)
     else:
         return doc.add_paragraph(block.content)
-
-
-def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
-    """Apply formatting from block_style to a paragraph.
-
-    Args:
-        para: python-docx Paragraph object
-        block_style: Style dictionary with font_name, font_size, alignment
-    """
-    if not block_style:
-        return
-
-    if "font_name" in block_style and para.style:
-        para.style.font.name = block_style["font_name"]
-    if "font_size" in block_style and para.style:
-        para.style.font.size = Pt(block_style["font_size"])
-
-    alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
-    if alignment in ALIGNMENT_STRING_TO_ENUM:
-        para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
 def generate_updated_docx(
@@ -386,8 +217,9 @@ def generate_updated_docx(
     new_to_old = _create_reverse_mapping(matches)
 
     for block in new_blocks:
+        old_block_id = new_to_old.get(block.id)
         block_style = _get_block_style(block, new_to_old, styles)
-        para = _create_paragraph_from_block(doc, block, styles)
+        para = _create_paragraph_from_block(doc, block, styles, old_block_id)
         if para is not None:
             _apply_block_formatting(para, block_style)
 
@@ -423,22 +255,10 @@ def update_sidedoc_metadata(
 
 def _build_structure_data(new_blocks: list[Block]) -> dict:
     """Build structure.json data from blocks."""
+    from sidedoc.package import block_to_structure_dict
+
     return {
-        "blocks": [
-            {
-                "id": block.id,
-                "type": block.type,
-                "docx_paragraph_index": block.docx_paragraph_index,
-                "content_start": block.content_start,
-                "content_end": block.content_end,
-                "content_hash": block.content_hash,
-                "level": block.level,
-                "image_path": block.image_path,
-                "inline_formatting": block.inline_formatting,
-                "table_metadata": block.table_metadata,
-            }
-            for block in new_blocks
-        ]
+        "blocks": [block_to_structure_dict(block) for block in new_blocks]
     }
 
 
@@ -518,6 +338,7 @@ def _update_zip_metadata(
     matches: Optional[dict[str, Block]] = None,
 ) -> None:
     """Update metadata in a legacy ZIP sidedoc archive."""
+    # Phase 1: Read and validate (no temp files created)
     with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
         styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
         old_manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
@@ -533,16 +354,19 @@ def _update_zip_metadata(
                     )
                 assets[file_info.filename] = zip_file.read(file_info.filename)
 
+    # Phase 2: Prepare data (no I/O)
     if matches:
         styles_data = remap_styles(styles_data, matches)
 
     structure_data = _build_structure_data(new_blocks)
     manifest_data = _update_manifest(old_manifest, new_content)
 
-    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".sidedoc") as tmp:
-        tmp_path = tmp.name
-
+    # Phase 3: Write (temp file inside try for guaranteed cleanup)
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".sidedoc") as tmp:
+            tmp_path = tmp.name
+
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
             zip_file.writestr("content.md", new_content)
             zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
@@ -554,7 +378,7 @@ def _update_zip_metadata(
 
         Path(tmp_path).replace(sidedoc_path)
     except Exception:
-        if Path(tmp_path).exists():
+        if tmp_path and Path(tmp_path).exists():
             Path(tmp_path).unlink()
         raise
 
@@ -574,11 +398,10 @@ def sync_sidedoc_to_docx(
         output_path: Path for output .docx file
         author: Author name for new track changes (default: 'Sidedoc AI')
     """
-    import re
     from sidedoc.reconstruct import (
         parse_markdown_to_blocks,
         has_criticmarkup,
-        parse_criticmarkup,
+        add_text_with_track_changes,
     )
 
     if author is None:
@@ -600,73 +423,6 @@ def sync_sidedoc_to_docx(
 
     # Create document
     doc = Document()
-    revision_counter = [1]
-
-    def get_next_revision_id() -> str:
-        rid = str(revision_counter[0])
-        revision_counter[0] += 1
-        return rid
-
-    def create_ins_element(text: str, author_name: str, date: str, revision_id: str) -> Any:
-        """Create a w:ins XML element."""
-        ins = OxmlElement("w:ins")
-        ins.set(qn("w:id"), revision_id)
-        ins.set(qn("w:author"), author_name)
-        ins.set(qn("w:date"), date)
-
-        run = OxmlElement("w:r")
-        ins.append(run)
-
-        t = OxmlElement("w:t")
-        t.text = text
-        t.set(XML_SPACE_NS, "preserve")
-        run.append(t)
-
-        return ins
-
-    def create_del_element(text: str, author_name: str, date: str, revision_id: str) -> Any:
-        """Create a w:del XML element."""
-        del_elem = OxmlElement("w:del")
-        del_elem.set(qn("w:id"), revision_id)
-        del_elem.set(qn("w:author"), author_name)
-        del_elem.set(qn("w:date"), date)
-
-        run = OxmlElement("w:r")
-        del_elem.append(run)
-
-        del_text = OxmlElement("w:delText")
-        del_text.text = text
-        del_text.set(XML_SPACE_NS, "preserve")
-        run.append(del_text)
-
-        return del_elem
-
-    def add_text_with_track_changes(para: Any, content: str) -> None:
-        """Add text with CriticMarkup as track changes."""
-        segments = parse_criticmarkup(content)
-        para_elem = para._p
-
-        for seg_type, seg_content in segments:
-            if seg_type == "text":
-                if seg_content:
-                    run = OxmlElement("w:r")
-                    t = OxmlElement("w:t")
-                    t.text = seg_content
-                    t.set(XML_SPACE_NS, "preserve")
-                    run.append(t)
-                    para_elem.append(run)
-
-            elif seg_type == "insertion":
-                ins_elem = create_ins_element(
-                    seg_content, author, sync_date, get_next_revision_id()
-                )
-                para_elem.append(ins_elem)
-
-            elif seg_type == "deletion":
-                del_elem = create_del_element(
-                    seg_content, author, sync_date, get_next_revision_id()
-                )
-                para_elem.append(del_elem)
 
     for block in blocks:
         para = None
@@ -676,31 +432,23 @@ def sync_sidedoc_to_docx(
 
             if has_criticmarkup(text):
                 para = doc.add_paragraph(style=style_name)
-                add_text_with_track_changes(para, text)
+                add_text_with_track_changes(para, text, default_author=author, default_date=sync_date)
             else:
                 para = doc.add_paragraph(text, style=style_name)
         elif block.type == "table":
-            create_table_from_gfm(doc, block.content, styles_data, block.id)
+            create_table_from_gfm(doc, block.content, styles_data, block.id, block.table_metadata)
         else:
             content = block.content
 
             if has_criticmarkup(content):
                 para = doc.add_paragraph()
-                add_text_with_track_changes(para, content)
+                add_text_with_track_changes(para, content, default_author=author, default_date=sync_date)
             else:
                 para = doc.add_paragraph(content)
 
         # Apply styling if available (only for paragraph-based blocks)
         if para is not None:
             block_style = styles_data.get("block_styles", {}).get(block.id, {})
-            if block_style and para.style:
-                if "font_name" in block_style:
-                    para.style.font.name = block_style["font_name"]
-                if "font_size" in block_style:
-                    para.style.font.size = Pt(block_style["font_size"])
-
-                alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
-                if alignment in ALIGNMENT_STRING_TO_ENUM:
-                    para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+            _apply_block_formatting(para, block_style)
 
     doc.save(output_path)

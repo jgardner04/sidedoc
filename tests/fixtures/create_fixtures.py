@@ -175,6 +175,130 @@ def create_tables_simple_docx() -> None:
     print("✓ Created tables_simple.docx")
 
 
+def create_tables_formatted_docx() -> None:
+    """Create tables_formatted.docx with styled table (colors, borders, shading).
+
+    Table structure (4 rows x 3 columns):
+    | Department | Q1 Revenue | Q2 Revenue |   <- Blue header row with accent borders
+    |------------|------------|------------|
+    | Sales      | $1,200,000 | $1,350,000 |   <- White background
+    | Marketing  | $800,000   | $920,000   |   <- Light gray alternating shading
+    | Engineering| $950,000   | $1,100,000 |   <- White background
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    doc = Document()
+    doc.add_heading("Formatted Table Example", level=1)
+    doc.add_paragraph("This document contains a styled table with colors and borders.")
+
+    table = doc.add_table(rows=4, cols=3)
+
+    # Header row
+    headers = ["Department", "Q1 Revenue", "Q2 Revenue"]
+    data = [
+        ["Sales", "$1,200,000", "$1,350,000"],
+        ["Marketing", "$800,000", "$920,000"],
+        ["Engineering", "$950,000", "$1,100,000"],
+    ]
+
+    # Populate cells
+    for col_idx, header in enumerate(headers):
+        table.cell(0, col_idx).text = header
+    for row_idx, row_data in enumerate(data):
+        for col_idx, value in enumerate(row_data):
+            table.cell(row_idx + 1, col_idx).text = value
+
+    def _apply_cell_shading(cell: object, fill_color: str) -> None:
+        """Apply background shading to a cell."""
+        tc = cell._tc  # type: ignore[attr-defined]
+        tcPr = tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:val'), 'clear')
+        shd.set(qn('w:color'), 'auto')
+        shd.set(qn('w:fill'), fill_color)
+        tcPr.append(shd)
+
+    def _apply_cell_borders(cell: object, color: str, width: str = '4') -> None:
+        """Apply borders to all four sides of a cell."""
+        tc = cell._tc  # type: ignore[attr-defined]
+        tcPr = tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for side in ['top', 'bottom', 'left', 'right']:
+            border = OxmlElement(f'w:{side}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), width)
+            border.set(qn('w:color'), color)
+            border.set(qn('w:space'), '0')
+            tcBorders.append(border)
+        tcPr.append(tcBorders)
+
+    # Apply header row formatting: blue background + accent borders
+    for col_idx in range(3):
+        cell = table.cell(0, col_idx)
+        _apply_cell_shading(cell, 'D9E2F3')
+        _apply_cell_borders(cell, '4472C4', '8')
+        # Bold header text
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.bold = True
+
+    # Apply data row formatting
+    for row_idx in range(1, 4):
+        for col_idx in range(3):
+            cell = table.cell(row_idx, col_idx)
+            # Alternating shading: gray on even data rows (row 2 = index 2)
+            if row_idx == 2:
+                _apply_cell_shading(cell, 'F2F2F2')
+            # Thin gray borders on all data cells
+            _apply_cell_borders(cell, 'D9D9D9', '4')
+
+    doc.add_paragraph("Text after the formatted table.")
+    doc.save(str(FIXTURES_DIR / "tables_formatted.docx"))
+    print("✓ Created tables_formatted.docx")
+
+
+def create_tables_merged_docx() -> None:
+    """Create tables_merged.docx with horizontally and vertically merged cells.
+
+    Table structure (4 rows x 3 columns):
+    | Report Title (merged across 3 cols)      |
+    |------------|------------|-----------------|
+    | Category   | Q1         | Q2              |
+    | Revenue (merged vertically with row 3)  | $1M | $1.2M |
+    | (continuation of vertical merge)        | $0.8M | $0.9M |
+    """
+    doc = Document()
+    doc.add_heading("Merged Cells Example", level=1)
+    doc.add_paragraph("This document contains a table with merged cells.")
+
+    table = doc.add_table(rows=4, cols=3)
+
+    # Populate all cells first
+    table.cell(0, 0).text = "Report Title"
+    table.cell(0, 1).text = ""
+    table.cell(0, 2).text = ""
+    table.cell(1, 0).text = "Category"
+    table.cell(1, 1).text = "Q1"
+    table.cell(1, 2).text = "Q2"
+    table.cell(2, 0).text = "Revenue"
+    table.cell(2, 1).text = "$1M"
+    table.cell(2, 2).text = "$1.2M"
+    table.cell(3, 0).text = ""
+    table.cell(3, 1).text = "$0.8M"
+    table.cell(3, 2).text = "$0.9M"
+
+    # Apply horizontal merge: row 0, cols 0-2
+    table.cell(0, 0).merge(table.cell(0, 2))
+
+    # Apply vertical merge: rows 2-3, col 0
+    table.cell(2, 0).merge(table.cell(3, 0))
+
+    doc.add_paragraph("Text after the merged table.")
+    doc.save(str(FIXTURES_DIR / "tables_merged.docx"))
+    print("✓ Created tables_merged.docx")
+
+
 def create_complex_docx() -> None:
     """Create complex.docx with all supported elements combined."""
     doc = Document()
@@ -223,4 +347,6 @@ if __name__ == "__main__":
     create_images_docx()
     create_complex_docx()
     create_tables_simple_docx()
+    create_tables_formatted_docx()
+    create_tables_merged_docx()
     print("\nAll fixtures created successfully!")

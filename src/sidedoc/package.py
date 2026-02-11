@@ -8,6 +8,41 @@ from sidedoc.utils import compute_file_hash, get_iso_timestamp
 from sidedoc import __version__
 
 
+def block_to_structure_dict(block: Block) -> dict:
+    """Convert a Block to its structure.json dictionary representation.
+
+    Args:
+        block: Block to serialize
+
+    Returns:
+        Dictionary suitable for structure.json
+    """
+    return {
+        "id": block.id,
+        "type": block.type,
+        "docx_paragraph_index": block.docx_paragraph_index,
+        "content_start": block.content_start,
+        "content_end": block.content_end,
+        "content_hash": block.content_hash,
+        "level": block.level,
+        "image_path": block.image_path,
+        "inline_formatting": block.inline_formatting,
+        "table_metadata": block.table_metadata,
+        "track_changes": [
+            {
+                "type": tc.type,
+                "start": tc.start,
+                "end": tc.end,
+                "author": tc.author,
+                "date": tc.date,
+                "revision_id": tc.revision_id,
+                "deleted_text": tc.deleted_text,
+            }
+            for tc in block.track_changes
+        ] if block.track_changes else None,
+    }
+
+
 def _build_metadata(
     content_md: str,
     blocks: list[Block],
@@ -20,32 +55,7 @@ def _build_metadata(
         Tuple of (structure_data, styles_data, manifest_data)
     """
     structure_data = {
-        "blocks": [
-            {
-                "id": block.id,
-                "type": block.type,
-                "docx_paragraph_index": block.docx_paragraph_index,
-                "content_start": block.content_start,
-                "content_end": block.content_end,
-                "content_hash": block.content_hash,
-                "level": block.level,
-                "image_path": block.image_path,
-                "inline_formatting": block.inline_formatting,
-                "track_changes": [
-                    {
-                        "type": tc.type,
-                        "start": tc.start,
-                        "end": tc.end,
-                        "author": tc.author,
-                        "date": tc.date,
-                        "revision_id": tc.revision_id,
-                        "deleted_text": tc.deleted_text,
-                    }
-                    for tc in block.track_changes
-                ] if block.track_changes else None,
-            }
-            for block in blocks
-        ]
+        "blocks": [block_to_structure_dict(block) for block in blocks]
     }
 
     styles_data = {
@@ -58,6 +68,7 @@ def _build_metadata(
                 "bold": style.bold,
                 "italic": style.italic,
                 "underline": style.underline,
+                "table_formatting": style.table_formatting,
             }
             for style in styles
         },

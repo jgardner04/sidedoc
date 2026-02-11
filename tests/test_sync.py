@@ -776,7 +776,7 @@ def test_update_sidedoc_metadata_preserves_styles() -> None:
 
 
 # Tests for apply_inline_formatting edge cases (Issue #7)
-from sidedoc.sync import apply_inline_formatting
+from sidedoc.reconstruct import apply_inline_formatting
 
 
 def test_inline_formatting_nested_bold_italic() -> None:
@@ -1701,3 +1701,177 @@ def test_sync_sidedoc_to_docx_creates_table_objects() -> None:
             if text:
                 assert not (text.startswith("|") and text.endswith("|")), \
                     f"Raw GFM leaked into paragraph: {text}"
+
+
+def test_sync_preserves_track_changes_in_structure() -> None:
+    """Test that syncing a sidedoc with track changes preserves them in structure.json.
+
+    Regression test: _build_structure_data in sync.py was missing the track_changes
+    field, silently dropping track change metadata during sync.
+    """
+    from sidedoc.models import TrackChange
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_path = Path(tmp_dir) / "test.sidedoc"
+        sidedoc_path.mkdir()
+
+        content = "Hello {++world++}"
+        (sidedoc_path / "content.md").write_text(content)
+        (sidedoc_path / "styles.json").write_text(json.dumps({
+            "block_styles": {},
+            "document_defaults": {"font_name": "Calibri", "font_size": 11},
+        }))
+        (sidedoc_path / "manifest.json").write_text(json.dumps({
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc",
+            "content_hash": "old",
+            "generator": "sidedoc-cli/0.1.0",
+        }))
+        (sidedoc_path / "structure.json").write_text(json.dumps({"blocks": []}))
+
+        # Create blocks with track changes
+        new_blocks = [
+            Block(
+                id="block-0",
+                type="paragraph",
+                content=content,
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=len(content),
+                content_hash=compute_hash(content),
+                track_changes=[
+                    TrackChange(
+                        type="insertion",
+                        start=6,
+                        end=11,
+                        author="Test Author",
+                        date="2024-06-01T00:00:00Z",
+                        revision_id="1",
+                    )
+                ],
+            )
+        ]
+
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, content)
+
+        # Read back and verify track_changes are preserved
+        structure = json.loads((sidedoc_path / "structure.json").read_text())
+        block = structure["blocks"][0]
+        assert block.get("track_changes") is not None, \
+            "track_changes should be preserved in structure.json after sync"
+        assert len(block["track_changes"]) == 1
+        assert block["track_changes"][0]["type"] == "insertion"
+        assert block["track_changes"][0]["author"] == "Test Author"
+
+
+# ============================================================================
+# Fix 2: ZIP metadata error handling - temp file cleanup
+# ============================================================================
+
+
+def test_update_zip_metadata_cleans_temp_on_write_error() -> None:
+    """Test that temp file is cleaned up when ZIP write fails."""
+    import pytest
+    from unittest.mock import patch, MagicMock
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", "Old content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
+
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        # Make the write-phase ZipFile raise an error
+        original_zipfile = zipfile.ZipFile
+
+        call_count = [0]
+        def patched_zipfile(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 2:  # Second call is the write
+                raise OSError("Simulated write failure")
+            return original_zipfile(*args, **kwargs)
+
+        with patch("sidedoc.sync.zipfile.ZipFile", side_effect=patched_zipfile):
+            with pytest.raises(OSError, match="Simulated write failure"):
+                update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
+
+        # No orphaned temp files should remain
+        all_files = list(Path(temp_dir).glob("*"))
+        assert len(all_files) == 1, f"Only original file should remain, got: {[f.name for f in all_files]}"
+        assert sidedoc_path.exists(), "Original ZIP should be intact"
+
+
+def test_update_zip_metadata_no_temp_on_asset_validation_error() -> None:
+    """Test that no temp file is created when asset validation fails."""
+    import pytest
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": "old_hash",
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        asset_data = b"X" * 1024
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", "Old content")
+            zip_file.writestr("structure.json", json.dumps({"blocks": []}))
+            zip_file.writestr("styles.json", json.dumps({"block_styles": {}}))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
+            zip_file.writestr("assets/image.png", asset_data)
+
+        new_blocks = [
+            Block(
+                id="block-1",
+                type="paragraph",
+                content="New content",
+                docx_paragraph_index=0,
+                content_start=0,
+                content_end=11,
+                content_hash=compute_hash("New content"),
+            )
+        ]
+
+        # Patch MAX_ASSET_SIZE to be smaller than our asset
+        with patch("sidedoc.sync.MAX_ASSET_SIZE", 100):
+            with pytest.raises(ValueError, match="exceeds maximum size"):
+                update_sidedoc_metadata(str(sidedoc_path), new_blocks, "New content")
+
+        # No temp files should have been created (validation happens before temp file)
+        all_files = list(Path(temp_dir).glob("*"))
+        assert len(all_files) == 1, f"Only original file should remain, got: {[f.name for f in all_files]}"

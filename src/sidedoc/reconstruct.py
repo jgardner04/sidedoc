@@ -24,8 +24,118 @@ from sidedoc.constants import (
     SUBSTITUTION_PATTERN,
     WORDPROCESSINGML_NS,
     XML_SPACE_NS,
+    VALID_BORDER_STYLES,
+    HEX_COLOR_PATTERN,
+    MAX_BORDER_WIDTH,
 )
 from sidedoc.store import SidedocStore
+
+# Cache the mistune parser at module level to avoid recreating per paragraph
+_MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
+
+
+def apply_inline_formatting(paragraph: Any, content: str) -> None:
+    """Apply inline formatting from markdown to a paragraph.
+
+    Uses mistune for robust markdown parsing to handle:
+    - Nested formatting (**bold *italic* text**)
+    - Escaped asterisks (\\*literal\\*)
+    - Malformed markdown (graceful degradation)
+
+    Args:
+        paragraph: python-docx Paragraph object
+        content: Text content with markdown formatting
+    """
+    runs = _parse_inline_markdown(content)
+
+    if not runs:
+        paragraph.add_run(content)
+    else:
+        for text, bold, italic in runs:
+            run = paragraph.add_run(text)
+            if bold:
+                run.bold = True
+            if italic:
+                run.italic = True
+
+
+def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
+    """Parse inline markdown formatting using mistune.
+
+    Returns a list of (text, is_bold, is_italic) tuples representing
+    the text runs with their formatting.
+
+    Args:
+        content: Markdown text to parse
+
+    Returns:
+        List of tuples: (text, bold, italic)
+    """
+    try:
+        tokens, _ = _MARKDOWN_PARSER.parse(content)
+    except Exception:
+        return [(content, False, False)]
+
+    runs: list[tuple[str, bool, bool]] = []
+    token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
+    for block_token in token_list:
+        if block_token.get("type") == "paragraph":
+            children = block_token.get("children", [])
+            _process_tokens(children, runs, bold=False, italic=False)
+        else:
+            raw = block_token.get("raw", "")
+            if raw:
+                runs.append((raw, False, False))
+
+    return runs if runs else [(content, False, False)]
+
+
+def _process_tokens(
+    tokens: list[dict[str, Any]],
+    runs: list[tuple[str, bool, bool]],
+    bold: bool,
+    italic: bool,
+) -> None:
+    """Recursively process mistune tokens into text runs.
+
+    Args:
+        tokens: List of mistune inline tokens
+        runs: Output list to append runs to
+        bold: Whether current context is bold
+        italic: Whether current context is italic
+    """
+    for token in tokens:
+        token_type = token.get("type", "")
+
+        if token_type == "text":
+            raw = token.get("raw", "")
+            if raw:
+                runs.append((raw, bold, italic))
+
+        elif token_type == "strong":
+            children = token.get("children", [])
+            _process_tokens(children, runs, bold=True, italic=italic)
+
+        elif token_type == "emphasis":
+            children = token.get("children", [])
+            _process_tokens(children, runs, bold=bold, italic=True)
+
+        elif token_type == "codespan":
+            raw = token.get("raw", "")
+            if raw:
+                runs.append((raw, bold, italic))
+
+        elif token_type == "softbreak" or token_type == "linebreak":
+            runs.append((" ", bold, italic))
+
+        else:
+            raw = token.get("raw", "")
+            children = token.get("children", [])
+
+            if children:
+                _process_tokens(children, runs, bold, italic)
+            elif raw:
+                runs.append((raw, bold, italic))
 
 
 # Regex to match markdown hyperlinks: [text](url)
@@ -179,10 +289,10 @@ def add_text_with_track_changes(
         default_author: Default author for new track changes
         default_date: Default date for new track changes
     """
-    from datetime import datetime
+    from sidedoc.utils import get_iso_timestamp
 
     if not default_date:
-        default_date = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        default_date = get_iso_timestamp()
 
     segments = parse_criticmarkup(content)
 
@@ -767,7 +877,136 @@ def parse_gfm_table(table_content: str) -> tuple[list[list[str]], list[str]]:
     return rows, alignments
 
 
-def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[str, Any], block_id: str) -> None:
+def apply_cell_shading(cell: Any, color: str) -> None:
+    """Apply background shading to a table cell.
+
+    Args:
+        cell: python-docx table cell object
+        color: Hex color string like 'D9E2F3'
+    """
+    if not re.match(HEX_COLOR_PATTERN, color):
+        return
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    existing_shd = tcPr.find(qn('w:shd'))
+    if existing_shd is not None:
+        tcPr.remove(existing_shd)
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), color)
+    tcPr.append(shd)
+
+
+def apply_cell_borders(cell: Any, borders: dict[str, dict[str, Any]]) -> None:
+    """Apply border styles to a table cell.
+
+    Args:
+        cell: python-docx table cell object
+        borders: Dictionary with border data per side (top/bottom/left/right)
+    """
+    tc = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    existing = tcPr.find(qn('w:tcBorders'))
+    if existing is not None:
+        tcPr.remove(existing)
+    tcBorders = OxmlElement('w:tcBorders')
+    for side in ['top', 'bottom', 'left', 'right']:
+        if side not in borders:
+            continue
+        border_data = borders[side]
+        style = border_data.get('style', 'single')
+        if style not in VALID_BORDER_STYLES:
+            continue
+        width = border_data.get('width', 4)
+        if not isinstance(width, int) or width < 0 or width > MAX_BORDER_WIDTH:
+            continue
+        color = border_data.get('color', 'auto')
+        if color != 'auto' and not re.match(HEX_COLOR_PATTERN, color):
+            continue
+        border = OxmlElement(f'w:{side}')
+        border.set(qn('w:val'), style)
+        border.set(qn('w:sz'), str(width))
+        border.set(qn('w:color'), color)
+        border.set(qn('w:space'), '0')
+        tcBorders.append(border)
+    tcPr.append(tcBorders)
+
+
+def _apply_cell_styles(table: Any, cell_styles: dict[str, dict[str, Any]]) -> None:
+    """Apply cell-level styles (shading, borders) to a table.
+
+    Args:
+        table: python-docx Table object
+        cell_styles: Dictionary keyed by 'row,col' with formatting data
+    """
+    for key, style_data in cell_styles.items():
+        parts = key.split(',')
+        if len(parts) != 2:
+            continue
+        try:
+            row_idx, col_idx = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        if row_idx < 0 or row_idx >= len(table.rows):
+            continue
+        if col_idx < 0 or col_idx >= len(table.columns):
+            continue
+        cell = table.cell(row_idx, col_idx)
+        if 'background_color' in style_data:
+            apply_cell_shading(cell, style_data['background_color'])
+        if 'borders' in style_data:
+            apply_cell_borders(cell, style_data['borders'])
+
+
+def validate_gfm_table_dimensions(table_content: str) -> None:
+    """Pre-validate GFM table dimensions before parsing into memory.
+
+    Counts rows and columns from raw text to reject oversized tables
+    before parse_gfm_table() builds a full 2D array in memory.
+
+    Args:
+        table_content: GFM pipe table markdown
+
+    Raises:
+        ValueError: If table dimensions exceed MAX_TABLE_ROWS or MAX_TABLE_COLS
+    """
+    lines = table_content.strip().split("\n")
+
+    # Count data rows (non-empty, non-separator lines)
+    data_rows = 0
+    first_data_line = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if is_table_separator_line(stripped):
+            continue
+        data_rows += 1
+        if first_data_line is None:
+            first_data_line = stripped
+
+    if data_rows > MAX_TABLE_ROWS:
+        raise ValueError(
+            f"Table has too many rows ({data_rows}), maximum is {MAX_TABLE_ROWS}"
+        )
+
+    # Count columns from first data line
+    if first_data_line:
+        num_cols = len(split_gfm_row(first_data_line))
+        if num_cols > MAX_TABLE_COLS:
+            raise ValueError(
+                f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}"
+            )
+
+
+def create_table_from_gfm(
+    doc: DocumentType,
+    table_content: str,
+    styles: dict[str, Any],
+    block_id: str,
+    table_metadata: Optional[dict[str, Any]] = None,
+) -> None:
     """Create a table in the document from GFM table content.
 
     Args:
@@ -775,10 +1014,14 @@ def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[st
         table_content: GFM pipe table markdown
         styles: Style information dictionary
         block_id: Block ID for looking up table styles
+        table_metadata: Optional table metadata with merged_cells, header_rows etc.
 
     Raises:
         ValueError: If table dimensions exceed reasonable limits
     """
+    # Pre-validate dimensions before building 2D array in memory
+    validate_gfm_table_dimensions(table_content)
+
     rows, alignments = parse_gfm_table(table_content)
 
     if not rows:
@@ -804,13 +1047,51 @@ def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[st
         for col_idx, cell_text in enumerate(row_data):
             if col_idx < len(table.columns):
                 cell = table.cell(row_idx, col_idx)
-                cell.text = cell_text
+
+                # Apply content with the same priority chain as non-table blocks
+                if has_criticmarkup(cell_text):
+                    cell.text = ""
+                    add_text_with_track_changes(cell.paragraphs[0], cell_text)
+                elif has_hyperlinks(cell_text):
+                    cell.text = ""
+                    add_text_with_hyperlinks(cell.paragraphs[0], cell_text)
+                elif re.search(r'\*\*.+?\*\*|\*[^*]+?\*', cell_text):
+                    cell.text = ""
+                    apply_inline_formatting(cell.paragraphs[0], cell_text)
+                else:
+                    cell.text = cell_text
 
                 # Apply alignment to the cell's paragraph
                 if alignments and col_idx < len(alignments):
                     alignment = alignments[col_idx]
                     if cell.paragraphs and alignment in ALIGNMENT_STRING_TO_ENUM:
                         cell.paragraphs[0].alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+
+    # Apply header rows from table_metadata
+    if table_metadata:
+        header_row_count = table_metadata.get("header_rows", 1)
+        for row_idx in range(min(header_row_count, num_rows)):
+            row = table.rows[row_idx]
+            trPr = row._tr.get_or_add_trPr()
+            tblHeader = OxmlElement('w:tblHeader')
+            trPr.append(tblHeader)
+
+    # Apply merged cells from table_metadata if available
+    if table_metadata:
+        merged_cells = table_metadata.get("merged_cells", [])
+        for merge in merged_cells:
+            start_row = merge.get("start_row", 0)
+            start_col = merge.get("start_col", 0)
+            row_span = merge.get("row_span", 1)
+            col_span = merge.get("col_span", 1)
+            end_row = start_row + row_span - 1
+            end_col = start_col + col_span - 1
+            # Validate bounds
+            if (0 <= start_row <= end_row < num_rows and
+                    0 <= start_col <= end_col < num_cols):
+                table.cell(start_row, start_col).merge(
+                    table.cell(end_row, end_col)
+                )
 
     # Apply column widths from styles if available
     block_style = styles.get("block_styles", {}).get(block_id, {})
@@ -822,6 +1103,31 @@ def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[st
             if col_idx < len(table.columns):
                 # Width is in inches, convert to EMUs
                 table.columns[col_idx].width = Inches(width)
+
+        # Apply cell-level styles (shading, borders)
+        cell_styles = table_formatting.get("cell_styles", {})
+        if cell_styles:
+            _apply_cell_styles(table, cell_styles)
+
+
+def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
+    """Apply formatting from block_style to a paragraph.
+
+    Args:
+        para: python-docx Paragraph object
+        block_style: Style dictionary with font_name, font_size, alignment
+    """
+    if not block_style:
+        return
+
+    if "font_name" in block_style and para.style:
+        para.style.font.name = block_style["font_name"]
+    if "font_size" in block_style and para.style:
+        para.style.font.size = Pt(block_style["font_size"])
+
+    alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
+    if alignment in ALIGNMENT_STRING_TO_ENUM:
+        para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
 def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_dir: Optional[Path] = None) -> DocumentType:
@@ -856,7 +1162,7 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                 para = doc.add_paragraph(text, style=style_name)
         elif block.type == "table":
             # Handle table blocks
-            create_table_from_gfm(doc, block.content, styles, block.id)
+            create_table_from_gfm(doc, block.content, styles, block.id, block.table_metadata)
             para = None  # Tables don't have paragraph styling
         elif block.type == "image":
             # Handle image blocks
@@ -901,16 +1207,7 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
         # Apply styling if available (only for paragraph-based blocks)
         if para is not None:
             block_style = styles.get("block_styles", {}).get(block.id, {})
-            if block_style and para.style:
-                if "font_name" in block_style:
-                    para.style.font.name = block_style["font_name"]
-                if "font_size" in block_style:
-                    para.style.font.size = Pt(block_style["font_size"])
-
-                # Apply alignment
-                alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
-                if alignment in ALIGNMENT_STRING_TO_ENUM:
-                    para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+            _apply_block_formatting(para, block_style)
 
     return doc
 

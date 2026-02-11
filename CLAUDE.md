@@ -96,10 +96,10 @@ src/sidedoc/
 ├── constants.py        # Shared constants (extensions, limits, patterns)
 ├── extract.py          # docx → sidedoc (paragraphs, tables, images)
 ├── models.py           # Block, Style, Manifest, TrackChange dataclasses
-├── package.py          # Archive/directory creation helpers
-├── reconstruct.py      # sidedoc → docx
+├── package.py          # Archive/directory creation helpers, block serialization
+├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling
 ├── store.py            # Read-only abstraction over directory/ZIP
-├── sync.py             # edited content → updated docx
+├── sync.py             # edited content → updated docx (imports formatting from reconstruct.py)
 └── utils.py            # shared utilities
 ```
 
@@ -117,7 +117,7 @@ src/sidedoc/
 | `paragraph` | Plain text | Inline formatting: `**bold**`, `*italic*` |
 | `list` | `- bullet` or `1. numbered` | |
 | `image` | `![alt](assets/image.png)` | |
-| `table` | GFM pipe tables | |
+| `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
 | `hyperlink` | `[text](url)` | Inline within other blocks |
 
 ### Table Support (Phase 2)
@@ -130,10 +130,10 @@ Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
 | Alice | Engineer | 2024-01-15 |
 ```
 
-- **Alignment:** `---` (default left), `:---|` (explicit left), `:---:|` (center), `---:|` (right)
+- **Alignment:** `---` (default left), `:---` (explicit left), `:---:` (center), `---:` (right)
 - **Escaping:** Pipe characters in content escaped as `\|`
-- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index
-- **Styling:** `table_formatting` in Style stores column_widths, table_alignment
+- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
+- **Styling:** `table_formatting` in Style stores column_widths, table_alignment, table_style, cell_styles
 
 ## Sidedoc Format
 

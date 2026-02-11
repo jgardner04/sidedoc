@@ -977,3 +977,189 @@ def test_extract_rejects_corrupted_image():
     finally:
         Path(temp_doc.name).unlink()
         Path(temp_img.name).unlink()
+
+
+# ============================================================================
+# Tests for formatting helpers
+# ============================================================================
+
+
+def test_wrap_formatting_plain():
+    """Test wrap_formatting with no formatting."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello", False, False) == "hello"
+
+
+def test_wrap_formatting_bold():
+    """Test wrap_formatting with bold."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello", True, False) == "**hello**"
+
+
+def test_wrap_formatting_italic():
+    """Test wrap_formatting with italic."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello", False, True) == "*hello*"
+
+
+def test_wrap_formatting_bold_italic():
+    """Test wrap_formatting with bold and italic."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello", True, True) == "***hello***"
+
+
+def test_format_hyperlink_md_plain():
+    """Test format_hyperlink_md with no formatting."""
+    from sidedoc.extract import format_hyperlink_md
+    assert format_hyperlink_md("click here", "https://example.com", False, False) == "[click here](https://example.com)"
+
+
+def test_format_hyperlink_md_bold():
+    """Test format_hyperlink_md with bold."""
+    from sidedoc.extract import format_hyperlink_md
+    assert format_hyperlink_md("click", "https://example.com", True, False) == "[**click**](https://example.com)"
+
+
+def test_format_hyperlink_md_italic():
+    """Test format_hyperlink_md with italic."""
+    from sidedoc.extract import format_hyperlink_md
+    assert format_hyperlink_md("click", "https://example.com", False, True) == "[*click*](https://example.com)"
+
+
+def test_format_hyperlink_md_bold_italic():
+    """Test format_hyperlink_md with bold and italic."""
+    from sidedoc.extract import format_hyperlink_md
+    assert format_hyperlink_md("click", "https://example.com", True, True) == "[***click***](https://example.com)"
+
+
+def test_format_hyperlink_md_escapes_brackets():
+    """Test that format_hyperlink_md escapes brackets in text."""
+    from sidedoc.extract import format_hyperlink_md
+    result = format_hyperlink_md("foo[bar]baz", "https://example.com", False, False)
+    assert result == "[foo\\[bar\\]baz](https://example.com)"
+
+
+def test_format_hyperlink_md_encodes_url():
+    """Test that format_hyperlink_md encodes parentheses in URLs."""
+    from sidedoc.extract import format_hyperlink_md
+    result = format_hyperlink_md("click", "https://example.com/page_(1)", False, False)
+    assert "%28" in result
+    assert "%29" in result
+
+
+# ============================================================================
+# Fix 4: extract_paragraph_accept_all bugs
+# ============================================================================
+
+
+def test_accept_all_respects_val_false_on_bold():
+    """Test that val='0' on bold element means not bold in accept_all path."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_accept_all
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    # Build XML with <w:b w:val="0"/> — should NOT be treated as bold
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r>
+            <w:rPr>
+                <w:b w:val="0"/>
+            </w:rPr>
+            <w:t>not bold</w:t>
+        </w:r>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, inline_fmt, _ = extract_paragraph_accept_all(para_elem)
+
+    assert content == "not bold"
+    # Should have NO bold formatting recorded
+    if inline_fmt:
+        for fmt in inline_fmt:
+            assert not fmt.get("bold", False), \
+                f"val='0' should not produce bold formatting: {fmt}"
+
+
+def test_accept_all_records_hyperlinks_in_inline_formatting():
+    """Test that hyperlinks are recorded in inline_formatting in accept_all path."""
+    from lxml import etree
+    from unittest.mock import MagicMock
+    from sidedoc.extract import extract_paragraph_accept_all
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    xml = f"""
+    <w:p xmlns:w="{NS}" xmlns:r="{REL_NS}">
+        <w:hyperlink r:id="rId1">
+            <w:r>
+                <w:t>click here</w:t>
+            </w:r>
+        </w:hyperlink>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+
+    # Mock doc_part with relationship
+    mock_rel = MagicMock()
+    mock_rel._target = "https://example.com"
+    mock_doc_part = MagicMock()
+    mock_doc_part.rels = {"rId1": mock_rel}
+
+    content, inline_fmt, _ = extract_paragraph_accept_all(para_elem, mock_doc_part)
+
+    assert "click here" in content
+    assert "example.com" in content
+
+    # inline_formatting should include a hyperlink entry
+    assert inline_fmt is not None, "inline_formatting should not be None"
+    hyperlink_entries = [f for f in inline_fmt if f.get("type") == "hyperlink"]
+    assert len(hyperlink_entries) >= 1, f"Should have hyperlink in inline_formatting: {inline_fmt}"
+    assert hyperlink_entries[0]["url"] == "https://example.com"
+
+
+def test_accept_all_handles_line_breaks():
+    """Test that w:br elements produce newlines in accept_all path."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_accept_all
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r>
+            <w:t>line one</w:t>
+            <w:br/>
+            <w:t>line two</w:t>
+        </w:r>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, _, _ = extract_paragraph_accept_all(para_elem)
+
+    assert "\n" in content, f"Expected newline from w:br, got: {repr(content)}"
+    assert "line one" in content
+    assert "line two" in content
+
+
+def test_accept_all_tracks_underline():
+    """Test that underline formatting is tracked in accept_all path."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_accept_all
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r>
+            <w:rPr>
+                <w:u w:val="single"/>
+            </w:rPr>
+            <w:t>underlined</w:t>
+        </w:r>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, inline_fmt, _ = extract_paragraph_accept_all(para_elem)
+
+    assert content == "underlined"
+    assert inline_fmt is not None, "inline_formatting should not be None"
+    underline_entries = [f for f in inline_fmt if f.get("type") == "underline"]
+    assert len(underline_entries) >= 1, f"Should have underline entry: {inline_fmt}"
