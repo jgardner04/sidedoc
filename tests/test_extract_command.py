@@ -1,6 +1,7 @@
 """Test extract command integration."""
 
 import json
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -21,26 +22,20 @@ def create_test_docx() -> str:
     return temp_file.name
 
 
-def test_extract_command_creates_sidedoc_file():
-    """Test that extract command creates a .sidedoc file."""
+def test_extract_command_creates_sidedoc_directory():
+    """Test that extract command creates a .sidedoc directory."""
     runner = CliRunner()
     with runner.isolated_filesystem():
-        # Create test docx
         docx_path = create_test_docx()
 
         try:
-            # Run extract command
             result = runner.invoke(main, ["extract", docx_path])
 
-            # Check command succeeded
             assert result.exit_code == 0
 
-            # Check .sidedoc file was created
             sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
             assert sidedoc_path.exists()
-
-            # Verify it's a valid ZIP
-            assert zipfile.is_zipfile(sidedoc_path)
+            assert sidedoc_path.is_dir()
         finally:
             Path(docx_path).unlink(missing_ok=True)
 
@@ -57,13 +52,14 @@ def test_extract_command_with_custom_output():
 
             assert result.exit_code == 0
             assert Path(output_path).exists()
+            assert Path(output_path).is_dir()
         finally:
             Path(docx_path).unlink(missing_ok=True)
-            Path(output_path).unlink(missing_ok=True)
+            shutil.rmtree(output_path, ignore_errors=True)
 
 
-def test_extract_creates_valid_zip_structure():
-    """Test that extract creates proper ZIP structure."""
+def test_extract_creates_valid_directory_structure():
+    """Test that extract creates proper directory structure."""
     runner = CliRunner()
     with runner.isolated_filesystem():
         docx_path = create_test_docx()
@@ -73,14 +69,10 @@ def test_extract_creates_valid_zip_structure():
             assert result.exit_code == 0
 
             sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
-            with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-                names = zip_file.namelist()
-
-                # Check required files exist
-                assert "content.md" in names
-                assert "structure.json" in names
-                assert "styles.json" in names
-                assert "manifest.json" in names
+            assert (sidedoc_path / "content.md").exists()
+            assert (sidedoc_path / "structure.json").exists()
+            assert (sidedoc_path / "styles.json").exists()
+            assert (sidedoc_path / "manifest.json").exists()
         finally:
             Path(docx_path).unlink(missing_ok=True)
 
@@ -96,17 +88,15 @@ def test_extract_creates_valid_manifest():
             assert result.exit_code == 0
 
             sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
-            with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-                manifest_data = json.loads(zip_file.read("manifest.json"))
+            manifest_data = json.loads((sidedoc_path / "manifest.json").read_text())
 
-                # Check required fields
-                assert "sidedoc_version" in manifest_data
-                assert "created_at" in manifest_data
-                assert "modified_at" in manifest_data
-                assert "source_file" in manifest_data
-                assert "source_hash" in manifest_data
-                assert "content_hash" in manifest_data
-                assert "generator" in manifest_data
+            assert "sidedoc_version" in manifest_data
+            assert "created_at" in manifest_data
+            assert "modified_at" in manifest_data
+            assert "source_file" in manifest_data
+            assert "source_hash" in manifest_data
+            assert "content_hash" in manifest_data
+            assert "generator" in manifest_data
         finally:
             Path(docx_path).unlink(missing_ok=True)
 
@@ -118,3 +108,70 @@ def test_extract_error_on_missing_file():
 
     # Click handles missing files with exit code 2
     assert result.exit_code == 2
+
+
+def test_extract_force_overwrites_existing():
+    """Test that --force allows overwriting an existing directory."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        docx_path = create_test_docx()
+
+        try:
+            # First extract
+            result1 = runner.invoke(main, ["extract", docx_path])
+            assert result1.exit_code == 0
+
+            # Second extract without --force should fail
+            result2 = runner.invoke(main, ["extract", docx_path])
+            assert result2.exit_code != 0
+            assert "already exists" in result2.output
+
+            # With --force should succeed
+            result3 = runner.invoke(main, ["extract", docx_path, "--force"])
+            assert result3.exit_code == 0
+        finally:
+            Path(docx_path).unlink(missing_ok=True)
+
+
+def test_extract_force_rejects_symlink(tmp_path: Path):
+    """Test that --force rejects symlinked output paths."""
+    runner = CliRunner()
+    docx_path = create_test_docx()
+
+    try:
+        # Create a symlink where the output would go
+        target_dir = tmp_path / "real_target"
+        target_dir.mkdir()
+        symlink_path = Path(docx_path).with_suffix(".sidedoc")
+        symlink_path.symlink_to(target_dir)
+
+        result = runner.invoke(main, ["extract", docx_path, "--force"])
+
+        assert result.exit_code != 0
+        assert "symlink" in result.output.lower()
+    finally:
+        Path(docx_path).unlink(missing_ok=True)
+        if symlink_path.is_symlink():
+            symlink_path.unlink()
+
+
+def test_extract_pack_creates_zip():
+    """Test that --pack creates a .sdoc ZIP archive."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        docx_path = create_test_docx()
+
+        try:
+            result = runner.invoke(main, ["extract", docx_path, "--pack"])
+            assert result.exit_code == 0
+
+            sdoc_path = Path(docx_path).with_suffix(".sdoc")
+            assert sdoc_path.exists()
+            assert zipfile.is_zipfile(sdoc_path)
+
+            with zipfile.ZipFile(sdoc_path, "r") as zf:
+                names = zf.namelist()
+                assert "content.md" in names
+                assert "styles.json" in names
+        finally:
+            Path(docx_path).unlink(missing_ok=True)

@@ -54,6 +54,21 @@ def ensure_sidedoc_extension(path: str) -> str:
     return path
 
 
+def ensure_sdoc_extension(path: str) -> str:
+    """Ensure path has .sdoc extension.
+
+    Args:
+        path: Input path
+
+    Returns:
+        Path with .sdoc extension
+    """
+    p = Path(path)
+    if p.suffix != ".sdoc":
+        return str(p.with_suffix(".sdoc"))
+    return path
+
+
 def is_safe_path(path: str, base_dir: Path) -> bool:
     """Check if a path is safe for extraction (no path traversal).
 

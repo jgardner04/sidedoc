@@ -92,7 +92,7 @@ def test_roundtrip_multiple_heading_levels():
 
 
 def test_complete_workflow():
-    """Test complete workflow: extract → unpack → pack → build."""
+    """Test complete workflow: extract → build from directory, and extract --pack → unpack → pack → build."""
     runner = CliRunner()
     with runner.isolated_filesystem():
         # Create original
@@ -101,27 +101,33 @@ def test_complete_workflow():
         doc.add_paragraph("This is a test")
         doc.save("original.docx")
 
-        # Extract
+        # Extract to directory
         result = runner.invoke(main, ["extract", "original.docx"])
         assert result.exit_code == 0
+        assert Path("original.sidedoc").is_dir()
+        assert Path("original.sidedoc/content.md").exists()
 
-        # Unpack
-        result = runner.invoke(main, ["unpack", "original.sidedoc", "-o", "unpacked"])
+        # Build from directory
+        result = runner.invoke(main, ["build", "original.sidedoc", "-o", "from_dir.docx"])
         assert result.exit_code == 0
 
-        # Verify unpacked files
-        assert Path("unpacked/content.md").exists()
-        assert Path("unpacked/manifest.json").exists()
+        # Verify document from directory
+        from_dir = Document("from_dir.docx")
+        texts = [p.text for p in from_dir.paragraphs]
+        assert "Test Document" in texts
+        assert "This is a test" in texts
 
-        # Pack back
-        result = runner.invoke(main, ["pack", "unpacked", "-o", "repacked.sidedoc"])
+        # Also test ZIP distribution workflow: pack → unpack → build
+        result = runner.invoke(main, ["pack", "original.sidedoc", "-o", "distributed.sdoc"])
         assert result.exit_code == 0
 
-        # Build from repacked
-        result = runner.invoke(main, ["build", "repacked.sidedoc", "-o", "final.docx"])
+        result = runner.invoke(main, ["unpack", "distributed.sdoc", "-o", "unpacked.sidedoc"])
+        assert result.exit_code == 0
+        assert Path("unpacked.sidedoc/content.md").exists()
+
+        result = runner.invoke(main, ["build", "unpacked.sidedoc", "-o", "final.docx"])
         assert result.exit_code == 0
 
-        # Verify final document
         final = Document("final.docx")
         texts = [p.text for p in final.paragraphs]
         assert "Test Document" in texts

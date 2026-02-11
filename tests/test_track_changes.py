@@ -1600,7 +1600,6 @@ class TestTrackChangesCLI:
     def test_extract_with_track_changes_flag(self) -> None:
         """Verify --track-changes flag forces track changes mode."""
         import tempfile
-        import zipfile
         from click.testing import CliRunner
         from sidedoc.cli import main
 
@@ -1617,15 +1616,13 @@ class TestTrackChangesCLI:
             assert Path(output_path).exists()
 
             # Content should have CriticMarkup when track changes are forced
-            with zipfile.ZipFile(output_path, "r") as z:
-                content = z.read("content.md").decode("utf-8")
-                # With --track-changes, should contain CriticMarkup
-                assert "{++" in content or "{--" in content, "Track changes should be extracted with --track-changes"
+            content = (Path(output_path) / "content.md").read_text()
+            # With --track-changes, should contain CriticMarkup
+            assert "{++" in content or "{--" in content, "Track changes should be extracted with --track-changes"
 
     def test_extract_with_no_track_changes_flag(self) -> None:
         """Verify --no-track-changes flag disables track changes mode."""
         import tempfile
-        import zipfile
         from click.testing import CliRunner
         from sidedoc.cli import main
 
@@ -1641,16 +1638,14 @@ class TestTrackChangesCLI:
             assert result.exit_code == 0, f"Extract failed: {result.output}"
 
             # Content should NOT have CriticMarkup when track changes are disabled
-            with zipfile.ZipFile(output_path, "r") as z:
-                content = z.read("content.md").decode("utf-8")
-                # Should not contain CriticMarkup syntax
-                assert "{++" not in content, "Content should not have insertions with --no-track-changes"
-                assert "{--" not in content, "Content should not have deletions with --no-track-changes"
+            content = (Path(output_path) / "content.md").read_text()
+            # Should not contain CriticMarkup syntax
+            assert "{++" not in content, "Content should not have insertions with --no-track-changes"
+            assert "{--" not in content, "Content should not have deletions with --no-track-changes"
 
     def test_extract_auto_detects_track_changes(self) -> None:
         """Verify extract auto-detects track changes when no flag is provided."""
         import tempfile
-        import zipfile
         from click.testing import CliRunner
         from sidedoc.cli import main
 
@@ -1665,10 +1660,9 @@ class TestTrackChangesCLI:
             assert result.exit_code == 0, f"Extract failed: {result.output}"
 
             # Content should have CriticMarkup when track changes are auto-detected
-            with zipfile.ZipFile(output_path, "r") as z:
-                content = z.read("content.md").decode("utf-8")
-                # Should contain CriticMarkup syntax
-                assert "{++" in content or "{--" in content, "Track changes should be auto-detected"
+            content = (Path(output_path) / "content.md").read_text()
+            # Should contain CriticMarkup syntax
+            assert "{++" in content or "{--" in content, "Track changes should be auto-detected"
 
 
 class TestSyncAuthorCLI:
@@ -1677,11 +1671,10 @@ class TestSyncAuthorCLI:
     def test_sync_with_author_option(self) -> None:
         """Verify --author option sets author for track changes."""
         import tempfile
-        import zipfile
         from click.testing import CliRunner
         from sidedoc.cli import main
         from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
-        from sidedoc.package import create_sidedoc_archive
+        from sidedoc.package import create_sidedoc_directory
         from docx import Document
 
         runner = CliRunner()
@@ -1691,26 +1684,17 @@ class TestSyncAuthorCLI:
             sidedoc_path = f"{temp_dir}/test.sidedoc"
             output_path = f"{temp_dir}/synced.docx"
 
-            # Create sidedoc
+            # Create sidedoc directory
             blocks, image_data = extract_blocks(fixture_path)
             styles = extract_styles(fixture_path, blocks)
             content_md = blocks_to_markdown(blocks)
-            create_sidedoc_archive(sidedoc_path, content_md, blocks, styles, fixture_path, image_data)
+            create_sidedoc_directory(sidedoc_path, content_md, blocks, styles, fixture_path, image_data)
 
             # Modify content with CriticMarkup
-            with zipfile.ZipFile(sidedoc_path, "r") as z:
-                original_content = z.read("content.md").decode("utf-8")
-                structure_json = z.read("structure.json").decode("utf-8")
-                styles_json = z.read("styles.json").decode("utf-8")
-                manifest_json = z.read("manifest.json").decode("utf-8")
-
+            content_file = Path(sidedoc_path) / "content.md"
+            original_content = content_file.read_text()
             modified_content = original_content.replace("simple", "{++very ++}simple")
-
-            with zipfile.ZipFile(sidedoc_path, "w", zipfile.ZIP_DEFLATED) as z:
-                z.writestr("content.md", modified_content)
-                z.writestr("structure.json", structure_json)
-                z.writestr("styles.json", styles_json)
-                z.writestr("manifest.json", manifest_json)
+            content_file.write_text(modified_content)
 
             # Sync with custom author
             result = runner.invoke(main, ["sync", sidedoc_path, "-o", output_path, "--author", "Custom Author"])
@@ -1733,11 +1717,10 @@ class TestSyncAuthorCLI:
     def test_sync_default_author_when_not_specified(self) -> None:
         """Verify default author is 'Sidedoc AI' when --author is not specified."""
         import tempfile
-        import zipfile
         from click.testing import CliRunner
         from sidedoc.cli import main
         from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
-        from sidedoc.package import create_sidedoc_archive
+        from sidedoc.package import create_sidedoc_directory
         from docx import Document
 
         runner = CliRunner()
@@ -1750,21 +1733,13 @@ class TestSyncAuthorCLI:
             blocks, image_data = extract_blocks(fixture_path)
             styles = extract_styles(fixture_path, blocks)
             content_md = blocks_to_markdown(blocks)
-            create_sidedoc_archive(sidedoc_path, content_md, blocks, styles, fixture_path, image_data)
+            create_sidedoc_directory(sidedoc_path, content_md, blocks, styles, fixture_path, image_data)
 
-            with zipfile.ZipFile(sidedoc_path, "r") as z:
-                original_content = z.read("content.md").decode("utf-8")
-                structure_json = z.read("structure.json").decode("utf-8")
-                styles_json = z.read("styles.json").decode("utf-8")
-                manifest_json = z.read("manifest.json").decode("utf-8")
-
+            # Modify content with CriticMarkup
+            content_file = Path(sidedoc_path) / "content.md"
+            original_content = content_file.read_text()
             modified_content = original_content.replace("simple", "{++very ++}simple")
-
-            with zipfile.ZipFile(sidedoc_path, "w", zipfile.ZIP_DEFLATED) as z:
-                z.writestr("content.md", modified_content)
-                z.writestr("structure.json", structure_json)
-                z.writestr("styles.json", styles_json)
-                z.writestr("manifest.json", manifest_json)
+            content_file.write_text(modified_content)
 
             # Sync without specifying author
             result = runner.invoke(main, ["sync", sidedoc_path, "-o", output_path])

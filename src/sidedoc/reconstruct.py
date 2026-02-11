@@ -1,9 +1,6 @@
 """Reconstruct Word documents from sidedoc format."""
 
-import json
 import re
-import zipfile
-import tempfile
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
@@ -12,6 +9,7 @@ from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+import click
 import mistune
 from sidedoc.models import Block, Style, TrackChange
 from sidedoc.constants import (
@@ -27,6 +25,7 @@ from sidedoc.constants import (
     WORDPROCESSINGML_NS,
     XML_SPACE_NS,
 )
+from sidedoc.store import SidedocStore
 
 
 # Regex to match markdown hyperlinks: [text](url)
@@ -917,56 +916,42 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
 
 
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
-    """Build a Word document from a sidedoc archive.
+    """Build a Word document from a sidedoc archive or directory.
 
     Args:
-        sidedoc_path: Path to .sidedoc file
+        sidedoc_path: Path to .sidedoc directory or .sdoc/.sidedoc ZIP
         output_path: Path for output .docx file
     """
-    # Create temporary directory for assets
-    with tempfile.TemporaryDirectory() as temp_dir:
-        assets_dir = Path(temp_dir) / "assets"
-        assets_dir.mkdir(exist_ok=True)
+    with SidedocStore.open(sidedoc_path) as store:
+        if store.is_zip:
+            click.echo("Tip: Use `sidedoc unpack` to convert to directory format for editing.", err=True)
 
-        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-            # Read content.md
-            content_md = zip_file.read("content.md").decode("utf-8")
+        content_md = store.read_text("content.md")
+        styles_data = store.read_json("styles.json")
 
-            # Read styles.json
-            styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
+        assets_dir = store.assets_dir if store.list_assets() else None
 
-            # Read structure.json
-            structure_data = json.loads(zip_file.read("structure.json").decode("utf-8"))
-
-            # Extract assets if they exist
-            for file_info in zip_file.filelist:
-                if file_info.filename.startswith("assets/"):
-                    # Extract asset file
-                    zip_file.extract(file_info, temp_dir)
-
-        # Parse markdown to blocks
         blocks = parse_markdown_to_blocks(content_md)
 
         # Enrich blocks with track changes data from structure.json
-        structure_blocks = structure_data.get("blocks", [])
-        for block, struct_block in zip(blocks, structure_blocks):
-            # Transfer track changes if present
-            if "track_changes" in struct_block and struct_block["track_changes"]:
-                block.track_changes = [
-                    TrackChange(
-                        type=tc["type"],
-                        start=tc["start"],
-                        end=tc["end"],
-                        author=tc["author"],
-                        date=tc["date"],
-                        revision_id=tc.get("revision_id", ""),
-                        deleted_text=tc.get("deleted_text"),
-                    )
-                    for tc in struct_block["track_changes"]
-                ]
+        if store.has_file("structure.json"):
+            structure_data = store.read_json("structure.json")
+            structure_blocks = structure_data.get("blocks", [])
+            for block, struct_block in zip(blocks, structure_blocks):
+                # Transfer track changes if present
+                if "track_changes" in struct_block and struct_block["track_changes"]:
+                    block.track_changes = [
+                        TrackChange(
+                            type=tc["type"],
+                            start=tc["start"],
+                            end=tc["end"],
+                            author=tc["author"],
+                            date=tc["date"],
+                            revision_id=tc.get("revision_id", ""),
+                            deleted_text=tc.get("deleted_text"),
+                        )
+                        for tc in struct_block["track_changes"]
+                    ]
 
-        # Create document with assets directory
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir)
-
-        # Save document
         doc.save(output_path)

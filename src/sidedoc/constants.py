@@ -116,3 +116,16 @@ DELETION_PATTERN = r"\{--(.+?)--\}"
 # Matches {~~old~>new~~} - captures old text (group 1) and new text (group 2)
 # Uses non-greedy matching for both parts
 SUBSTITUTION_PATTERN = r"\{~~(.+?)~>(.+?)~~\}"
+
+# =============================================================================
+# Sidedoc Format Constants
+# =============================================================================
+
+# File extensions
+SIDEDOC_DIR_EXTENSION = ".sidedoc"
+SIDEDOC_ZIP_EXTENSION = ".sdoc"
+
+# File classification for sidedoc containers
+CORE_FILES = ["content.md", "styles.json"]           # Required for build
+TRACKING_FILES = ["structure.json", "manifest.json"]  # Required for sync/diff
+ALL_FILES = CORE_FILES + TRACKING_FILES               # Required in .sdoc ZIP
