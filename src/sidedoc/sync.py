@@ -587,11 +587,13 @@ def sync_sidedoc_to_docx(
     # Get current timestamp for new track changes
     sync_date = get_iso_timestamp()
 
-    # Read sidedoc contents
-    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-        content_md = zip_file.read("content.md").decode("utf-8")
-        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
-        structure_data = json.loads(zip_file.read("structure.json").decode("utf-8"))
+    # Read sidedoc contents (supports both directory and ZIP formats)
+    from sidedoc.store import SidedocStore
+
+    with SidedocStore.open(sidedoc_path) as store:
+        content_md = store.read_text("content.md")
+        styles_data = store.read_json("styles.json")
+        structure_data = store.read_json("structure.json")
 
     # Parse markdown to blocks
     blocks = parse_markdown_to_blocks(content_md)
