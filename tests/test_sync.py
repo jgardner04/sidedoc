@@ -1260,3 +1260,369 @@ def test_different_block_types_not_matched():
 
     # Different types should never match, regardless of content similarity
     assert "block-1" not in matches
+
+
+# Tests for table block handling in sync
+
+
+def test_sync_handles_table_blocks() -> None:
+    """Verify sync creates actual tables, not raw GFM text.
+
+    This is a critical test: table blocks must result in actual Table objects
+    in the docx, not paragraphs containing raw GFM pipe syntax.
+    """
+    table_content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+    new_blocks = [
+        Block(
+            id="block-new-1",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash=compute_hash(table_content),
+        ),
+    ]
+
+    styles = {"block_styles": {}}
+    matches = {}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        generate_updated_docx(new_blocks, matches, styles, str(output_path))
+
+        # Verify docx was created
+        assert output_path.exists()
+
+        # Verify it contains a table, not a paragraph with GFM
+        doc = Document(str(output_path))
+
+        # Should have a table
+        assert len(doc.tables) == 1, f"Expected 1 table, got {len(doc.tables)}"
+
+        # Verify table content
+        table = doc.tables[0]
+        assert len(table.rows) == 2  # header + 1 data row
+        assert len(table.columns) == 2
+
+        # Check cell content
+        assert table.cell(0, 0).text == "Name"
+        assert table.cell(0, 1).text == "Age"
+        assert table.cell(1, 0).text == "Alice"
+        assert table.cell(1, 1).text == "30"
+
+        # Should NOT have paragraphs with GFM pipe syntax
+        for para in doc.paragraphs:
+            assert "|" not in para.text, f"Found raw GFM in paragraph: {para.text}"
+
+
+def test_sync_preserves_table_metadata() -> None:
+    """Test that update_sidedoc_metadata preserves table_metadata in structure.json.
+
+    This is a regression test for PR #40 review: table_metadata was omitted from
+    the block dict serialization, causing table structure (rows, cols, cells,
+    alignments) to be lost after sync.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+
+        # Create initial sidedoc archive
+        old_content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+        old_structure = {
+            "blocks": [
+                {
+                    "id": "block-0",
+                    "type": "table",
+                    "docx_paragraph_index": -1,
+                    "content_start": 0,
+                    "content_end": len(old_content),
+                    "content_hash": compute_hash(old_content),
+                    "level": None,
+                    "image_path": None,
+                    "inline_formatting": None,
+                    "table_metadata": {
+                        "rows": 2,
+                        "cols": 2,
+                        "cells": [[{"row": 0, "col": 0, "content_hash": "h1"},
+                                    {"row": 0, "col": 1, "content_hash": "h2"}],
+                                   [{"row": 1, "col": 0, "content_hash": "h3"},
+                                    {"row": 1, "col": 1, "content_hash": "h4"}]],
+                        "column_alignments": ["left", "left"],
+                        "docx_table_index": 0
+                    }
+                }
+            ]
+        }
+        old_styles = {"block_styles": {}}
+        old_manifest = {
+            "sidedoc_version": "1.0.0",
+            "created_at": "2024-01-01T00:00:00+00:00",
+            "modified_at": "2024-01-01T00:00:00+00:00",
+            "source_file": "test.docx",
+            "source_hash": "abc123",
+            "content_hash": compute_hash(old_content),
+            "generator": "sidedoc-cli/0.1.0",
+        }
+
+        with zipfile.ZipFile(sidedoc_path, "w") as zip_file:
+            zip_file.writestr("content.md", old_content)
+            zip_file.writestr("structure.json", json.dumps(old_structure))
+            zip_file.writestr("styles.json", json.dumps(old_styles))
+            zip_file.writestr("manifest.json", json.dumps(old_manifest))
+
+        # Create new blocks with table_metadata
+        table_metadata = {
+            "rows": 2,
+            "cols": 2,
+            "cells": [[{"row": 0, "col": 0, "content_hash": "h1"},
+                        {"row": 0, "col": 1, "content_hash": "h2"}],
+                       [{"row": 1, "col": 0, "content_hash": "h3"},
+                        {"row": 1, "col": 1, "content_hash": "h4"}]],
+            "column_alignments": ["left", "left"],
+            "docx_table_index": 0
+        }
+        new_blocks = [
+            Block(
+                id="block-0",
+                type="table",
+                content=old_content,
+                docx_paragraph_index=-1,
+                content_start=0,
+                content_end=len(old_content),
+                content_hash=compute_hash(old_content),
+                table_metadata=table_metadata,
+            ),
+        ]
+
+        # Update metadata
+        update_sidedoc_metadata(str(sidedoc_path), new_blocks, old_content)
+
+        # Verify table_metadata is preserved in structure.json
+        with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
+            structure_data = json.loads(zip_file.read("structure.json"))
+            block_data = structure_data["blocks"][0]
+            assert "table_metadata" in block_data, \
+                "table_metadata should be serialized in structure.json"
+            assert block_data["table_metadata"]["rows"] == 2
+            assert block_data["table_metadata"]["cols"] == 2
+            assert len(block_data["table_metadata"]["cells"]) == 2
+            assert block_data["table_metadata"]["column_alignments"] == ["left", "left"]
+            assert block_data["table_metadata"]["docx_table_index"] == 0
+
+
+def test_sync_table_roundtrip_preserves_structure_and_data() -> None:
+    """E2E: extract docx with table → modify GFM → sync → verify docx table.
+
+    This integration test exercises the complete table sync workflow:
+    1. Extract tables_simple.docx to blocks
+    2. Modify a cell value in the GFM content
+    3. Call generate_updated_docx with modified blocks
+    4. Verify the output docx has a Table object with correct data and alignment
+    """
+    from sidedoc.extract import extract_blocks, extract_styles
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    assert fixture_path.exists(), "tables_simple.docx fixture required"
+
+    # Step 1: Extract blocks and styles from the fixture
+    original_blocks, _ = extract_blocks(str(fixture_path))
+    original_styles = extract_styles(str(fixture_path), original_blocks)
+
+    # Build styles dict in the format generate_updated_docx expects
+    styles_dict = {"block_styles": {}}
+    for style in original_styles:
+        style_data = {}
+        if style.font_name:
+            style_data["font_name"] = style.font_name
+        if style.font_size:
+            style_data["font_size"] = style.font_size
+        if style.alignment:
+            style_data["alignment"] = style.alignment
+        if style.table_formatting:
+            style_data["table_formatting"] = style.table_formatting
+        styles_dict["block_styles"][style.block_id] = style_data
+
+    # Find the table block and get its GFM content
+    table_blocks = [b for b in original_blocks if b.type == "table"]
+    assert len(table_blocks) >= 1, "Fixture should have at least one table"
+
+    # Step 2: Modify a cell value — change "Alice" to "Alice Smith"
+    original_table = table_blocks[0]
+    modified_content = original_table.content.replace("Alice", "Alice Smith")
+    assert "Alice Smith" in modified_content, "Modification should be applied"
+
+    # Re-parse the modified GFM to get new blocks
+    # Build modified markdown by replacing the table content in full markdown
+    from sidedoc.extract import blocks_to_markdown
+    original_md = blocks_to_markdown(original_blocks)
+    modified_md = original_md.replace(original_table.content, modified_content)
+    new_blocks = parse_markdown_to_blocks(modified_md)
+
+    # Build matches: match old block IDs to new blocks by position/type
+    matches = match_blocks(original_blocks, new_blocks)
+
+    # Step 3: Generate updated docx
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "roundtrip.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        assert output_path.exists(), "Output docx should be created"
+
+        # Step 4: Verify the output docx
+        doc = Document(str(output_path))
+
+        # Should contain a Table object (not paragraph text)
+        assert len(doc.tables) >= 1, (
+            f"Expected at least 1 table, got {len(doc.tables)}. "
+            "Table blocks should create Table objects, not paragraphs."
+        )
+
+        table = doc.tables[0]
+
+        # Verify the modified cell content survived the roundtrip
+        found_alice_smith = False
+        for row in table.rows:
+            for cell in row.cells:
+                if "Alice Smith" in cell.text:
+                    found_alice_smith = True
+        assert found_alice_smith, (
+            "Modified cell 'Alice Smith' should survive the sync roundtrip. "
+            f"Table cells: {[[c.text for c in r.cells] for r in table.rows]}"
+        )
+
+        # Verify header row is preserved
+        header_texts = [cell.text for cell in table.rows[0].cells]
+        assert "Name" in header_texts, f"Header should contain 'Name', got {header_texts}"
+        assert "Role" in header_texts, f"Header should contain 'Role', got {header_texts}"
+
+        # Verify no raw GFM pipe syntax leaked into paragraphs
+        for para in doc.paragraphs:
+            if para.text.strip():
+                assert not (para.text.strip().startswith("|") and para.text.strip().endswith("|")), (
+                    f"Raw GFM leaked into paragraph: {para.text}"
+                )
+
+
+def test_sync_handles_mixed_blocks_with_table() -> None:
+    """Verify sync handles documents with paragraphs and tables together."""
+    table_content = "| Col1 | Col2 |\n| --- | --- |\n| A | B |"
+    new_blocks = [
+        Block(
+            id="block-1",
+            type="paragraph",
+            content="Before the table.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=17,
+            content_hash=compute_hash("Before the table."),
+        ),
+        Block(
+            id="block-2",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=1,
+            content_start=18,
+            content_end=18 + len(table_content),
+            content_hash=compute_hash(table_content),
+        ),
+        Block(
+            id="block-3",
+            type="paragraph",
+            content="After the table.",
+            docx_paragraph_index=2,
+            content_start=100,
+            content_end=116,
+            content_hash=compute_hash("After the table."),
+        ),
+    ]
+
+    styles = {"block_styles": {}}
+    matches = {}
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_path = Path(temp_dir) / "test.docx"
+        generate_updated_docx(new_blocks, matches, styles, str(output_path))
+
+        doc = Document(str(output_path))
+
+        # Should have 2 paragraphs and 1 table
+        assert len(doc.tables) == 1
+        # Paragraphs include those before and after table
+        para_texts = [p.text for p in doc.paragraphs if p.text.strip()]
+        assert "Before the table." in para_texts
+        assert "After the table." in para_texts
+
+
+# Tests for sync_sidedoc_to_docx table handling (CriticMarkup sync path)
+
+
+def test_sync_sidedoc_to_docx_creates_table_objects() -> None:
+    """Test that sync_sidedoc_to_docx creates actual Table objects for table blocks.
+
+    The CriticMarkup sync path was treating ALL non-heading blocks as paragraphs,
+    rendering table blocks as raw GFM pipe text instead of actual Table objects.
+    """
+    from sidedoc.sync import sync_sidedoc_to_docx
+
+    table_content = "| Name | Age |\n| --- | --- |\n| Alice | 30 |"
+    content_md = f"# Title\n\n{table_content}\n\nA paragraph."
+
+    structure = {
+        "blocks": [
+            {"id": "block-0", "type": "heading", "docx_paragraph_index": 0,
+             "content_start": 0, "content_end": 7, "content_hash": "", "level": 1,
+             "image_path": None, "inline_formatting": None, "table_metadata": None},
+            {"id": "block-1", "type": "table", "docx_paragraph_index": -1,
+             "content_start": 9, "content_end": 9 + len(table_content), "content_hash": "",
+             "level": None, "image_path": None, "inline_formatting": None,
+             "table_metadata": {"rows": 2, "cols": 2, "cells": [],
+                                "column_alignments": ["left", "left"],
+                                "docx_table_index": 0}},
+            {"id": "block-2", "type": "paragraph", "docx_paragraph_index": 1,
+             "content_start": 100, "content_end": 112, "content_hash": "", "level": None,
+             "image_path": None, "inline_formatting": None, "table_metadata": None},
+        ]
+    }
+    styles = {"block_styles": {}}
+    manifest = {
+        "sidedoc_version": "1.0.0",
+        "created_at": "2024-01-01T00:00:00+00:00",
+        "modified_at": "2024-01-01T00:00:00+00:00",
+        "source_file": "test.docx",
+        "source_hash": "abc123",
+        "content_hash": "",
+        "generator": "sidedoc-cli/0.1.0",
+    }
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        sidedoc_path = Path(temp_dir) / "test.sidedoc"
+        output_path = Path(temp_dir) / "output.docx"
+
+        with zipfile.ZipFile(str(sidedoc_path), "w") as zf:
+            zf.writestr("content.md", content_md)
+            zf.writestr("structure.json", json.dumps(structure))
+            zf.writestr("styles.json", json.dumps(styles))
+            zf.writestr("manifest.json", json.dumps(manifest))
+
+        sync_sidedoc_to_docx(str(sidedoc_path), str(output_path))
+
+        doc = Document(str(output_path))
+
+        # Should have at least 1 table
+        assert len(doc.tables) >= 1, (
+            f"Expected at least 1 table, got {len(doc.tables)}. "
+            "Table blocks should create Table objects, not paragraphs."
+        )
+
+        # Verify table content
+        table = doc.tables[0]
+        assert table.cell(0, 0).text == "Name"
+        assert table.cell(1, 0).text == "Alice"
+
+        # No raw GFM pipe syntax in paragraphs
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                assert not (text.startswith("|") and text.endswith("|")), \
+                    f"Raw GFM leaked into paragraph: {text}"

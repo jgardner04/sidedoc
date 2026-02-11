@@ -4,17 +4,25 @@ import hashlib
 import io
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 from docx import Document
 from docx.shared import Pt
 from docx.oxml.ns import qn
 from PIL import Image
 from sidedoc.models import Block, Style, TrackChange
-from sidedoc.constants import MAX_IMAGE_SIZE
+from sidedoc.constants import (
+    MAX_IMAGE_SIZE,
+    MAX_TABLE_ROWS,
+    MAX_TABLE_COLS,
+    EMUS_PER_INCH,
+    ALIGNMENT_NUMERIC_TO_STRING,
+    GFM_ALIGNMENT_TO_SEPARATOR,
+    DEFAULT_ALIGNMENT,
+    WORDPROCESSINGML_NS,
+)
 
 
 # XML namespaces used in Office Open XML documents
-WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
@@ -752,13 +760,295 @@ def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str
     return markdown_content, inline_formatting if inline_formatting else None
 
 
+def get_cell_alignment(cell: Any) -> str:
+    """Extract horizontal alignment from a cell.
+
+    Args:
+        cell: python-docx cell object
+
+    Returns:
+        Alignment string: 'left', 'center', or 'right'
+    """
+    # Check if cell has paragraphs with alignment
+    if cell.paragraphs:
+        para = cell.paragraphs[0]
+        if para.alignment is not None:
+            # Note: GFM tables only support left/center/right, so we map
+            # justify to left. This is different from ALIGNMENT_NUMERIC_TO_STRING.
+            cell_alignment_map = {
+                0: "left",      # WD_ALIGN_PARAGRAPH.LEFT
+                1: "center",    # WD_ALIGN_PARAGRAPH.CENTER
+                2: "right",     # WD_ALIGN_PARAGRAPH.RIGHT
+                3: "left",      # WD_ALIGN_PARAGRAPH.JUSTIFY → left for GFM
+            }
+            return cell_alignment_map.get(para.alignment, DEFAULT_ALIGNMENT)
+
+    return DEFAULT_ALIGNMENT
+
+
+def get_column_alignments(table: Any) -> list[str]:
+    """Extract column alignments from first row cells.
+
+    Args:
+        table: python-docx Table object
+
+    Returns:
+        List of alignment strings for each column
+    """
+    if not table.rows:
+        return []
+
+    alignments = []
+    first_row = table.rows[0]
+    for cell in first_row.cells:
+        alignments.append(get_cell_alignment(cell))
+
+    return alignments
+
+
+def alignment_to_gfm_separator(alignment: str) -> str:
+    """Convert alignment to GFM separator indicator.
+
+    Args:
+        alignment: 'left', 'center', or 'right'
+
+    Returns:
+        GFM alignment indicator like ':---', ':---:', or '---:'
+    """
+    return GFM_ALIGNMENT_TO_SEPARATOR.get(alignment, GFM_ALIGNMENT_TO_SEPARATOR[DEFAULT_ALIGNMENT])
+
+
+def escape_cell_content_for_gfm(text: str) -> str:
+    """Escape special characters in cell content for GFM table.
+
+    Args:
+        text: Cell text content
+
+    Returns:
+        Escaped text safe for GFM table cells
+    """
+    # Escape pipe characters that would break table syntax
+    result = text.replace("|", "\\|")
+    # Replace newlines with <br> or space (newlines break table rows)
+    result = result.replace("\n", " ")
+    return result
+
+
+def table_to_gfm(table: Any) -> str:
+    """Convert a python-docx table to GFM pipe table syntax.
+
+    Args:
+        table: python-docx Table object
+
+    Returns:
+        GFM pipe table markdown string
+    """
+    rows = []
+
+    # Get column alignments
+    alignments = get_column_alignments(table)
+
+    for row_idx, row in enumerate(table.rows):
+        cells = []
+        for cell in row.cells:
+            # Get cell text, stripping whitespace, and escape special characters
+            cell_text = escape_cell_content_for_gfm(cell.text.strip())
+            cells.append(cell_text)
+
+        # Create pipe-separated row
+        row_line = "| " + " | ".join(cells) + " |"
+        rows.append(row_line)
+
+        # Add separator row after header (first row)
+        if row_idx == 0:
+            # Create separator with alignment indicators
+            separator_cells = []
+            for i, _ in enumerate(cells):
+                alignment = alignments[i] if i < len(alignments) else "left"
+                separator_cells.append(alignment_to_gfm_separator(alignment))
+            separator_line = "| " + " | ".join(separator_cells) + " |"
+            rows.append(separator_line)
+
+    return "\n".join(rows)
+
+
+def extract_table_metadata(table: Any, table_index: int) -> dict[str, Any]:
+    """Extract metadata from a table for storage in structure.json.
+
+    Args:
+        table: python-docx Table object
+        table_index: Index of this table in the document
+
+    Returns:
+        Dictionary with table metadata including rows, cols, cells, column_alignments, and docx_table_index
+    """
+    num_rows = len(table.rows)
+    num_cols = len(table.columns) if num_rows > 0 else 0
+
+    # Validate table dimensions to prevent memory exhaustion
+    if num_rows > MAX_TABLE_ROWS:
+        raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
+    if num_cols > MAX_TABLE_COLS:
+        raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
+
+    # Build cells metadata - 2D array of cell info
+    cells: list[list[dict[str, Any]]] = []
+
+    for row_idx, row in enumerate(table.rows):
+        row_cells: list[dict[str, Any]] = []
+        for col_idx, cell in enumerate(row.cells):
+            cell_text = cell.text.strip()
+            cell_hash = compute_content_hash(cell_text)
+            row_cells.append({
+                "row": row_idx,
+                "col": col_idx,
+                "content_hash": cell_hash
+            })
+        cells.append(row_cells)
+
+    # Extract column alignments
+    column_alignments = get_column_alignments(table)
+
+    return {
+        "rows": num_rows,
+        "cols": num_cols,
+        "cells": cells,
+        "column_alignments": column_alignments,
+        "docx_table_index": table_index
+    }
+
+
+def _process_paragraph(
+    paragraph: Any,
+    doc_part: Any,
+    block_index: int,
+    para_index: int,
+    content_position: int,
+    image_counter: int,
+    list_number_counter: int,
+    previous_list_type: Optional[str],
+    image_data: dict[str, bytes],
+    extract_track_changes: bool = False,
+    track_changes_explicit: Optional[bool] = None,
+) -> tuple[Block, int, int, Optional[str], dict[str, bytes]]:
+    """Process a single paragraph element.
+
+    Args:
+        paragraph: python-docx paragraph object
+        doc_part: Document part for accessing relationships
+        block_index: Index for generating block ID
+        para_index: Paragraph index in document
+        content_position: Current position in content stream
+        image_counter: Counter for image numbering
+        list_number_counter: Counter for numbered lists
+        previous_list_type: Type of previous list item
+        image_data: Dictionary to store image data
+        extract_track_changes: Whether to extract track changes as CriticMarkup
+        track_changes_explicit: The explicit track_changes parameter (None, True, or False)
+
+    Returns:
+        Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data)
+    """
+    style_name = paragraph.style.name if paragraph.style else "Normal"
+    image_path = None
+    block_track_changes = None
+
+    image_info = extract_image_from_paragraph(paragraph, doc_part, image_counter)
+    if image_info:
+        # This is an image paragraph
+        image_filename, image_extension, image_bytes, error_message = image_info
+
+        if error_message:
+            markdown_content = f"[Image {image_counter} skipped: {error_message}]"
+            block_type = "paragraph"
+            level_value = None
+            inline_formatting = None
+        else:
+            image_path = f"assets/{image_filename}"
+            markdown_content = f"![Image {image_counter}]({image_path})"
+            block_type = "image"
+            level_value = None
+            inline_formatting = None
+            image_data[image_filename] = image_bytes
+
+        image_counter += 1
+        list_number_counter = 0
+        previous_list_type = None
+    else:
+        # Choose extraction function based on track changes mode
+        if extract_track_changes:
+            text_content, inline_formatting, block_track_changes = extract_paragraph_with_track_changes(
+                paragraph._element, doc_part
+            )
+        elif track_changes_explicit is False:
+            # Explicit --no-track-changes: accept all changes
+            text_content, inline_formatting, block_track_changes = extract_paragraph_accept_all(
+                paragraph._element, doc_part
+            )
+        else:
+            # No track changes: use original extraction
+            text_content, inline_formatting = extract_inline_formatting(paragraph, doc_part)
+
+        if style_name.startswith("Heading"):
+            try:
+                level = int(style_name.split()[-1])
+            except (ValueError, IndexError):
+                level = 1
+            markdown_content = "#" * level + " " + text_content
+            block_type = "heading"
+            level_value = level
+            list_number_counter = 0
+            previous_list_type = None
+        elif style_name == "List Bullet":
+            markdown_content = "- " + text_content
+            block_type = "list"
+            level_value = None
+            if previous_list_type != "bullet":
+                list_number_counter = 0
+            previous_list_type = "bullet"
+        elif style_name == "List Number":
+            if previous_list_type != "number":
+                list_number_counter = 0
+            list_number_counter += 1
+            markdown_content = f"{list_number_counter}. " + text_content
+            block_type = "list"
+            level_value = None
+            previous_list_type = "number"
+        else:
+            markdown_content = text_content
+            block_type = "paragraph"
+            level_value = None
+            list_number_counter = 0
+            previous_list_type = None
+
+    content_start = content_position
+    content_end = content_position + len(markdown_content)
+
+    block = Block(
+        id=generate_block_id(block_index),
+        type=block_type,
+        content=markdown_content,
+        docx_paragraph_index=para_index,
+        content_start=content_start,
+        content_end=content_end,
+        content_hash=compute_content_hash(markdown_content),
+        level=level_value,
+        inline_formatting=inline_formatting,
+        image_path=image_path,
+        track_changes=block_track_changes,
+    )
+
+    return block, image_counter, list_number_counter, previous_list_type, image_data
+
+
 def extract_blocks(
     docx_path: str,
     track_changes: Optional[bool] = None,
 ) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
-    Converts paragraphs and headings to Block objects with markdown content.
+    Converts paragraphs, headings, and tables to Block objects with markdown content.
+    Processes the document body in order to correctly interleave paragraphs and tables.
 
     Args:
         docx_path: Path to .docx file
@@ -769,13 +1059,19 @@ def extract_blocks(
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
     """
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     doc = Document(docx_path)
     blocks: list[Block] = []
-    image_data: dict[str, bytes] = {}  # Map image filenames to image bytes
+    image_data: dict[str, bytes] = {}
     content_position = 0
-    list_number_counter = 0  # Track numbered list position
-    previous_list_type = None  # Track list type changes
-    image_counter = 1  # Track image numbering
+    list_number_counter = 0
+    previous_list_type: Optional[str] = None
+    image_counter = 1
+    block_index = 0
+    para_index = 0
+    table_index = 0
 
     # Determine track changes mode
     # If not specified (None), auto-detect based on document content
@@ -783,118 +1079,133 @@ def extract_blocks(
     if extract_track_changes is None:
         extract_track_changes = detect_track_changes(docx_path)
 
-    for para_index, paragraph in enumerate(doc.paragraphs):
-        style_name = paragraph.style.name if paragraph.style else "Normal"
-        image_path = None  # Initialize for all paragraphs
+    # Iterate over document body elements in order
+    # This correctly interleaves paragraphs and tables
+    body = doc.element.body
+    for child in body:
+        tag = child.tag.split('}')[-1]  # Get tag without namespace
 
-        image_info = extract_image_from_paragraph(paragraph, doc.part, image_counter)
-        if image_info:
-            # This is an image paragraph
-            image_filename, image_extension, image_bytes, error_message = image_info
+        if tag == 'p':
+            # Create a Paragraph object from the XML element
+            paragraph = Paragraph(child, doc)
 
-            if error_message:
-                # Image validation failed - create a paragraph with error message
-                markdown_content = f"[Image {image_counter} skipped: {error_message}]"
-                block_type = "paragraph"
-                level_value = None
-                inline_formatting = None
-                block_track_changes = None
-                # Don't store invalid image data
-            else:
-                # Image is valid
-                image_path = f"assets/{image_filename}"
-                markdown_content = f"![Image {image_counter}]({image_path})"
-                block_type = "image"
-                level_value = None
-                inline_formatting = None
-                block_track_changes = None
-                # Store image data
-                image_data[image_filename] = image_bytes
+            block, image_counter, list_number_counter, previous_list_type, image_data = _process_paragraph(
+                paragraph=paragraph,
+                doc_part=doc.part,
+                block_index=block_index,
+                para_index=para_index,
+                content_position=content_position,
+                image_counter=image_counter,
+                list_number_counter=list_number_counter,
+                previous_list_type=previous_list_type,
+                image_data=image_data,
+                extract_track_changes=extract_track_changes,
+                track_changes_explicit=track_changes,
+            )
 
-            # Increment counter for both valid and invalid images to maintain consistent numbering
-            image_counter += 1
+            blocks.append(block)
+            content_position = block.content_end + 1
+            block_index += 1
+            para_index += 1
+
+            # Reset list counters for non-list content
+            if block.type not in ("list",):
+                list_number_counter = 0
+                previous_list_type = None
+
+        elif tag == 'tbl':
+            # Create a Table object from the XML element
+            table = Table(child, doc)
+
+            # Convert table to GFM markdown
+            markdown_content = table_to_gfm(table)
+
+            # Extract table metadata for structure.json
+            table_metadata = extract_table_metadata(table, table_index)
+
+            content_start = content_position
+            content_end = content_position + len(markdown_content)
+
+            block = Block(
+                id=generate_block_id(block_index),
+                type="table",
+                content=markdown_content,
+                docx_paragraph_index=-1,  # Tables don't have paragraph index
+                content_start=content_start,
+                content_end=content_end,
+                content_hash=compute_content_hash(markdown_content),
+                level=None,
+                inline_formatting=None,
+                image_path=None,
+                table_metadata=table_metadata
+            )
+
+            blocks.append(block)
+            content_position = content_end + 1
+            block_index += 1
+            table_index += 1
 
             # Reset list counters
             list_number_counter = 0
             previous_list_type = None
-        else:
-            # Choose extraction function based on track changes mode
-            if extract_track_changes:
-                text_content, inline_formatting, block_track_changes = extract_paragraph_with_track_changes(
-                    paragraph._element, doc.part
-                )
-            elif track_changes is False:
-                # Explicit --no-track-changes: accept all changes, ignore track change metadata
-                text_content, inline_formatting, block_track_changes = extract_paragraph_accept_all(
-                    paragraph._element, doc.part
-                )
-            else:
-                # No track changes detected: use original extraction with inline formatting
-                text_content, inline_formatting = extract_inline_formatting(paragraph, doc.part)
-                block_track_changes = None
-
-            if style_name.startswith("Heading"):
-                # Extract heading level (e.g., "Heading 1" -> 1)
-                try:
-                    level = int(style_name.split()[-1])
-                except (ValueError, IndexError):
-                    level = 1
-
-                markdown_content = "#" * level + " " + text_content
-                block_type = "heading"
-                level_value = level
-                # Reset list counter when encountering non-list content
-                list_number_counter = 0
-                previous_list_type = None
-            elif style_name == "List Bullet":
-                # Bulleted list item
-                markdown_content = "- " + text_content
-                block_type = "list"
-                level_value = None
-                # Reset numbered list counter when switching to bullets
-                if previous_list_type != "bullet":
-                    list_number_counter = 0
-                previous_list_type = "bullet"
-            elif style_name == "List Number":
-                # Numbered list item
-                # Reset counter when switching from bullets or starting new list
-                if previous_list_type != "number":
-                    list_number_counter = 0
-                list_number_counter += 1
-                markdown_content = f"{list_number_counter}. " + text_content
-                block_type = "list"
-                level_value = None
-                previous_list_type = "number"
-            else:
-                # Normal paragraph
-                markdown_content = text_content
-                block_type = "paragraph"
-                level_value = None
-                # Reset list counter when encountering non-list content
-                list_number_counter = 0
-                previous_list_type = None
-
-        content_start = content_position
-        content_end = content_position + len(markdown_content)
-
-        block = Block(
-            id=generate_block_id(para_index),
-            type=block_type,
-            content=markdown_content,
-            docx_paragraph_index=para_index,
-            content_start=content_start,
-            content_end=content_end,
-            content_hash=compute_content_hash(markdown_content),
-            level=level_value,
-            inline_formatting=inline_formatting,
-            image_path=image_path,
-            track_changes=block_track_changes,
-        )
-
-        blocks.append(block)
-        content_position = content_end + 1
 
     return blocks, image_data
+
+
+def extract_table_formatting(table: Any) -> dict[str, Any]:
+    """Extract formatting information from a table.
+
+    Args:
+        table: python-docx Table object
+
+    Returns:
+        Dictionary with table formatting: column_widths, table_alignment, table_style
+    """
+    from docx.shared import Inches, Twips
+
+    # Extract column widths
+    column_widths: list[float] = []
+    for col in table.columns:
+        # Width is in EMUs (English Metric Units) or can be None
+        width = col.width
+        if width:
+            # Convert to inches
+            width_inches = width / EMUS_PER_INCH
+            column_widths.append(round(width_inches, 2))
+        else:
+            # Default width if not specified
+            column_widths.append(1.0)
+
+    # Extract table alignment
+    # Default is left
+    table_alignment = "left"
+    # python-docx doesn't have direct table alignment property
+    # It's stored in the table's XML properties
+    tblPr = table._tbl.tblPr
+    if tblPr is not None:
+        jc = tblPr.find(f'{{{WORDPROCESSINGML_NS}}}jc')
+        if jc is not None:
+            val = jc.get(qn('w:val'))
+            if val:
+                alignment_map = {
+                    'left': 'left',
+                    'center': 'center',
+                    'right': 'right',
+                    'start': 'left',
+                    'end': 'right'
+                }
+                table_alignment = alignment_map.get(val, 'left')
+
+    # Extract table style name if present
+    table_style_name = None
+    if table.style:
+        table_style_name = table.style.name
+
+    return {
+        "column_widths": column_widths,
+        "table_alignment": table_alignment,
+        "table_style": table_style_name
+    }
 
 
 def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
@@ -907,46 +1218,72 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
     Returns:
         List of Style objects
     """
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     doc = Document(docx_path)
     styles: list[Style] = []
 
-    for para_index, paragraph in enumerate(doc.paragraphs):
-        if para_index >= len(blocks):
+    # Create a mapping from block_id to block for quick lookup
+    block_map = {block.id: block for block in blocks}
+
+    # Iterate over document body in order to match blocks correctly
+    body = doc.element.body
+    block_index = 0
+
+    for child in body:
+        if block_index >= len(blocks):
             break
 
-        block = blocks[para_index]
+        tag = child.tag.split('}')[-1]
+        block = blocks[block_index]
 
-        # Get font properties
-        font_name = "Calibri"  # Default
-        font_size = 11  # Default
-        alignment = "left"  # Default
+        if tag == 'p':
+            paragraph = Paragraph(child, doc)
 
-        if paragraph.style and paragraph.style.font.name:
-            font_name = paragraph.style.font.name
+            # Get font properties
+            font_name = "Calibri"
+            font_size = 11
+            alignment = "left"
 
-        if paragraph.style and paragraph.style.font.size:
-            font_size = int(paragraph.style.font.size.pt)
+            if paragraph.style and paragraph.style.font.name:
+                font_name = paragraph.style.font.name
 
-        # Get alignment
-        if paragraph.alignment is not None:
-            alignment_map = {
-                0: "left",
-                1: "center",
-                2: "right",
-                3: "justify",
-            }
-            alignment = alignment_map.get(paragraph.alignment, "left")
+            if paragraph.style and paragraph.style.font.size:
+                font_size = int(paragraph.style.font.size.pt)
 
-        # Create style
-        style = Style(
-            block_id=block.id,
-            docx_style=paragraph.style.name if paragraph.style else "Normal",
-            font_name=font_name,
-            font_size=font_size,
-            alignment=alignment,
-        )
+            if paragraph.alignment is not None:
+                alignment = ALIGNMENT_NUMERIC_TO_STRING.get(
+                    paragraph.alignment, DEFAULT_ALIGNMENT
+                )
 
-        styles.append(style)
+            style = Style(
+                block_id=block.id,
+                docx_style=paragraph.style.name if paragraph.style else "Normal",
+                font_name=font_name,
+                font_size=font_size,
+                alignment=alignment,
+            )
+            styles.append(style)
+            block_index += 1
+
+        elif tag == 'tbl':
+            table = Table(child, doc)
+
+            # Extract table-specific formatting
+            table_formatting = extract_table_formatting(table)
+
+            # Create style with table_formatting
+            style = Style(
+                block_id=block.id,
+                docx_style="Table",
+                font_name="Calibri",  # Default for tables
+                font_size=11,
+                alignment="left",
+                table_formatting=table_formatting
+            )
+            styles.append(style)
+            block_index += 1
 
     return styles
 

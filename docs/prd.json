@@ -1,338 +1,415 @@
 {
   "project": "Sidedoc",
-  "branchName": "ralph/track-changes-support",
-  "description": "Add bidirectional track changes support to Sidedoc - extract, preserve, and sync Word revision tracking using CriticMarkup syntax",
+  "branchName": "ralph/table-support",
+  "description": "Add full table support to Sidedoc - extract, preserve, and sync Word tables using GFM pipe table syntax",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Create track changes test fixtures",
-      "description": "As a developer, I need test fixtures with track changes so that automated tests can verify the feature.",
+      "id": "US-T01",
+      "title": "Create table test fixtures",
+      "description": "As a developer, I need test fixtures with tables so that automated tests can verify the feature.",
       "acceptanceCriteria": [
-        "Create tests/fixtures/track_changes_simple.docx with single insertion and single deletion",
-        "Create tests/fixtures/track_changes_paragraph.docx with multiple changes in one paragraph",
-        "Create tests/fixtures/track_changes_multiauthor.docx with changes from different authors",
-        "Include track change metadata (author, date) in all fixtures",
+        "Create tests/fixtures/tables_simple.docx with basic 3x3 table (header + 2 data rows)",
+        "Table has columns: Name, Role, Start Date with sample data",
         "Document fixture contents in test file comments",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Created track_changes_simple.docx, track_changes_paragraph.docx, track_changes_multiauthor.docx. All fixtures include author and date metadata. Tests verify w:ins and w:del elements exist."
+      "notes": "Fixture created at tests/fixtures/tables_simple.docx. Test: test_tables_simple_fixture_exists."
     },
     {
-      "id": "US-002",
-      "title": "Add TrackChange model to models.py",
-      "description": "As a developer, I need data structures to represent track changes so that metadata can be stored and retrieved.",
+      "id": "US-T02",
+      "title": "Extract simple tables to GFM markdown",
+      "description": "As an AI developer, I want tables extracted as GFM pipe tables so that I can read tabular data efficiently.",
       "acceptanceCriteria": [
-        "Add TrackChange dataclass with fields: type (insertion/deletion), start, end, author, date, revision_id",
-        "Add deleted_text field for deletion type",
-        "Add track_changes list field to Block dataclass",
-        "Add TrackChangesConfig to manifest with enabled, source_had_revisions, default_author fields",
+        "Tables in docx are extracted as GFM pipe table syntax in content.md",
+        "Access tables via document.tables and iterate rows/cells",
+        "Each table becomes a block with type 'table' in structure.json",
+        "Empty cells are preserved as empty pipe segments '| |'",
+        "Unit tests verify extraction with tables_simple.docx fixture",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Added TrackChange, TrackChangesConfig dataclasses to models.py. Added track_changes field to Block. All tests pass."
+      "notes": "Implemented table_to_gfm() and refactored extract_blocks() to iterate over document body in order. Tests: test_extract_simple_table_to_gfm, test_extract_table_creates_table_block_type, test_extract_table_preserves_empty_cells."
     },
     {
-      "id": "US-003",
-      "title": "Add CriticMarkup patterns to constants.py",
-      "description": "As a developer, I need regex patterns for parsing CriticMarkup syntax.",
+      "id": "US-T03",
+      "title": "Store table structure metadata in structure.json",
+      "description": "As a developer, I need table structure stored so that tables can be reconstructed accurately.",
       "acceptanceCriteria": [
-        "Add INSERTION_PATTERN for {++text++} syntax",
-        "Add DELETION_PATTERN for {--text--} syntax",
-        "Add SUBSTITUTION_PATTERN for {~~old~>new~~} syntax",
-        "Patterns handle nested content correctly",
-        "Unit tests verify pattern matching",
+        "structure.json stores rows, cols for each table block",
+        "structure.json stores cells array with row, col, content_hash per cell",
+        "docx_table_index field maps to original table position",
+        "Unit tests verify structure schema compliance",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Added INSERTION_PATTERN, DELETION_PATTERN, SUBSTITUTION_PATTERN to constants.py. All 13 pattern tests pass."
+      "notes": "Added table_metadata to Block model. Implemented extract_table_metadata(). Tests: test_table_block_has_rows_cols_metadata, test_table_block_has_cells_metadata, test_table_block_has_docx_table_index."
     },
     {
-      "id": "US-004",
-      "title": "Extract w:ins elements from docx paragraphs",
-      "description": "As an AI developer, I want insertions extracted as CriticMarkup syntax so that AI can see pending changes.",
+      "id": "US-T04",
+      "title": "Store basic table formatting in styles.json",
+      "description": "As a developer, I need table formatting stored so that visual appearance survives roundtrip.",
       "acceptanceCriteria": [
-        "Detect w:ins elements in paragraph XML",
-        "Extract inserted text and convert to {++text++} in content.md",
-        "Extract author attribute from w:ins element",
-        "Extract date attribute from w:ins element",
-        "Store insertion metadata in structure.json track_changes array",
-        "Unit tests verify extraction with track_changes_simple.docx fixture",
+        "styles.json stores table_style (Word built-in style name if present)",
+        "styles.json stores column_widths array in inches",
+        "styles.json stores table_alignment (left, center, right)",
+        "Unit tests verify formatting extraction",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Implemented in extract.py. Extracts w:ins elements as {++text++} CriticMarkup. Stores author, date, revision_id in track_changes array. All 5 tests pass."
+      "notes": "Added table_formatting to Style model. Implemented extract_table_formatting(). Refactored extract_styles() to iterate document body in order. Tests: test_table_style_has_column_widths, test_table_style_has_table_alignment."
     },
     {
-      "id": "US-005",
-      "title": "Extract w:del elements from docx paragraphs",
-      "description": "As an AI developer, I want deletions extracted as CriticMarkup syntax so that AI can see pending changes.",
+      "id": "US-T05",
+      "title": "Reconstruct basic tables in docx",
+      "description": "As a user, I want tables in the rebuilt docx to match the original structure.",
       "acceptanceCriteria": [
-        "Detect w:del elements in paragraph XML",
-        "Extract deleted text from w:delText elements",
-        "Convert to {--text--} in content.md",
-        "Store deleted_text in track change metadata",
-        "Extract author and date attributes",
-        "Store deletion metadata in structure.json track_changes array",
-        "Unit tests verify extraction with track_changes_simple.docx fixture",
+        "GFM pipe table syntax converts to docx tables via doc.add_table()",
+        "Column widths match original from styles.json",
+        "Cell text content matches markdown",
+        "Unit tests verify tables appear in rebuilt docx",
         "Typecheck passes"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Implemented in extract.py. Extracts w:del elements as {--text--} CriticMarkup. Stores deleted_text, author, date, revision_id. All 5 tests pass."
+      "notes": "Implemented parse_gfm_table(), create_table_from_gfm(), updated parse_markdown_to_blocks() to detect tables. Tests: test_parse_markdown_detects_table_blocks, test_create_docx_creates_table, test_reconstruct_table_preserves_content."
     },
     {
-      "id": "US-006",
-      "title": "Handle multiple track changes in single paragraph",
-      "description": "As a user, I want multiple track changes in one paragraph to all be extracted correctly.",
+      "id": "US-T06",
+      "title": "Extract column alignment from tables",
+      "description": "As a developer, I need column alignment preserved in the GFM syntax.",
       "acceptanceCriteria": [
-        "Extract all insertions and deletions from a single paragraph",
-        "Maintain correct order of changes in output",
-        "Calculate correct start/end positions for each change",
-        "Store all changes in track_changes array with correct positions",
-        "Unit tests verify with track_changes_paragraph.docx fixture",
+        "Cell horizontal alignment extracted from docx cells",
+        "Alignment represented using GFM syntax (:---|, :---:|, ---:|)",
+        "Default alignment (left) used when not specified",
+        "Unit tests verify alignment extraction and representation",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Implemented in extract.py. Handles multiple insertions/deletions in single paragraph. Maintains correct order and positions. Multi-author support verified. All 5 tests pass."
+      "notes": "Implemented get_cell_alignment(), get_column_alignments(), alignment_to_gfm_separator(). Added column_alignments to table_metadata. Tests: test_table_gfm_has_separator_row, test_table_metadata_has_column_alignments."
     },
     {
-      "id": "US-007",
-      "title": "Detect track changes mode from source document",
-      "description": "As a user, I want sidedoc to automatically detect whether source had track changes enabled.",
+      "id": "US-T07",
+      "title": "Apply column alignment during reconstruction",
+      "description": "As a user, I want column alignment preserved in rebuilt tables.",
       "acceptanceCriteria": [
-        "Check document for any w:ins or w:del elements",
-        "Set source_had_revisions boolean in manifest.json",
-        "Set track_changes.enabled based on detection",
-        "Unit tests verify detection for documents with and without changes",
+        "Parse GFM alignment indicators from header separator row",
+        "Apply horizontal alignment to all cells in each column",
+        "Alignment survives roundtrip (extract -> build)",
+        "Unit tests verify alignment application",
         "Typecheck passes"
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Implemented detect_track_changes() in extract.py. Scans document for w:ins/w:del elements. All 5 tests pass."
+      "notes": "Implemented parse_gfm_alignments(). Updated parse_gfm_table() to return alignments. Updated create_table_from_gfm() to apply alignment. Tests: test_parse_gfm_alignment_indicators, test_reconstruct_table_applies_alignment."
     },
     {
-      "id": "US-008",
-      "title": "Handle track changes in headings",
-      "description": "As a user, I want track changes in headings to extract and reconstruct correctly.",
+      "id": "US-T08",
+      "title": "Handle special characters in table cells",
+      "description": "As a developer, I need special characters escaped so markdown parsing works correctly.",
       "acceptanceCriteria": [
-        "Track changes in H1-H6 headings extract correctly",
-        "Heading level is preserved alongside track changes",
-        "Create tests/fixtures/track_changes_headings.docx with changes in headings",
-        "Unit tests verify heading track change handling",
+        "Pipe characters in cell content escaped as \\|",
+        "Backticks in cell content preserved correctly",
+        "Newlines in cells converted to <br> or handled gracefully",
+        "Unit tests cover special character escaping",
         "Typecheck passes"
       ],
       "priority": 8,
       "passes": true,
-      "notes": "Track changes in H1-H6 headings work correctly. Created track_changes_headings.docx fixture. All 4 tests pass."
+      "notes": "Implemented escape_cell_content_for_gfm(). Pipes escaped as \\|, newlines converted to spaces. Tests: test_extract_table_escapes_pipe_characters, test_extract_table_handles_newlines_in_cells."
     },
     {
-      "id": "US-009",
-      "title": "Handle track changes in list items",
-      "description": "As a user, I want track changes in bulleted and numbered lists to work correctly.",
+      "id": "US-T09",
+      "title": "Create formatted table test fixture",
+      "description": "As a developer, I need a fixture with formatted tables for testing borders and shading.",
       "acceptanceCriteria": [
-        "Track changes in bulleted list items extract correctly",
-        "Track changes in numbered list items extract correctly",
-        "Multiple track changes in a single list item are handled",
-        "Create tests/fixtures/track_changes_lists.docx with changes in lists",
-        "Unit tests verify list track change handling",
+        "Create tests/fixtures/tables_formatted.docx with styled table",
+        "Table has colored header row with borders",
+        "Table has alternating row shading",
+        "Document fixture contents in test file comments",
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Track changes in bulleted and numbered lists work correctly. Created track_changes_lists.docx fixture. All 5 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-010",
-      "title": "Reconstruct w:ins elements in docx from CriticMarkup",
-      "description": "As a user, I want CriticMarkup insertions to become track changes in rebuilt docx.",
+      "id": "US-T10",
+      "title": "Extract cell background colors",
+      "description": "As a user, I want cell colors preserved so that formatted tables look correct.",
       "acceptanceCriteria": [
-        "Parse {++text++} syntax during build",
-        "Create w:ins XML elements with correct structure",
-        "Set w:id attribute on w:ins elements",
-        "Set w:author attribute from stored metadata",
-        "Set w:date attribute from stored metadata",
-        "Track changes are visible in Microsoft Word",
-        "Unit tests verify w:ins elements in rebuilt docx XML",
+        "Cell background/shading color extracted as hex value",
+        "Colors stored in cell_styles in styles.json keyed by 'row,col'",
+        "Only non-default cells are stored (compact representation)",
+        "Unit tests verify color extraction",
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Implemented parse_criticmarkup(), create_ins_element(), add_text_with_track_changes() in reconstruct.py. All 3 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-011",
-      "title": "Reconstruct w:del elements in docx from CriticMarkup",
-      "description": "As a user, I want CriticMarkup deletions to become track changes in rebuilt docx.",
+      "id": "US-T11",
+      "title": "Apply cell background colors during reconstruction",
+      "description": "As a user, I want cell colors applied in rebuilt tables.",
       "acceptanceCriteria": [
-        "Parse {--text--} syntax during build",
-        "Create w:del XML elements with correct structure",
-        "Create w:delText elements for deleted content",
-        "Set w:id, w:author, w:date attributes",
-        "Deletions are visible and functional in Microsoft Word",
-        "Unit tests verify w:del elements in rebuilt docx XML",
+        "Read cell_styles from styles.json during rebuild",
+        "Apply background_color to cells using cell shading API",
+        "Colors survive roundtrip (extract -> build)",
+        "Unit tests verify color application",
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "Implemented create_del_element() with w:delText support. All 3 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-012",
-      "title": "Round-trip integration test for track changes",
-      "description": "As a developer, I need integration tests proving track changes survive extract->build round-trip.",
+      "id": "US-T12",
+      "title": "Extract cell border styles",
+      "description": "As a user, I want all border styles preserved so that tables look identical.",
       "acceptanceCriteria": [
-        "Integration test: extract track_changes_simple.docx, build new docx, compare",
-        "All track changes present in rebuilt docx",
-        "Author and date attributes preserved",
-        "Inserted/deleted text matches original",
+        "All four borders (top, bottom, left, right) extracted per cell",
+        "Border style (single, double, none) preserved",
+        "Border width and color preserved",
+        "Borders stored in cell_styles in styles.json",
+        "Unit tests verify border extraction",
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "Round-trip tests verify track changes survive extract->build cycle. Author, date, and track change elements preserved. All 3 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-013",
-      "title": "Parse CriticMarkup during sync",
-      "description": "As an AI agent, I want to use CriticMarkup syntax in content.md to explicitly mark insertions and deletions.",
+      "id": "US-T13",
+      "title": "Apply cell borders during reconstruction",
+      "description": "As a user, I want borders applied in rebuilt tables.",
       "acceptanceCriteria": [
-        "{++new text++} in edited content.md creates insertion in docx after sync",
-        "{--removed text--} in edited content.md creates deletion in docx after sync",
-        "New track changes use configured author name",
-        "New track changes use current timestamp",
-        "Unit tests verify CriticMarkup sync creates track changes",
+        "Read border styles from cell_styles in styles.json",
+        "Apply borders to cells using tcPr/tcBorders XML",
+        "Borders survive roundtrip (extract -> build)",
+        "Unit tests verify border application",
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "Added sync_sidedoc_to_docx() function in sync.py. Parses CriticMarkup syntax and creates w:ins/w:del elements with configurable author and current timestamp. All 5 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-014",
-      "title": "Parse CriticMarkup substitution syntax",
-      "description": "As an AI agent, I want to use substitution syntax for combined delete+insert operations.",
+      "id": "US-T14",
+      "title": "Sync cell content changes to docx",
+      "description": "As an AI agent, I want to edit cell text and have changes reflected in the synced docx.",
       "acceptanceCriteria": [
-        "{~~old~>new~~} creates deletion for 'old' and insertion for 'new'",
-        "Both changes linked with same revision context",
-        "Unit tests verify substitution parsing",
+        "Cell content hash changes detected during sync",
+        "Modified cell content updates in docx while preserving cell formatting",
+        "Unchanged cells retain exact original formatting",
+        "Unit tests verify cell edit sync",
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": true,
-      "notes": "parse_criticmarkup() in reconstruct.py already handles substitution syntax. Expands {~~old~>new~~} into deletion and insertion segments. All 4 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-015",
-      "title": "AI edits appear as tracked changes when source had revisions",
-      "description": "As a document owner, I want AI edits to appear as tracked changes so I can review them in Word.",
+      "id": "US-T15",
+      "title": "Support inline formatting in table cells",
+      "description": "As an AI agent, I want to use bold, italic, and hyperlinks in table cells.",
       "acceptanceCriteria": [
-        "When source doc had track changes, AI modifications create new tracked changes",
-        "New insertions get w:ins elements with configured author name",
-        "Removed content gets w:del elements with configured author name",
-        "Timestamps reflect when sync was performed",
-        "Integration test confirms AI edits are reviewable in Word",
+        "**bold** in cell content renders as bold in docx cell",
+        "*italic* in cell content renders as italic",
+        "[text](url) in cell content creates clickable hyperlink",
+        "Inline formatting preserved on roundtrip",
+        "Unit tests cover inline formatting in cells",
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": true,
-      "notes": "sync_sidedoc_to_docx() creates w:ins and w:del elements for all CriticMarkup with configured author and current timestamp. All 4 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-016",
-      "title": "Add --track-changes CLI option to extract command",
-      "description": "As a user, I want CLI options to control track changes behavior during extraction.",
+      "id": "US-T16",
+      "title": "Add rows to tables via markdown",
+      "description": "As an AI agent, I want to add new rows to tables by editing content.md.",
       "acceptanceCriteria": [
-        "Add --track-changes flag to force enable track changes mode",
-        "Add --no-track-changes flag to force disable (accept all)",
-        "Flags override auto-detection",
-        "Unit tests verify CLI option handling",
+        "Adding a row in GFM table adds row in synced docx",
+        "New row inherits basic formatting from adjacent row",
+        "Row can be added at end of table",
+        "Unit tests verify row addition",
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": true,
-      "notes": "Added --track-changes/--no-track-changes flags to extract command. Added track_changes parameter to extract_blocks() and extract_paragraph_accept_all() for accepting all changes. All 3 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-017",
-      "title": "Add --author CLI option to sync command",
-      "description": "As an enterprise user, I want to configure the author name for AI-generated changes.",
+      "id": "US-T17",
+      "title": "Remove rows from tables via markdown",
+      "description": "As an AI agent, I want to remove rows from tables by editing content.md.",
       "acceptanceCriteria": [
-        "Add --author NAME option to sync command",
-        "Default author is 'Sidedoc AI' when not specified",
-        "Author name appears correctly in Word's track changes pane",
-        "Unit tests verify author attribution",
+        "Removing a row in GFM table removes row in synced docx",
+        "Remaining rows maintain correct formatting",
+        "Header row removal handled gracefully (warning issued)",
+        "Unit tests verify row removal",
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": true,
-      "notes": "Added --author option to sync command with default 'Sidedoc AI'. Updated sync to use sync_sidedoc_to_docx() for track changes support. All 2 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-018",
-      "title": "Validate track changes in sidedoc validate command",
-      "description": "As a user, I want validation to check track change integrity.",
+      "id": "US-T18",
+      "title": "Add columns to tables via markdown",
+      "description": "As an AI agent, I want to add new columns to tables by editing content.md.",
       "acceptanceCriteria": [
-        "sidedoc validate checks track change positions are within block bounds",
-        "Validation verifies track change metadata is complete (author, date)",
-        "Clear error messages for track change validation failures",
-        "Validation passes for documents with valid track changes",
-        "Unit tests cover validation scenarios",
+        "Adding a column in GFM table adds column in synced docx",
+        "New column inherits width from adjacent column",
+        "Column can be added at end of table",
+        "Unit tests verify column addition",
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": true,
-      "notes": "Added _validate_track_changes() helper and integrated into validate command. Checks positions within block bounds and metadata completeness. All 3 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-019",
-      "title": "Handle CriticMarkup with nested markdown formatting",
-      "description": "As an AI agent, I want CriticMarkup to work with nested formatting like bold or italic.",
+      "id": "US-T19",
+      "title": "Remove columns from tables via markdown",
+      "description": "As an AI agent, I want to remove columns from tables by editing content.md.",
       "acceptanceCriteria": [
-        "{++**bold text**++} creates bold insertion",
-        "{--*italic*--} creates italic deletion",
-        "Nested formatting preserved in rebuilt docx",
-        "Unit tests verify nested formatting handling",
+        "Removing a column in GFM table removes column in synced docx",
+        "Remaining columns maintain correct formatting and widths",
+        "Unit tests verify column removal",
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": true,
-      "notes": "CriticMarkup regex patterns already handle nested markdown formatting correctly. The content inside {++...++} and {--...--} is preserved as-is. All 4 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-020",
-      "title": "Error handling for invalid CriticMarkup syntax",
-      "description": "As a user, I want clear error messages when CriticMarkup syntax is invalid.",
+      "id": "US-T20",
+      "title": "Create merged cells test fixture",
+      "description": "As a developer, I need a fixture with merged cells for testing.",
       "acceptanceCriteria": [
-        "Unclosed {++ produces clear error message",
-        "Unclosed {-- produces clear error message",
-        "Malformed {~~old~>new~~} produces clear error message",
-        "Error messages include line number and context",
-        "Unit tests cover error handling scenarios",
+        "Create tests/fixtures/tables_merged.docx with merged cells",
+        "Include horizontal merge (cells span columns)",
+        "Include vertical merge (cells span rows)",
+        "Document fixture contents in test file comments",
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": true,
-      "notes": "Added validate_criticmarkup() function that checks for unclosed/malformed CriticMarkup syntax with line numbers. parse_criticmarkup() gracefully handles invalid syntax by treating it as text. All 6 tests pass."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-021",
-      "title": "Update README with track changes support",
-      "description": "As a user, I want documentation updated so that I understand track changes support is available.",
+      "id": "US-T21",
+      "title": "Extract merged cell metadata",
+      "description": "As a user, I want merged cells preserved so that complex table layouts survive roundtrip.",
       "acceptanceCriteria": [
-        "README.md 'Supported Elements' table includes Track Changes row",
-        "Document CriticMarkup syntax: {++insert++}, {--delete--}, {~~old~>new~~}",
-        "Note limitations (no formatting changes, no comments yet)",
+        "Horizontally merged cells detected via gridSpan in cell XML",
+        "Vertically merged cells detected via vMerge in cell XML",
+        "merged_cells array in structure.json contains start_row, start_col, row_span, col_span",
+        "content.md shows all cell positions (secondary merge cells are empty)",
+        "Unit tests cover horizontal, vertical, and complex merges",
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": true,
-      "notes": "README.md already contained complete track changes documentation including: Supported Elements table row, CriticMarkup syntax section with full examples, CLI options, and limitations section. Fixed type errors in sync.py and cli.py to pass mypy."
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T22",
+      "title": "Apply merged cells during reconstruction",
+      "description": "As a user, I want merged cells applied in rebuilt tables.",
+      "acceptanceCriteria": [
+        "Read merged_cells from structure.json during rebuild",
+        "Apply merges using cell.merge() API",
+        "Merged cells survive roundtrip (extract -> build)",
+        "Unit tests verify merge application",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T23",
+      "title": "Track header rows in tables",
+      "description": "As a user, I want header rows marked so that accessibility and styling are preserved.",
+      "acceptanceCriteria": [
+        "Header rows identified during extraction (first row by default)",
+        "header_rows field in structure.json indicates header count",
+        "Rebuilt table marks rows as headers for accessibility",
+        "Unit tests verify header handling",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T24",
+      "title": "Validate tables in sidedoc",
+      "description": "As a user, I want validation to check table integrity so that I catch issues before building.",
+      "acceptanceCriteria": [
+        "sidedoc validate checks table structure in structure.json",
+        "Validation confirms cell count matches GFM table in content.md",
+        "Validation checks merged cell regions don't overlap",
+        "Clear error messages for table-related validation failures",
+        "Unit tests cover validation scenarios",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T25",
+      "title": "Handle table edge cases",
+      "description": "As a developer, I need edge cases handled gracefully so that extraction doesn't fail.",
+      "acceptanceCriteria": [
+        "Empty tables (0 rows) handled gracefully (skip or warn)",
+        "Tables with only header rows work correctly",
+        "Very wide tables (10+ columns) preserved correctly",
+        "Very tall tables (50+ rows) processed efficiently",
+        "Unit tests cover all edge cases",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T26",
+      "title": "Update README with table support",
+      "description": "As a user, I want documentation updated so that I understand table support is available.",
+      "acceptanceCriteria": [
+        "README.md 'Supported Elements' section includes Tables row",
+        "Show GFM pipe table syntax example",
+        "Note limitations (no nested tables, formulas as static text)",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-T27",
+      "title": "Create table roundtrip integration test",
+      "description": "As a developer, I need comprehensive integration tests to ensure table quality.",
+      "acceptanceCriteria": [
+        "Roundtrip test: extract -> build for simple tables",
+        "Roundtrip test: extract -> build for formatted tables",
+        "Roundtrip test: extract -> edit -> sync -> build for cell edits",
+        "All tests pass in CI",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
     }
   ]
 }

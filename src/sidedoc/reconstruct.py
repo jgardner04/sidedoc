@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -17,9 +16,16 @@ import mistune
 from sidedoc.models import Block, Style, TrackChange
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
+    ALIGNMENT_STRING_TO_ENUM,
+    GFM_SEPARATOR_PATTERNS,
+    DEFAULT_ALIGNMENT,
+    MAX_TABLE_ROWS,
+    MAX_TABLE_COLS,
     INSERTION_PATTERN,
     DELETION_PATTERN,
     SUBSTITUTION_PATTERN,
+    WORDPROCESSINGML_NS,
+    XML_SPACE_NS,
 )
 
 
@@ -28,12 +34,6 @@ from sidedoc.constants import (
 # - any character except ] or \
 # - OR a backslash followed by any character (which handles \[ and \])
 HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
-
-# Word processing ML namespace
-WORDPROCESSINGML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-
-# XML namespace for preserving whitespace
-XML_SPACE_NS = "{http://www.w3.org/XML/1998/namespace}space"
 
 # Standard hyperlink color (blue)
 HYPERLINK_COLOR = "0563C1"
@@ -473,6 +473,79 @@ def add_text_with_hyperlinks(paragraph: Any, content: str) -> None:
         paragraph.add_run(content[last_end:])
 
 
+def parse_gfm_alignments(separator_line: str) -> list[str]:
+    """Parse GFM alignment indicators from separator line.
+
+    Args:
+        separator_line: The separator line like "| --- | :---: | ---: |"
+
+    Returns:
+        List of alignments: 'left', 'center', or 'right' for each column
+    """
+    stripped = separator_line.strip()
+    if not stripped:
+        return []
+
+    # Remove outer pipes if present
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+
+    cells = [c.strip() for c in stripped.split("|")]
+    alignments = []
+
+    for cell in cells:
+        if not cell:
+            continue
+
+        # Detect alignment using GFM_SEPARATOR_PATTERNS
+        starts_colon = cell.startswith(":")
+        ends_colon = cell.endswith(":")
+
+        detected = GFM_SEPARATOR_PATTERNS.get(
+            (starts_colon, ends_colon), DEFAULT_ALIGNMENT
+        )
+        alignments.append(detected)
+
+    return alignments
+
+
+def is_table_separator_line(line: str) -> bool:
+    """Check if a line is a GFM table separator line.
+
+    Separator lines have the format: | --- | --- | or |:---:|---:|
+    """
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return False
+
+    # Remove outer pipes and split by pipe
+    inner = stripped[1:-1]
+    cells = [c.strip() for c in inner.split("|")]
+
+    if not cells:
+        return False
+
+    for cell in cells:
+        # Each cell should be only dashes with optional colons for alignment
+        if not cell:
+            continue
+        # Remove alignment colons
+        cell = cell.strip(":")
+        # Should be only dashes
+        if not cell or not all(c == "-" for c in cell):
+            return False
+
+    return True
+
+
+def is_table_row(line: str) -> bool:
+    """Check if a line could be a GFM table row (starts and ends with pipe)."""
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|")
+
+
 def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     """Parse markdown content into Block objects.
 
@@ -486,41 +559,97 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
     lines = markdown_content.split("\n")
     block_id = 0
     content_position = 0
+    table_index = 0
+    i = 0
 
-    for line in lines:
-        line = line.strip()
-        if not line:
+    while i < len(lines):
+        line = lines[i]
+        stripped_line = line.strip()
+
+        if not stripped_line:
+            i += 1
             continue
 
-        if line.startswith("![") and "](" in line and line.endswith(")"):
+        # Check if this is the start of a GFM table
+        # A table starts with a row that starts/ends with pipes
+        # and is followed by a separator line
+        if is_table_row(stripped_line) and i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            if is_table_separator_line(next_line):
+                # This is a table! Collect all table lines
+                table_lines = [stripped_line, next_line]
+                j = i + 2
+                while j < len(lines) and is_table_row(lines[j].strip()):
+                    table_lines.append(lines[j].strip())
+                    j += 1
+
+                table_content = "\n".join(table_lines)
+
+                # Parse table dimensions
+                num_rows = len(table_lines) - 1  # Subtract separator row
+                num_cols = len(split_gfm_row(stripped_line))
+
+                # Validate table dimensions
+                if num_rows > MAX_TABLE_ROWS:
+                    raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
+                if num_cols > MAX_TABLE_COLS:
+                    raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
+
+                # Parse column alignments from separator line
+                column_alignments = parse_gfm_alignments(next_line)
+
+                block = Block(
+                    id=f"block-{block_id}",
+                    type="table",
+                    content=table_content,
+                    docx_paragraph_index=-1,
+                    content_start=content_position,
+                    content_end=content_position + len(table_content),
+                    content_hash="",
+                    table_metadata={
+                        "rows": num_rows,
+                        "cols": num_cols,
+                        "cells": [],
+                        "column_alignments": column_alignments,
+                        "docx_table_index": table_index
+                    }
+                )
+                blocks.append(block)
+                block_id += 1
+                table_index += 1
+                content_position += len(table_content) + 1
+                i = j
+                continue
+
+        # Handle other block types
+        if stripped_line.startswith("![") and "](" in stripped_line and stripped_line.endswith(")"):
             # Extract image path from markdown
-            start_idx = line.find("](") + 2
-            end_idx = line.rfind(")")
-            image_path = line[start_idx:end_idx]
+            start_idx = stripped_line.find("](") + 2
+            end_idx = stripped_line.rfind(")")
+            image_path = stripped_line[start_idx:end_idx]
 
             block = Block(
                 id=f"block-{block_id}",
                 type="image",
-                content=line,
+                content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
-                content_end=content_position + len(line),
+                content_end=content_position + len(stripped_line),
                 content_hash="",
                 image_path=image_path,
             )
-        elif line.startswith("#"):
+        elif stripped_line.startswith("#"):
             level = 0
-            while level < len(line) and line[level] == "#":
+            while level < len(stripped_line) and stripped_line[level] == "#":
                 level += 1
 
-            content = line[level:].strip()
             block = Block(
                 id=f"block-{block_id}",
                 type="heading",
-                content=line,
+                content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
-                content_end=content_position + len(line),
+                content_end=content_position + len(stripped_line),
                 content_hash="",
                 level=level,
             )
@@ -528,16 +657,17 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             block = Block(
                 id=f"block-{block_id}",
                 type="paragraph",
-                content=line,
+                content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
-                content_end=content_position + len(line),
+                content_end=content_position + len(stripped_line),
                 content_hash="",
             )
 
         blocks.append(block)
         block_id += 1
-        content_position += len(line) + 1
+        content_position += len(stripped_line) + 1
+        i += 1
 
     return blocks
 
@@ -554,6 +684,147 @@ def has_hyperlinks(content: str) -> bool:
     return bool(HYPERLINK_PATTERN.search(content))
 
 
+def split_gfm_row(line: str) -> list[str]:
+    """Split a GFM table row respecting escaped pipes.
+
+    A naive split on '|' would incorrectly split cells containing escaped
+    pipes (\\|). This function respects escape sequences.
+
+    Args:
+        line: A table row line like "| Name | Test\\|Pipe |"
+
+    Returns:
+        List of cell values with escaped characters unescaped
+    """
+    # Remove outer pipes if present
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+
+    # Split respecting escaped pipes
+    cells = []
+    current: list[str] = []
+    i = 0
+
+    while i < len(stripped):
+        # Check for escaped pipe
+        if i < len(stripped) - 1 and stripped[i] == '\\' and stripped[i + 1] == '|':
+            current.append('|')  # Unescape: \| becomes literal |
+            i += 2
+        elif stripped[i] == '|':
+            # Unescaped pipe - cell boundary
+            cells.append(''.join(current).strip())
+            current = []
+            i += 1
+        else:
+            current.append(stripped[i])
+            i += 1
+
+    # Don't forget the last cell
+    cells.append(''.join(current).strip())
+
+    return cells
+
+
+def parse_gfm_table(table_content: str) -> tuple[list[list[str]], list[str]]:
+    """Parse GFM table content into a 2D array of cell values and alignments.
+
+    Args:
+        table_content: GFM pipe table markdown
+
+    Returns:
+        Tuple of (rows, alignments) where rows is a list of rows and alignments
+        is a list of column alignments
+    """
+    lines = table_content.strip().split("\n")
+    rows: list[list[str]] = []
+    alignments: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Check for separator row and extract alignments
+        if is_table_separator_line(stripped):
+            alignments = parse_gfm_alignments(stripped)
+            continue
+
+        # Parse row cells using proper escape-aware splitting
+        cells = split_gfm_row(stripped)
+        rows.append(cells)
+
+    # Normalize column counts: pad shorter rows / truncate longer rows to match header
+    if rows:
+        header_col_count = len(rows[0])
+        for i in range(1, len(rows)):
+            if len(rows[i]) < header_col_count:
+                rows[i].extend([""] * (header_col_count - len(rows[i])))
+            elif len(rows[i]) > header_col_count:
+                rows[i] = rows[i][:header_col_count]
+
+    return rows, alignments
+
+
+def create_table_from_gfm(doc: DocumentType, table_content: str, styles: dict[str, Any], block_id: str) -> None:
+    """Create a table in the document from GFM table content.
+
+    Args:
+        doc: Document object
+        table_content: GFM pipe table markdown
+        styles: Style information dictionary
+        block_id: Block ID for looking up table styles
+
+    Raises:
+        ValueError: If table dimensions exceed reasonable limits
+    """
+    rows, alignments = parse_gfm_table(table_content)
+
+    if not rows:
+        return
+
+    num_rows = len(rows)
+    num_cols = max(len(row) for row in rows)
+
+    if num_cols == 0:
+        return
+
+    # Validate table dimensions to prevent memory exhaustion
+    if num_rows > MAX_TABLE_ROWS:
+        raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
+    if num_cols > MAX_TABLE_COLS:
+        raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
+
+    # Create the table
+    table = doc.add_table(rows=num_rows, cols=num_cols)
+
+    # Populate cells
+    for row_idx, row_data in enumerate(rows):
+        for col_idx, cell_text in enumerate(row_data):
+            if col_idx < len(table.columns):
+                cell = table.cell(row_idx, col_idx)
+                cell.text = cell_text
+
+                # Apply alignment to the cell's paragraph
+                if alignments and col_idx < len(alignments):
+                    alignment = alignments[col_idx]
+                    if cell.paragraphs and alignment in ALIGNMENT_STRING_TO_ENUM:
+                        cell.paragraphs[0].alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+
+    # Apply column widths from styles if available
+    block_style = styles.get("block_styles", {}).get(block_id, {})
+    table_formatting = block_style.get("table_formatting", {})
+
+    if table_formatting:
+        column_widths = table_formatting.get("column_widths", [])
+        for col_idx, width in enumerate(column_widths):
+            if col_idx < len(table.columns):
+                # Width is in inches, convert to EMUs
+                table.columns[col_idx].width = Inches(width)
+
+
 def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_dir: Optional[Path] = None) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -566,6 +837,7 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
         Document object
     """
     doc = Document()
+    para = None  # Track current paragraph for styling
 
     for block in blocks:
         if block.type == "heading" and block.level:
@@ -583,6 +855,10 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
                 add_text_with_hyperlinks(para, text)
             else:
                 para = doc.add_paragraph(text, style=style_name)
+        elif block.type == "table":
+            # Handle table blocks
+            create_table_from_gfm(doc, block.content, styles, block.id)
+            para = None  # Tables don't have paragraph styling
         elif block.type == "image":
             # Handle image blocks
             if block.image_path and assets_dir:
@@ -623,24 +899,19 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
             else:
                 para = doc.add_paragraph(block.content)
 
-        # Apply styling if available
-        block_style = styles.get("block_styles", {}).get(block.id, {})
-        if block_style and para.style:
-            if "font_name" in block_style:
-                para.style.font.name = block_style["font_name"]
-            if "font_size" in block_style:
-                para.style.font.size = Pt(block_style["font_size"])
+        # Apply styling if available (only for paragraph-based blocks)
+        if para is not None:
+            block_style = styles.get("block_styles", {}).get(block.id, {})
+            if block_style and para.style:
+                if "font_name" in block_style:
+                    para.style.font.name = block_style["font_name"]
+                if "font_size" in block_style:
+                    para.style.font.size = Pt(block_style["font_size"])
 
-            # Apply alignment
-            alignment = block_style.get("alignment", "left")
-            alignment_map = {
-                "left": WD_ALIGN_PARAGRAPH.LEFT,
-                "center": WD_ALIGN_PARAGRAPH.CENTER,
-                "right": WD_ALIGN_PARAGRAPH.RIGHT,
-                "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
-            }
-            if alignment in alignment_map:
-                para.alignment = alignment_map[alignment]
+                # Apply alignment
+                alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
+                if alignment in ALIGNMENT_STRING_TO_ENUM:
+                    para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
     return doc
 

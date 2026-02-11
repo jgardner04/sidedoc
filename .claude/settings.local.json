@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena__write_memory",
+      "mcp__plugin_serena_serena__list_memories",
+      "Bash(python -m pytest:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python:*)",
+      "Skill(claude-md-reviewer)",
+      "Bash(pytest:*)",
+      "Bash(grep:*)",
+      "mcp__plugin_github_github__pull_request_read"
+    ]
+  }
+}
