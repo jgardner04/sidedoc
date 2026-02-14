@@ -2,15 +2,12 @@
 
 import hashlib
 import json
-import tempfile
-import zipfile
 from pathlib import Path
 from typing import Optional, Any
 from docx import Document
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
 from sidedoc.constants import (
-    MAX_ASSET_SIZE,
     SIMILARITY_THRESHOLD,
 )
 from sidedoc.reconstruct import create_table_from_gfm, apply_inline_formatting, _apply_block_formatting
@@ -235,22 +232,24 @@ def update_sidedoc_metadata(
     """Update metadata files in a sidedoc directory after sync.
 
     Regenerates structure.json, remaps styles.json, and updates manifest.json.
-    Works with both directory and legacy ZIP formats.
+    Only works with .sidedoc/ directories (ZIP archives must be unpacked first).
 
     Args:
-        sidedoc_path: Path to .sidedoc directory or legacy ZIP
+        sidedoc_path: Path to .sidedoc directory
         new_blocks: Updated list of Block objects from edited content
         new_content: New markdown content
         matches: Optional mapping from old block IDs to new blocks for style remapping
+
+    Raises:
+        ValueError: If sidedoc_path is not a directory
     """
-    from sidedoc.store import SidedocStore, detect_sidedoc_format
-
-    fmt = detect_sidedoc_format(sidedoc_path)
-
-    if fmt == "directory":
-        _update_directory_metadata(sidedoc_path, new_blocks, new_content, matches)
-    else:
-        _update_zip_metadata(sidedoc_path, new_blocks, new_content, matches)
+    path = Path(sidedoc_path)
+    if not path.is_dir():
+        raise ValueError(
+            f"Cannot update metadata for '{sidedoc_path}': not a directory. "
+            "Run `sidedoc unpack` to convert to directory format first."
+        )
+    _update_directory_metadata(sidedoc_path, new_blocks, new_content, matches)
 
 
 def _build_structure_data(new_blocks: list[Block]) -> dict:
@@ -328,58 +327,6 @@ def _update_directory_metadata(
         # Clean up any tmp files on failure
         for tmp_path, _ in tmp_files:
             tmp_path.unlink(missing_ok=True)
-        raise
-
-
-def _update_zip_metadata(
-    sidedoc_path: str,
-    new_blocks: list[Block],
-    new_content: str,
-    matches: Optional[dict[str, Block]] = None,
-) -> None:
-    """Update metadata in a legacy ZIP sidedoc archive."""
-    # Phase 1: Read and validate (no temp files created)
-    with zipfile.ZipFile(sidedoc_path, "r") as zip_file:
-        styles_data = json.loads(zip_file.read("styles.json").decode("utf-8"))
-        old_manifest = json.loads(zip_file.read("manifest.json").decode("utf-8"))
-
-        assets = {}
-        for file_info in zip_file.filelist:
-            if file_info.filename.startswith("assets/"):
-                if file_info.file_size > MAX_ASSET_SIZE:
-                    raise ValueError(
-                        f"Asset '{file_info.filename}' exceeds maximum size "
-                        f"({file_info.file_size} bytes > {MAX_ASSET_SIZE} bytes). "
-                        "This may be a malicious ZIP bomb attack."
-                    )
-                assets[file_info.filename] = zip_file.read(file_info.filename)
-
-    # Phase 2: Prepare data (no I/O)
-    if matches:
-        styles_data = remap_styles(styles_data, matches)
-
-    structure_data = _build_structure_data(new_blocks)
-    manifest_data = _update_manifest(old_manifest, new_content)
-
-    # Phase 3: Write (temp file inside try for guaranteed cleanup)
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".sidedoc") as tmp:
-            tmp_path = tmp.name
-
-        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            zip_file.writestr("content.md", new_content)
-            zip_file.writestr("structure.json", json.dumps(structure_data, indent=2))
-            zip_file.writestr("styles.json", json.dumps(styles_data, indent=2))
-            zip_file.writestr("manifest.json", json.dumps(manifest_data, indent=2))
-
-            for asset_path, asset_data in assets.items():
-                zip_file.writestr(asset_path, asset_data)
-
-        Path(tmp_path).replace(sidedoc_path)
-    except Exception:
-        if tmp_path and Path(tmp_path).exists():
-            Path(tmp_path).unlink()
         raise
 
 
