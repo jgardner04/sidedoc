@@ -19,6 +19,7 @@ from sidedoc.constants import (
     DEFAULT_ALIGNMENT,
     MAX_TABLE_ROWS,
     MAX_TABLE_COLS,
+    MAX_TABLE_LINES,
     INSERTION_PATTERN,
     DELETION_PATTERN,
     SUBSTITUTION_PATTERN,
@@ -973,6 +974,11 @@ def validate_gfm_table_dimensions(table_content: str) -> None:
     """
     lines = table_content.strip().split("\n")
 
+    if len(lines) > MAX_TABLE_LINES:
+        raise ValueError(
+            f"Table has too many lines ({len(lines)}), maximum is {MAX_TABLE_LINES}"
+        )
+
     # Count data rows (non-empty, non-separator lines)
     data_rows = 0
     first_data_line = None
@@ -1032,12 +1038,6 @@ def create_table_from_gfm(
 
     if num_cols == 0:
         return
-
-    # Validate table dimensions to prevent memory exhaustion
-    if num_rows > MAX_TABLE_ROWS:
-        raise ValueError(f"Table has too many rows ({num_rows}), maximum is {MAX_TABLE_ROWS}")
-    if num_cols > MAX_TABLE_COLS:
-        raise ValueError(f"Table has too many columns ({num_cols}), maximum is {MAX_TABLE_COLS}")
 
     # Create the table
     table = doc.add_table(rows=num_rows, cols=num_cols)

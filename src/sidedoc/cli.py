@@ -22,7 +22,7 @@ from sidedoc.constants import (
 from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.models import Block
 from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
-from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks
+from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
 from sidedoc.store import SidedocStore, detect_sidedoc_format
 from sidedoc.sync import (
     generate_updated_docx,
@@ -361,6 +361,7 @@ def _validate_tables(structure: dict, content: str) -> list[str]:
 
         # Parse GFM to get actual dimensions
         try:
+            validate_gfm_table_dimensions(table_content)
             rows, _ = parse_gfm_table(table_content)
         except ValueError as e:
             warnings.append(f"Table {block_id}: unable to parse GFM content: {e}")

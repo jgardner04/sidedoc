@@ -72,6 +72,7 @@ ALIGNMENT_NUMERIC_TO_STRING = {
 # Maximum table dimensions to prevent memory exhaustion from malicious input
 MAX_TABLE_ROWS = 1000
 MAX_TABLE_COLS = 100
+MAX_TABLE_LINES = 2000
 
 # EMU (English Metric Units) conversion constant
 # 1 inch = 914400 EMUs in Office Open XML

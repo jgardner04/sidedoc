@@ -223,7 +223,7 @@ Sidedoc extracts Word tables as [GitHub Flavored Markdown](https://github.github
 
 - Nested tables are not supported (rare in Word documents)
 - Formulas are extracted as static text values
-- Track changes within table cells are not yet supported
+- CriticMarkup (track changes) is supported within table cells
 
 ---
 

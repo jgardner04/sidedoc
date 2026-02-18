@@ -1940,3 +1940,154 @@ def test_reconstruct_table_cell_with_hyperlink() -> None:
         f"Cell should contain w:hyperlink element. "
         f"Cell XML: {cell._tc.xml[:300]}"
     )
+
+
+# ============================================================================
+# PR #42 review fixes: Separator line attack, validate DoS, hyperlink extraction
+# ============================================================================
+
+
+def test_separator_line_attack_rejected() -> None:
+    """Test that tables with excessive separator lines are rejected."""
+    import pytest
+    from unittest.mock import patch
+    from sidedoc.reconstruct import validate_gfm_table_dimensions
+
+    # Build a table with 2 data rows but thousands of separator lines
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data = "| X | Y |"
+    # 2 data rows + 2001 separator lines = 2003 total lines
+    lines = [header, sep, data] + [sep] * 2001
+    table_content = "\n".join(lines)
+
+    with pytest.raises(ValueError, match="too many lines"):
+        validate_gfm_table_dimensions(table_content)
+
+
+def test_separator_lines_within_limit_accepted() -> None:
+    """Test that tables within the line limit pass validation."""
+    from sidedoc.reconstruct import validate_gfm_table_dimensions
+
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data = "| X | Y |"
+    # Small table is fine
+    table_content = f"{header}\n{sep}\n{data}"
+    # Should not raise
+    validate_gfm_table_dimensions(table_content)
+
+
+def test_validate_command_pre_validates_table_dimensions() -> None:
+    """Test that the validate command calls validate_gfm_table_dimensions before parse."""
+    import pytest
+    import tempfile
+    import json
+    from unittest.mock import patch
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_dir = Path(tmp_dir) / "test.sidedoc"
+        sidedoc_dir.mkdir()
+
+        # Create a table with 6 data rows in content.md
+        header = "| A | B |"
+        sep = "| --- | --- |"
+        data_rows = "\n".join(f"| R{i} | D{i} |" for i in range(6))
+        table_content = f"{header}\n{sep}\n{data_rows}"
+
+        content = f"# Heading\n\n{table_content}\n"
+        (sidedoc_dir / "content.md").write_text(content)
+
+        # Build structure.json with a table block pointing at the table content
+        table_start = content.index("|")
+        table_end = len(content.rstrip())
+        structure = {
+            "blocks": [
+                {
+                    "id": "block-0",
+                    "type": "heading",
+                    "content": "# Heading",
+                    "content_start": 0,
+                    "content_end": 9,
+                },
+                {
+                    "id": "block-1",
+                    "type": "table",
+                    "content": table_content,
+                    "content_start": table_start,
+                    "content_end": table_end,
+                    "table_metadata": {
+                        "rows": 7,
+                        "cols": 2,
+                        "cells": [],
+                        "docx_table_index": 0,
+                    },
+                },
+            ]
+        }
+        (sidedoc_dir / "structure.json").write_text(json.dumps(structure))
+        (sidedoc_dir / "styles.json").write_text(json.dumps({"block_styles": {}}))
+
+        runner = CliRunner()
+        # Patch MAX_TABLE_ROWS to 3 so the 6-row table is rejected
+        with patch("sidedoc.cli.validate_gfm_table_dimensions") as mock_validate:
+            mock_validate.side_effect = ValueError("Table has too many rows (7), maximum is 3")
+            result = runner.invoke(cli, ["validate", str(sidedoc_dir)])
+
+        # validate_gfm_table_dimensions should have been called before parse_gfm_table
+        mock_validate.assert_called_once()
+        # The error is caught and reported as a warning (not an unhandled crash)
+        assert "too many rows" in result.output or "unable to parse" in result.output
+
+
+def test_extract_table_cell_hyperlink() -> None:
+    """Test that hyperlinks in table cells are extracted as markdown links."""
+    import tempfile
+    from lxml import etree
+    from docx.oxml.ns import qn as docx_qn
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a docx with a table containing a hyperlink
+        doc = Document()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Name"
+        table.cell(0, 1).text = "Link"
+        table.cell(1, 0).text = "Alice"
+
+        # Manually add a hyperlink to cell (1, 1) via XML
+        cell = table.cell(1, 1)
+        # Clear existing paragraph text
+        paragraph = cell.paragraphs[0]
+        paragraph.clear()
+
+        # Add a relationship for the hyperlink
+        r_id = doc.part.relate_to(
+            "https://example.com",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+            is_external=True,
+        )
+
+        # Build the hyperlink XML
+        hyperlink = etree.SubElement(
+            paragraph._element,
+            docx_qn("w:hyperlink"),
+            {docx_qn("r:id"): r_id},
+        )
+        run = etree.SubElement(hyperlink, docx_qn("w:r"))
+        t_elem = etree.SubElement(run, docx_qn("w:t"))
+        t_elem.text = "homepage"
+
+        test_path = Path(tmp_dir) / "test_hyperlink_table.docx"
+        doc.save(str(test_path))
+
+        # Extract and check
+        blocks, _ = extract_blocks(str(test_path))
+
+        # Find the table block
+        table_blocks = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks) == 1
+
+        # The cell should contain a markdown hyperlink
+        assert "[homepage](https://example.com)" in table_blocks[0].content

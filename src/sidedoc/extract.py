@@ -837,11 +837,12 @@ def escape_cell_content_for_gfm(text: str) -> str:
     return result
 
 
-def _extract_cell_text_with_formatting(cell: Any) -> str:
-    """Extract cell text with inline formatting (bold, italic) as markdown.
+def _extract_cell_text_with_formatting(cell: Any, doc_part: Any = None) -> str:
+    """Extract cell text with inline formatting (bold, italic) and hyperlinks as markdown.
 
     Args:
         cell: python-docx table cell object
+        doc_part: Document part for resolving hyperlink relationships
 
     Returns:
         Cell text with markdown formatting markers
@@ -856,7 +857,25 @@ def _extract_cell_text_with_formatting(cell: Any) -> str:
 
         for child in para_elem:
             tag = child.tag
-            if tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            if tag == f'{{{WORDPROCESSINGML_NS}}}hyperlink':
+                if doc_part is None:
+                    text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                    if text:
+                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                    continue
+
+                url = get_hyperlink_url(child, doc_part)
+                if url is None:
+                    text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                    if text:
+                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                    continue
+
+                text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                if text:
+                    para_parts.append(format_hyperlink_md(text, url, is_bold, is_italic))
+
+            elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
                 text_parts = []
                 for run_child in child:
                     run_child_tag = run_child.tag
@@ -880,11 +899,12 @@ def _extract_cell_text_with_formatting(cell: Any) -> str:
     return " ".join(parts).strip()
 
 
-def table_to_gfm(table: Any) -> str:
+def table_to_gfm(table: Any, doc_part: Any = None) -> str:
     """Convert a python-docx table to GFM pipe table syntax.
 
     Args:
         table: python-docx Table object
+        doc_part: Document part for resolving hyperlink relationships
 
     Returns:
         GFM pipe table markdown string
@@ -898,7 +918,7 @@ def table_to_gfm(table: Any) -> str:
         cells = []
         for cell in row.cells:
             # Extract text with inline formatting, then escape for GFM
-            cell_text = _extract_cell_text_with_formatting(cell)
+            cell_text = _extract_cell_text_with_formatting(cell, doc_part)
             cell_text = escape_cell_content_for_gfm(cell_text)
             cells.append(cell_text)
 
@@ -1257,7 +1277,7 @@ def extract_blocks(
             table = Table(child, doc)
 
             # Convert table to GFM markdown
-            markdown_content = table_to_gfm(table)
+            markdown_content = table_to_gfm(table, doc.part)
 
             # Extract table metadata for structure.json
             table_metadata = extract_table_metadata(table, table_index)
