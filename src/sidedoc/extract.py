@@ -4,9 +4,7 @@ import hashlib
 import io
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt
 from docx.oxml.ns import qn
 from PIL import Image
 from sidedoc.models import Block, Style, TrackChange
@@ -24,6 +22,44 @@ from sidedoc.constants import (
 
 # XML namespaces used in Office Open XML documents
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
+    """Wrap text with markdown bold/italic markers.
+
+    Args:
+        text: Plain text to wrap
+        bold: Whether to apply bold
+        italic: Whether to apply italic
+
+    Returns:
+        Text wrapped with appropriate markdown markers
+    """
+    if bold and italic:
+        return f"***{text}***"
+    elif bold:
+        return f"**{text}**"
+    elif italic:
+        return f"*{text}*"
+    return text
+
+
+def format_hyperlink_md(text: str, url: str, bold: bool, italic: bool) -> str:
+    """Build a markdown hyperlink with optional bold/italic formatting.
+
+    Args:
+        text: Display text for the link
+        url: URL for the link
+        bold: Whether the link text should be bold
+        italic: Whether the link text should be italic
+
+    Returns:
+        Markdown hyperlink string like [**text**](url)
+    """
+    escaped_text = escape_markdown_link_text(text)
+    encoded_url = encode_url_for_markdown(url)
+    formatted_text = wrap_formatting(escaped_text, bold, italic)
+    return f"[{formatted_text}]({encoded_url})"
 
 
 def generate_block_id(index: int) -> str:
@@ -427,46 +463,51 @@ def extract_paragraph_accept_all(
             if not text:
                 continue
 
-            encoded_url = encode_url_for_markdown(url)
-            escaped_text = escape_markdown_link_text(text)
-
-            if is_bold and is_italic:
-                link_md = f"[***{escaped_text}***]({encoded_url})"
-            elif is_bold:
-                link_md = f"[**{escaped_text}**]({encoded_url})"
-            elif is_italic:
-                link_md = f"[*{escaped_text}*]({encoded_url})"
-            else:
-                link_md = f"[{escaped_text}]({encoded_url})"
+            link_md = format_hyperlink_md(text, url, is_bold, is_italic)
 
             markdown_parts.append(link_md)
+
+            inline_formatting.append({
+                "type": "hyperlink",
+                "start": plain_text_position,
+                "end": plain_text_position + len(text),
+                "url": url
+            })
+
             plain_text_position += len(text)
 
         elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
-            # Regular run
+            # Regular run — iterate all children to catch w:br
             text_parts = []
-            for t_elem in child.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
-                if t_elem.text:
-                    text_parts.append(t_elem.text)
+            for run_child in child:
+                run_child_tag = run_child.tag
+                if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
+                    if run_child.text:
+                        text_parts.append(run_child.text)
+                elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
+                    text_parts.append('\n')
 
-            if text_parts:
-                run_text = "".join(text_parts)
-                markdown_parts.append(run_text)
+            text = "".join(text_parts)
+            if not text:
+                continue
 
-                rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
-                if rPr is not None:
-                    is_bold = rPr.find(f'{{{WORDPROCESSINGML_NS}}}b') is not None
-                    is_italic = rPr.find(f'{{{WORDPROCESSINGML_NS}}}i') is not None
+            rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+            is_bold = is_formatting_enabled(rPr, 'b')
+            is_italic = is_formatting_enabled(rPr, 'i')
+            is_underline = is_formatting_enabled(rPr, 'u')
 
-                    if is_bold or is_italic:
-                        inline_formatting.append({
-                            'start': plain_text_position,
-                            'end': plain_text_position + len(run_text),
-                            'bold': is_bold,
-                            'italic': is_italic,
-                        })
+            markdown_text = wrap_formatting(text, is_bold, is_italic)
 
-                plain_text_position += len(run_text)
+            if is_underline:
+                inline_formatting.append({
+                    "type": "underline",
+                    "start": plain_text_position,
+                    "end": plain_text_position + len(text),
+                    "underline": True
+                })
+
+            markdown_parts.append(markdown_text)
+            plain_text_position += len(text)
 
     markdown_content = "".join(markdown_parts)
     return (
@@ -566,17 +607,7 @@ def extract_paragraph_with_track_changes(
             if not text:
                 continue
 
-            encoded_url = encode_url_for_markdown(url)
-            escaped_text = escape_markdown_link_text(text)
-
-            if is_bold and is_italic:
-                link_md = f"[***{escaped_text}***]({encoded_url})"
-            elif is_bold:
-                link_md = f"[**{escaped_text}**]({encoded_url})"
-            elif is_italic:
-                link_md = f"[*{escaped_text}*]({encoded_url})"
-            else:
-                link_md = f"[{escaped_text}]({encoded_url})"
+            link_md = format_hyperlink_md(text, url, is_bold, is_italic)
 
             markdown_parts.append(link_md)
 
@@ -609,13 +640,7 @@ def extract_paragraph_with_track_changes(
             is_italic = is_formatting_enabled(rPr, 'i')
             is_underline = is_formatting_enabled(rPr, 'u')
 
-            markdown_text = text
-            if is_bold and is_italic:
-                markdown_text = f"***{text}***"
-            elif is_bold:
-                markdown_text = f"**{text}**"
-            elif is_italic:
-                markdown_text = f"*{text}*"
+            markdown_text = wrap_formatting(text, is_bold, is_italic)
 
             if is_underline:
                 inline_formatting.append({
@@ -681,22 +706,7 @@ def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str
                 # Empty hyperlink text, skip
                 continue
 
-            # Encode URL for markdown
-            encoded_url = encode_url_for_markdown(url)
-
-            # Escape special characters in link text that would break markdown
-            escaped_text = escape_markdown_link_text(text)
-
-            # Build markdown link with optional bold/italic
-            # We put formatting inside the link text: [**text**](url)
-            if is_bold and is_italic:
-                link_md = f"[***{escaped_text}***]({encoded_url})"
-            elif is_bold:
-                link_md = f"[**{escaped_text}**]({encoded_url})"
-            elif is_italic:
-                link_md = f"[*{escaped_text}*]({encoded_url})"
-            else:
-                link_md = f"[{escaped_text}]({encoded_url})"
+            link_md = format_hyperlink_md(text, url, is_bold, is_italic)
 
             markdown_parts.append(link_md)
 
@@ -735,14 +745,7 @@ def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str
             is_italic = is_formatting_enabled(rPr, 'i')
             is_underline = is_formatting_enabled(rPr, 'u')
 
-            # Build markdown with bold/italic markers
-            markdown_text = text
-            if is_bold and is_italic:
-                markdown_text = f"***{text}***"
-            elif is_bold:
-                markdown_text = f"**{text}**"
-            elif is_italic:
-                markdown_text = f"*{text}*"
+            markdown_text = wrap_formatting(text, is_bold, is_italic)
 
             # Record underline in inline_formatting
             if is_underline:
@@ -834,11 +837,74 @@ def escape_cell_content_for_gfm(text: str) -> str:
     return result
 
 
-def table_to_gfm(table: Any) -> str:
+def _extract_cell_text_with_formatting(cell: Any, doc_part: Any = None) -> str:
+    """Extract cell text with inline formatting (bold, italic) and hyperlinks as markdown.
+
+    Args:
+        cell: python-docx table cell object
+        doc_part: Document part for resolving hyperlink relationships
+
+    Returns:
+        Cell text with markdown formatting markers
+    """
+    if not cell.paragraphs:
+        return ""
+
+    parts = []
+    for paragraph in cell.paragraphs:
+        para_elem = paragraph._element
+        para_parts: list[str] = []
+
+        for child in para_elem:
+            tag = child.tag
+            if tag == f'{{{WORDPROCESSINGML_NS}}}hyperlink':
+                if doc_part is None:
+                    text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                    if text:
+                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                    continue
+
+                url = get_hyperlink_url(child, doc_part)
+                if url is None:
+                    text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                    if text:
+                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                    continue
+
+                text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
+                if text:
+                    para_parts.append(format_hyperlink_md(text, url, is_bold, is_italic))
+
+            elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+                text_parts = []
+                for run_child in child:
+                    run_child_tag = run_child.tag
+                    if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
+                        if run_child.text:
+                            text_parts.append(run_child.text)
+
+                text = "".join(text_parts)
+                if not text:
+                    continue
+
+                rPr = child.find(f'{{{WORDPROCESSINGML_NS}}}rPr')
+                is_bold = is_formatting_enabled(rPr, 'b')
+                is_italic = is_formatting_enabled(rPr, 'i')
+
+                para_parts.append(wrap_formatting(text, is_bold, is_italic))
+
+        if para_parts:
+            parts.append("".join(para_parts))
+
+    return " ".join(parts).strip()
+
+
+def table_to_gfm(table: Any, doc_part: Any = None) -> str:
     """Convert a python-docx table to GFM pipe table syntax.
 
     Args:
         table: python-docx Table object
+        doc_part: Document part for resolving hyperlink relationships
 
     Returns:
         GFM pipe table markdown string
@@ -851,8 +917,9 @@ def table_to_gfm(table: Any) -> str:
     for row_idx, row in enumerate(table.rows):
         cells = []
         for cell in row.cells:
-            # Get cell text, stripping whitespace, and escape special characters
-            cell_text = escape_cell_content_for_gfm(cell.text.strip())
+            # Extract text with inline formatting, then escape for GFM
+            cell_text = _extract_cell_text_with_formatting(cell, doc_part)
+            cell_text = escape_cell_content_for_gfm(cell_text)
             cells.append(cell_text)
 
         # Create pipe-separated row
@@ -863,13 +930,81 @@ def table_to_gfm(table: Any) -> str:
         if row_idx == 0:
             # Create separator with alignment indicators
             separator_cells = []
-            for i, _ in enumerate(cells):
+            for i in range(len(cells)):
                 alignment = alignments[i] if i < len(alignments) else "left"
                 separator_cells.append(alignment_to_gfm_separator(alignment))
             separator_line = "| " + " | ".join(separator_cells) + " |"
             rows.append(separator_line)
 
     return "\n".join(rows)
+
+
+def extract_merged_cells(table: Any) -> list[dict[str, int]]:
+    """Detect merged cells in a table and return merge regions.
+
+    Detects horizontal merges via gridSpan and vertical merges via vMerge.
+    Uses raw XML tc elements to avoid python-docx's merged cell aliasing.
+
+    Args:
+        table: python-docx Table object
+
+    Returns:
+        List of merge region dicts with start_row, start_col, row_span, col_span
+    """
+    num_rows = len(table.rows)
+    if num_rows == 0:
+        return []
+
+    merged_cells: list[dict[str, int]] = []
+
+    # Build a grid of actual tc elements from each tr
+    # python-docx's table.cell() returns the primary cell for merged regions,
+    # so we iterate raw XML to get the actual tc elements per row.
+    for row_idx in range(num_rows):
+        tr = table.rows[row_idx]._tr
+        tcs = tr.findall(qn('w:tc'))
+        for col_idx, tc in enumerate(tcs):
+            tcPr = tc.find(qn('w:tcPr'))
+
+            # Check horizontal span (gridSpan)
+            col_span = 1
+            if tcPr is not None:
+                gridSpan = tcPr.find(qn('w:gridSpan'))
+                if gridSpan is not None:
+                    col_span = int(gridSpan.get(qn('w:val'), '1'))
+
+            # Check if this is a vertical merge start (vMerge=restart)
+            row_span = 1
+            if tcPr is not None:
+                vMerge = tcPr.find(qn('w:vMerge'))
+                if vMerge is not None:
+                    val = vMerge.get(qn('w:val'))
+                    if val == 'restart':
+                        # Count continuation cells below by checking raw tc elements
+                        for check_row in range(row_idx + 1, num_rows):
+                            check_tr = table.rows[check_row]._tr
+                            check_tcs = check_tr.findall(qn('w:tc'))
+                            if col_idx < len(check_tcs):
+                                check_tcPr = check_tcs[col_idx].find(qn('w:tcPr'))
+                                if check_tcPr is not None:
+                                    check_vMerge = check_tcPr.find(qn('w:vMerge'))
+                                    if check_vMerge is not None and check_vMerge.get(qn('w:val')) is None:
+                                        row_span += 1
+                                        continue
+                            break
+                    elif val is None:
+                        # This is a continuation cell — skip it
+                        continue
+
+            if col_span > 1 or row_span > 1:
+                merged_cells.append({
+                    "start_row": row_idx,
+                    "start_col": col_idx,
+                    "row_span": row_span,
+                    "col_span": col_span,
+                })
+
+    return merged_cells
 
 
 def extract_table_metadata(table: Any, table_index: int) -> dict[str, Any]:
@@ -909,13 +1044,37 @@ def extract_table_metadata(table: Any, table_index: int) -> dict[str, Any]:
     # Extract column alignments
     column_alignments = get_column_alignments(table)
 
-    return {
+    # Extract header row count
+    header_rows = 0
+    for row in table.rows:
+        trPr = row._tr.find(qn('w:trPr'))
+        if trPr is not None:
+            tblHeader = trPr.find(qn('w:tblHeader'))
+            if tblHeader is not None:
+                val = tblHeader.get(qn('w:val'))
+                if val is None or val.lower() not in ('0', 'false'):
+                    header_rows += 1
+                    continue
+        break  # Header rows must be contiguous from top
+    # GFM always has at least 1 header row
+    header_rows = max(header_rows, 1)
+
+    # Extract merged cell regions
+    merged = extract_merged_cells(table)
+
+    result: dict[str, Any] = {
         "rows": num_rows,
         "cols": num_cols,
         "cells": cells,
         "column_alignments": column_alignments,
-        "docx_table_index": table_index
+        "docx_table_index": table_index,
+        "header_rows": header_rows,
     }
+
+    if merged:
+        result["merged_cells"] = merged
+
+    return result
 
 
 def _process_paragraph(
@@ -1109,7 +1268,7 @@ def extract_blocks(
             para_index += 1
 
             # Reset list counters for non-list content
-            if block.type not in ("list",):
+            if block.type != "list":
                 list_number_counter = 0
                 previous_list_type = None
 
@@ -1118,7 +1277,7 @@ def extract_blocks(
             table = Table(child, doc)
 
             # Convert table to GFM markdown
-            markdown_content = table_to_gfm(table)
+            markdown_content = table_to_gfm(table, doc.part)
 
             # Extract table metadata for structure.json
             table_metadata = extract_table_metadata(table, table_index)
@@ -1152,6 +1311,58 @@ def extract_blocks(
     return blocks, image_data
 
 
+def extract_cell_shading(cell: Any) -> str | None:
+    """Extract background color from a cell's tcPr/shd element.
+
+    Args:
+        cell: python-docx table cell object
+
+    Returns:
+        Hex color string like 'D9E2F3' or None if no shading
+    """
+    tc = cell._tc
+    tcPr = tc.find(qn('w:tcPr'))
+    if tcPr is None:
+        return None
+    shd = tcPr.find(qn('w:shd'))
+    if shd is None:
+        return None
+    fill = shd.get(qn('w:fill'))
+    if fill and fill.upper() != 'AUTO':
+        return fill.upper()
+    return None
+
+
+def extract_cell_borders(cell: Any) -> dict[str, dict[str, Any]] | None:
+    """Extract border styles from all four sides of a cell.
+
+    Args:
+        cell: python-docx table cell object
+
+    Returns:
+        Dictionary with border data per side, or None if no borders
+    """
+    tc = cell._tc
+    tcPr = tc.find(qn('w:tcPr'))
+    if tcPr is None:
+        return None
+    tcBorders = tcPr.find(qn('w:tcBorders'))
+    if tcBorders is None:
+        return None
+    borders: dict[str, dict[str, Any]] = {}
+    for side in ['top', 'bottom', 'left', 'right']:
+        border_elem = tcBorders.find(qn(f'w:{side}'))
+        if border_elem is not None:
+            val = border_elem.get(qn('w:val'))
+            if val and val != 'nil':
+                borders[side] = {
+                    'style': val,
+                    'width': int(border_elem.get(qn('w:sz'), '0')),
+                    'color': border_elem.get(qn('w:color'), 'auto'),
+                }
+    return borders if borders else None
+
+
 def extract_table_formatting(table: Any) -> dict[str, Any]:
     """Extract formatting information from a table.
 
@@ -1159,9 +1370,10 @@ def extract_table_formatting(table: Any) -> dict[str, Any]:
         table: python-docx Table object
 
     Returns:
-        Dictionary with table formatting: column_widths, table_alignment, table_style
+        Dictionary with table formatting: column_widths, table_alignment,
+        table_style, cell_styles
     """
-    from docx.shared import Inches, Twips
+    from docx.shared import Inches
 
     # Extract column widths
     column_widths: list[float] = []
@@ -1201,11 +1413,33 @@ def extract_table_formatting(table: Any) -> dict[str, Any]:
     if table.style:
         table_style_name = table.style.name
 
-    return {
+    # Extract cell-level styles (shading and borders)
+    cell_styles: dict[str, dict[str, Any]] = {}
+    for row_idx, row in enumerate(table.rows):
+        for col_idx, cell in enumerate(row.cells):
+            cell_data: dict[str, Any] = {}
+
+            shading = extract_cell_shading(cell)
+            if shading:
+                cell_data["background_color"] = shading
+
+            borders = extract_cell_borders(cell)
+            if borders:
+                cell_data["borders"] = borders
+
+            if cell_data:
+                cell_styles[f"{row_idx},{col_idx}"] = cell_data
+
+    result: dict[str, Any] = {
         "column_widths": column_widths,
         "table_alignment": table_alignment,
-        "table_style": table_style_name
+        "table_style": table_style_name,
     }
+
+    if cell_styles:
+        result["cell_styles"] = cell_styles
+
+    return result
 
 
 def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
@@ -1223,9 +1457,6 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
 
     doc = Document(docx_path)
     styles: list[Style] = []
-
-    # Create a mapping from block_id to block for quick lookup
-    block_map = {block.id: block for block in blocks}
 
     # Iterate over document body in order to match blocks correctly
     body = doc.element.body

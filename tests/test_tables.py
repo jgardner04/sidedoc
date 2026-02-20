@@ -13,7 +13,24 @@ from typing import Any
 from docx import Document
 
 from sidedoc.extract import extract_blocks, blocks_to_markdown, extract_styles
+from sidedoc.models import Style
 from sidedoc.reconstruct import parse_markdown_to_blocks, create_docx_from_blocks
+
+
+def _build_styles_dict(styles: list[Style]) -> dict[str, Any]:
+    """Build a styles dict from a list of Style objects for use in reconstruction."""
+    styles_dict: dict[str, Any] = {"block_styles": {}}
+    for style in styles:
+        style_data: dict[str, Any] = {
+            "docx_style": style.docx_style,
+            "font_name": style.font_name,
+            "font_size": style.font_size,
+            "alignment": style.alignment,
+        }
+        if style.table_formatting:
+            style_data["table_formatting"] = style.table_formatting
+        styles_dict["block_styles"][style.block_id] = style_data
+    return styles_dict
 
 
 # ============================================================================
@@ -706,3 +723,1371 @@ def test_parse_markdown_to_blocks_rejects_oversized_table() -> None:
     with patch("sidedoc.reconstruct.MAX_TABLE_COLS", 1):
         with pytest.raises(ValueError, match="too many columns"):
             parse_markdown_to_blocks(markdown)
+
+
+# ============================================================================
+# Step 0: Fix package.py serialization bug
+# ============================================================================
+
+
+def test_package_serializes_table_metadata_in_structure() -> None:
+    """Test that _build_metadata includes table_metadata in structure.json."""
+    import tempfile
+    from sidedoc.package import create_sidedoc_directory
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, image_data = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "test.sidedoc"
+        create_sidedoc_directory(
+            str(output_path), blocks_to_markdown(blocks), blocks, styles, str(fixture_path)
+        )
+
+        # Read back structure.json
+        structure = json.loads((output_path / "structure.json").read_text())
+        table_blocks_in_structure = [
+            b for b in structure["blocks"] if b["type"] == "table"
+        ]
+        assert len(table_blocks_in_structure) >= 1
+        assert table_blocks_in_structure[0]["table_metadata"] is not None
+        assert "rows" in table_blocks_in_structure[0]["table_metadata"]
+        assert "cols" in table_blocks_in_structure[0]["table_metadata"]
+
+
+def test_package_serializes_table_formatting_in_styles() -> None:
+    """Test that _build_metadata includes table_formatting in styles.json."""
+    import tempfile
+    from sidedoc.package import create_sidedoc_directory
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, image_data = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "test.sidedoc"
+        create_sidedoc_directory(
+            str(output_path), blocks_to_markdown(blocks), blocks, styles, str(fixture_path)
+        )
+
+        # Read back styles.json
+        styles_data = json.loads((output_path / "styles.json").read_text())
+
+        # Find the table block's style
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1
+        table_block_id = table_blocks_list[0].id
+
+        assert table_block_id in styles_data["block_styles"]
+        table_style = styles_data["block_styles"][table_block_id]
+        assert "table_formatting" in table_style
+        assert table_style["table_formatting"] is not None
+        assert "column_widths" in table_style["table_formatting"]
+
+
+# ============================================================================
+# US-T09: Create formatted table test fixture
+# ============================================================================
+
+
+def test_tables_formatted_fixture_exists() -> None:
+    """Verify tables_formatted.docx fixture exists and has expected structure."""
+    from docx.oxml.ns import qn
+
+    fixtures_dir = Path("tests/fixtures")
+    fixture_path = fixtures_dir / "tables_formatted.docx"
+
+    assert fixture_path.exists(), "tables_formatted.docx should exist"
+
+    doc = Document(str(fixture_path))
+    assert len(doc.tables) >= 1, "Document should have at least one table"
+
+    table = doc.tables[0]
+    assert len(table.rows) == 4, "Table should have 4 rows (header + 3 data rows)"
+    assert len(table.columns) == 3, "Table should have 3 columns"
+
+    # Verify header row has shading (background color)
+    header_cell = table.cell(0, 0)
+    tcPr = header_cell._tc.find(qn('w:tcPr'))
+    assert tcPr is not None, "Header cell should have tcPr"
+    shd = tcPr.find(qn('w:shd'))
+    assert shd is not None, "Header cell should have shading"
+    fill = shd.get(qn('w:fill'))
+    assert fill is not None, "Header cell shading should have fill color"
+
+    # Verify header cell has borders
+    tcBorders = tcPr.find(qn('w:tcBorders'))
+    assert tcBorders is not None, "Header cell should have borders"
+
+
+# ============================================================================
+# US-T10: Extract cell background colors
+# ============================================================================
+
+
+def test_extract_cell_background_colors() -> None:
+    """Test that cell background colors are extracted into cell_styles."""
+    fixture_path = Path("tests/fixtures/tables_formatted.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    table_blocks_list = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks_list) >= 1
+    table_block = table_blocks_list[0]
+
+    table_styles = [s for s in styles if s.block_id == table_block.id]
+    assert len(table_styles) == 1
+    table_style = table_styles[0]
+
+    assert table_style.table_formatting is not None
+    assert "cell_styles" in table_style.table_formatting, \
+        "table_formatting should have cell_styles"
+
+    cell_styles = table_style.table_formatting["cell_styles"]
+    # Header row cells should have background color
+    assert "0,0" in cell_styles, "Header cell (0,0) should have styling"
+    assert "background_color" in cell_styles["0,0"], \
+        "Header cell should have background_color"
+
+
+def test_extract_cell_shading_only_stores_non_default() -> None:
+    """Test that cell_styles only stores cells with non-default formatting.
+
+    Cells without any shading or borders are omitted from cell_styles.
+    In our formatted fixture, all cells have borders, so we test with the
+    simple fixture which has no cell-level formatting.
+    """
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    table_blocks_list = [b for b in blocks if b.type == "table"]
+    table_style = [s for s in styles if s.block_id == table_blocks_list[0].id][0]
+
+    # Simple table has no cell-level formatting, so cell_styles should be absent
+    assert "cell_styles" not in table_style.table_formatting or \
+        len(table_style.table_formatting.get("cell_styles", {})) == 0, \
+        "Simple table should have no cell_styles"
+
+
+# ============================================================================
+# US-T12: Extract cell border styles
+# ============================================================================
+
+
+def test_extract_cell_border_styles() -> None:
+    """Test that cell border styles are extracted into cell_styles."""
+    fixture_path = Path("tests/fixtures/tables_formatted.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    table_blocks_list = [b for b in blocks if b.type == "table"]
+    table_style = [s for s in styles if s.block_id == table_blocks_list[0].id][0]
+
+    cell_styles = table_style.table_formatting["cell_styles"]
+    # Header cells should have borders
+    assert "0,0" in cell_styles
+    assert "borders" in cell_styles["0,0"], "Header cell should have border data"
+
+    borders = cell_styles["0,0"]["borders"]
+    # Should have at least one border side
+    assert any(side in borders for side in ["top", "bottom", "left", "right"]), \
+        "Header cell should have at least one border side"
+
+    # Each border should have style, width, color
+    for side, border_data in borders.items():
+        assert "style" in border_data, f"{side} border should have style"
+        assert "width" in border_data, f"{side} border should have width"
+        assert "color" in border_data, f"{side} border should have color"
+
+
+# ============================================================================
+# US-T11: Apply cell background colors during reconstruction
+# ============================================================================
+
+
+def test_reconstruct_applies_cell_background_colors() -> None:
+    """Test that cell background colors from styles are applied during reconstruction."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Role |
+| --- | --- |
+| Alice | Engineer |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 2,
+                "cols": 2,
+                "cells": [],
+                "docx_table_index": 0,
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {
+        "block_styles": {
+            "block-0": {
+                "table_formatting": {
+                    "column_widths": [2.0, 2.0],
+                    "table_alignment": "left",
+                    "cell_styles": {
+                        "0,0": {"background_color": "D9E2F3"},
+                        "0,1": {"background_color": "D9E2F3"},
+                    },
+                }
+            }
+        }
+    }
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    assert len(doc.tables) >= 1
+
+    table = doc.tables[0]
+    # Check header cells have shading
+    cell_0_0 = table.cell(0, 0)
+    tcPr = cell_0_0._tc.find(qn('w:tcPr'))
+    assert tcPr is not None, "Cell should have tcPr"
+    shd = tcPr.find(qn('w:shd'))
+    assert shd is not None, "Cell should have shading"
+    assert shd.get(qn('w:fill')) == 'D9E2F3', "Cell should have correct fill color"
+
+    # Data row cell should NOT have shading
+    cell_1_0 = table.cell(1, 0)
+    tcPr_data = cell_1_0._tc.find(qn('w:tcPr'))
+    if tcPr_data is not None:
+        shd_data = tcPr_data.find(qn('w:shd'))
+        assert shd_data is None or shd_data.get(qn('w:fill')) in (None, 'auto'), \
+            "Data cell should not have shading"
+
+
+# ============================================================================
+# US-T13: Apply cell borders during reconstruction
+# ============================================================================
+
+
+def test_reconstruct_applies_cell_borders() -> None:
+    """Test that cell borders from styles are applied during reconstruction."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Role |
+| --- | --- |
+| Alice | Engineer |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 2,
+                "cols": 2,
+                "cells": [],
+                "docx_table_index": 0,
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {
+        "block_styles": {
+            "block-0": {
+                "table_formatting": {
+                    "column_widths": [2.0, 2.0],
+                    "table_alignment": "left",
+                    "cell_styles": {
+                        "0,0": {
+                            "borders": {
+                                "top": {"style": "single", "width": 8, "color": "4472C4"},
+                                "bottom": {"style": "single", "width": 8, "color": "4472C4"},
+                            }
+                        },
+                    },
+                }
+            }
+        }
+    }
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    assert len(doc.tables) >= 1
+
+    table = doc.tables[0]
+    cell_0_0 = table.cell(0, 0)
+    tcPr = cell_0_0._tc.find(qn('w:tcPr'))
+    assert tcPr is not None, "Cell should have tcPr"
+    tcBorders = tcPr.find(qn('w:tcBorders'))
+    assert tcBorders is not None, "Cell should have borders"
+
+    top_border = tcBorders.find(qn('w:top'))
+    assert top_border is not None, "Cell should have top border"
+    assert top_border.get(qn('w:val')) == 'single'
+    assert top_border.get(qn('w:color')) == '4472C4'
+
+
+def test_formatted_table_roundtrip() -> None:
+    """Test that formatted table survives extract -> reconstruct roundtrip."""
+    from docx.oxml.ns import qn
+
+    fixture_path = Path("tests/fixtures/tables_formatted.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    # Build styles dict for reconstruction
+    styles_dict = _build_styles_dict(styles)
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+
+    # Verify table exists and has shading on header
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    cell_0_0 = table.cell(0, 0)
+    tcPr = cell_0_0._tc.find(qn('w:tcPr'))
+    assert tcPr is not None
+    shd = tcPr.find(qn('w:shd'))
+    assert shd is not None, "Header cell should have shading after roundtrip"
+    assert shd.get(qn('w:fill')) == 'D9E2F3'
+
+
+# ============================================================================
+# US-T14: Sync cell content changes to docx
+# ============================================================================
+
+
+def test_sync_table_cell_edit_preserves_formatting() -> None:
+    """Test that editing a cell during sync preserves cell formatting."""
+    import tempfile
+    from docx.oxml.ns import qn
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_formatted.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    # Build styles dict
+    styles_dict = _build_styles_dict(styles)
+
+    # Generate markdown, then edit a cell
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace("$1,200,000", "$1,500,000")
+    assert modified_md != original_md, "Content should be different after edit"
+
+    # Parse new blocks and match
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+
+        table = doc.tables[0]
+        # Verify the edit took effect
+        all_cell_text = [
+            table.cell(r, c).text
+            for r in range(len(table.rows))
+            for c in range(len(table.columns))
+        ]
+        assert "$1,500,000" in all_cell_text, "Edited cell should have new value"
+
+        # Verify formatting preserved: header should still have shading
+        cell_0_0 = table.cell(0, 0)
+        tcPr = cell_0_0._tc.find(qn('w:tcPr'))
+        assert tcPr is not None
+        shd = tcPr.find(qn('w:shd'))
+        assert shd is not None, "Header cell should still have shading after sync"
+        assert shd.get(qn('w:fill')) == 'D9E2F3'
+
+
+# ============================================================================
+# US-T15: Inline formatting in table cells
+# ============================================================================
+
+
+def test_extract_inline_formatting_in_cells() -> None:
+    """Test that bold/italic in cell text is extracted as markdown."""
+    import tempfile
+    from docx import Document as DocxDocument
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc = DocxDocument()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Header"
+        table.cell(0, 1).text = "Value"
+        # Add bold text in a cell
+        cell = table.cell(1, 0)
+        cell.text = ""  # Clear default paragraph
+        p = cell.paragraphs[0]
+        run = p.add_run("bold text")
+        run.bold = True
+        table.cell(1, 1).text = "normal"
+
+        test_path = Path(tmp_dir) / "test_inline.docx"
+        doc.save(str(test_path))
+
+        blocks, _ = extract_blocks(str(test_path))
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1
+
+        content = table_blocks_list[0].content
+        # Bold should be represented as **bold text** in the GFM
+        assert "**bold text**" in content, \
+            f"Bold text should be wrapped in ** markers, got: {content}"
+
+
+def test_reconstruct_inline_formatting_in_cells() -> None:
+    """Test that markdown formatting in cells creates styled runs in docx."""
+    from sidedoc.models import Block
+
+    table_content = """| Header | Value |
+| --- | --- |
+| **bold** | *italic* |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 2,
+                "cols": 2,
+                "cells": [],
+                "docx_table_index": 0,
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles_dict)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+
+    # Check bold cell
+    cell_1_0 = table.cell(1, 0)
+    assert cell_1_0.text.strip() == "bold", \
+        f"Cell text should be 'bold', got '{cell_1_0.text.strip()}'"
+    has_bold = any(run.bold for run in cell_1_0.paragraphs[0].runs)
+    assert has_bold, "Cell should have bold formatting"
+
+    # Check italic cell
+    cell_1_1 = table.cell(1, 1)
+    assert cell_1_1.text.strip() == "italic", \
+        f"Cell text should be 'italic', got '{cell_1_1.text.strip()}'"
+    has_italic = any(run.italic for run in cell_1_1.paragraphs[0].runs)
+    assert has_italic, "Cell should have italic formatting"
+
+
+# ============================================================================
+# US-T16: Add rows to tables via markdown
+# ============================================================================
+
+
+def test_sync_add_row_to_table() -> None:
+    """Test that adding a row in GFM adds row in synced docx."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    # Add a row to the table
+    original_md = blocks_to_markdown(blocks)
+    # Add a new row after the last data row
+    modified_md = original_md.replace(
+        "| Bob | Designer | 2024-02-01 |",
+        "| Bob | Designer | 2024-02-01 |\n| Charlie | Manager | 2024-03-15 |"
+    )
+    assert "Charlie" in modified_md
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+        table = doc.tables[0]
+        assert len(table.rows) == 4, f"Should have 4 rows after adding, got {len(table.rows)}"
+        assert table.cell(3, 0).text == "Charlie"
+        assert table.cell(3, 1).text == "Manager"
+
+
+# ============================================================================
+# US-T17: Remove rows from tables via markdown
+# ============================================================================
+
+
+def test_sync_remove_row_from_table() -> None:
+    """Test that removing a row in GFM removes row in synced docx."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    # Remove Bob's row
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace("| Bob | Designer | 2024-02-01 |\n", "")
+    assert "Bob" not in modified_md
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+        table = doc.tables[0]
+        assert len(table.rows) == 2, f"Should have 2 rows after removing, got {len(table.rows)}"
+        assert table.cell(0, 0).text == "Name"  # Header preserved
+        assert table.cell(1, 0).text == "Alice"  # Remaining row preserved
+
+
+# ============================================================================
+# US-T18: Add columns to tables via markdown
+# ============================================================================
+
+
+def test_sync_add_column_to_table() -> None:
+    """Test that adding a column in GFM adds column in synced docx."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    # Add an Email column
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace(
+        "| Name | Role | Start Date |",
+        "| Name | Role | Start Date | Email |"
+    ).replace(
+        "| --- | --- | --- |",
+        "| --- | --- | --- | --- |"
+    ).replace(
+        "| Alice | Engineer | 2024-01-15 |",
+        "| Alice | Engineer | 2024-01-15 | alice@co.com |"
+    ).replace(
+        "| Bob | Designer | 2024-02-01 |",
+        "| Bob | Designer | 2024-02-01 | bob@co.com |"
+    )
+    assert "Email" in modified_md
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+        table = doc.tables[0]
+        assert len(table.columns) == 4, f"Should have 4 columns after adding, got {len(table.columns)}"
+        assert table.cell(0, 3).text == "Email"
+        assert table.cell(1, 3).text == "alice@co.com"
+
+
+# ============================================================================
+# US-T19: Remove columns from tables via markdown
+# ============================================================================
+
+
+def test_sync_remove_column_from_table() -> None:
+    """Test that removing a column in GFM removes column in synced docx."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    # Remove the "Start Date" column (3rd column)
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace(
+        "| Name | Role | Start Date |",
+        "| Name | Role |"
+    ).replace(
+        "| --- | --- | --- |",
+        "| --- | --- |"
+    ).replace(
+        "| Alice | Engineer | 2024-01-15 |",
+        "| Alice | Engineer |"
+    ).replace(
+        "| Bob | Designer | 2024-02-01 |",
+        "| Bob | Designer |"
+    )
+    assert "Start Date" not in modified_md
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+        table = doc.tables[0]
+        assert len(table.columns) == 2, f"Should have 2 columns after removing, got {len(table.columns)}"
+        assert table.cell(0, 0).text == "Name"
+        assert table.cell(0, 1).text == "Role"
+
+
+# ============================================================================
+# US-T20: Create merged cells test fixture
+# ============================================================================
+
+
+def test_tables_merged_fixture_exists() -> None:
+    """Verify tables_merged.docx fixture exists and has expected merge structure."""
+    fixtures_dir = Path("tests/fixtures")
+    fixture_path = fixtures_dir / "tables_merged.docx"
+
+    assert fixture_path.exists(), "tables_merged.docx should exist"
+
+    doc = Document(str(fixture_path))
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    assert len(table.rows) == 4
+    assert len(table.columns) == 3
+
+    # Verify horizontal merge: row 0 cells should all reference same tc element
+    assert table.cell(0, 0)._tc is table.cell(0, 1)._tc, \
+        "Row 0, col 0 and col 1 should be merged"
+    assert table.cell(0, 0)._tc is table.cell(0, 2)._tc, \
+        "Row 0, col 0 and col 2 should be merged"
+
+    # Verify vertical merge: rows 2-3, col 0 should reference same tc element
+    assert table.cell(2, 0)._tc is table.cell(3, 0)._tc, \
+        "Row 2, col 0 and row 3, col 0 should be merged"
+
+
+# ============================================================================
+# US-T21: Extract merged cell metadata
+# ============================================================================
+
+
+def test_extract_merged_cells_metadata() -> None:
+    """Test that merged cells are detected and stored in table_metadata."""
+    fixture_path = Path("tests/fixtures/tables_merged.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+
+    table_blocks_list = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks_list) >= 1
+    table_block = table_blocks_list[0]
+
+    assert table_block.table_metadata is not None
+    assert "merged_cells" in table_block.table_metadata, \
+        "table_metadata should have merged_cells"
+
+    merged = table_block.table_metadata["merged_cells"]
+    assert len(merged) >= 2, f"Should have at least 2 merge regions, got {len(merged)}"
+
+    # Check horizontal merge: row 0, cols 0-2 (col_span=3)
+    h_merge = [m for m in merged if m["start_row"] == 0 and m["col_span"] > 1]
+    assert len(h_merge) >= 1, "Should have horizontal merge in row 0"
+    assert h_merge[0]["col_span"] == 3
+
+    # Check vertical merge: rows 2-3, col 0 (row_span=2)
+    v_merge = [m for m in merged if m["start_col"] == 0 and m["row_span"] > 1]
+    assert len(v_merge) >= 1, "Should have vertical merge in col 0"
+    assert v_merge[0]["row_span"] == 2
+
+
+# ============================================================================
+# US-T22: Apply merged cells during reconstruction
+# ============================================================================
+
+
+def test_reconstruct_applies_merged_cells() -> None:
+    """Test that merged_cells from metadata are applied during reconstruction."""
+    from sidedoc.models import Block
+
+    table_content = """| Report Title |  |  |
+| --- | --- | --- |
+| Category | Q1 | Q2 |
+| Revenue | $1M | $1.2M |
+|  | $0.8M | $0.9M |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 4,
+                "cols": 3,
+                "cells": [],
+                "column_alignments": ["left", "left", "left"],
+                "docx_table_index": 0,
+                "merged_cells": [
+                    {"start_row": 0, "start_col": 0, "row_span": 1, "col_span": 3},
+                    {"start_row": 2, "start_col": 0, "row_span": 2, "col_span": 1},
+                ],
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles_dict)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+
+    # Verify horizontal merge: row 0 cells should reference same tc
+    assert table.cell(0, 0)._tc is table.cell(0, 2)._tc, \
+        "Row 0 cells should be merged horizontally"
+
+    # Verify vertical merge: rows 2-3, col 0 should reference same tc
+    assert table.cell(2, 0)._tc is table.cell(3, 0)._tc, \
+        "Rows 2-3, col 0 should be merged vertically"
+
+
+# ============================================================================
+# US-T23: Track header rows in tables
+# ============================================================================
+
+
+def test_extract_header_row_count() -> None:
+    """Test that header rows are detected in table metadata."""
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+
+    table_blocks_list = [b for b in blocks if b.type == "table"]
+    assert len(table_blocks_list) >= 1
+    table_block = table_blocks_list[0]
+
+    assert table_block.table_metadata is not None
+    # Default should be 1 (GFM always has a header row)
+    assert table_block.table_metadata.get("header_rows", 1) >= 1
+
+
+def test_reconstruct_sets_header_rows() -> None:
+    """Test that header rows are set during reconstruction."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Role |
+| --- | --- |
+| Alice | Engineer |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 2,
+                "cols": 2,
+                "cells": [],
+                "docx_table_index": 0,
+                "header_rows": 1,
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    table = doc.tables[0]
+
+    # Check header row has tblHeader element
+    first_row = table.rows[0]
+    trPr = first_row._tr.find(qn('w:trPr'))
+    assert trPr is not None, "First row should have trPr"
+    tblHeader = trPr.find(qn('w:tblHeader'))
+    assert tblHeader is not None, "First row should be marked as header"
+
+
+# ============================================================================
+# US-T25: Handle table edge cases
+# ============================================================================
+
+
+def test_empty_table_extraction() -> None:
+    """Test that a table with only headers is handled gracefully."""
+    import tempfile
+    from docx import Document as DocxDocument
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc = DocxDocument()
+        table = doc.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "Header1"
+        table.cell(0, 1).text = "Header2"
+
+        test_path = Path(tmp_dir) / "test_header_only.docx"
+        doc.save(str(test_path))
+
+        blocks, _ = extract_blocks(str(test_path))
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1, "Should extract header-only table"
+
+        content = table_blocks_list[0].content
+        assert "Header1" in content
+        assert "Header2" in content
+
+
+def test_wide_table_extraction() -> None:
+    """Test that a wide table (15 columns) is extracted correctly."""
+    import tempfile
+    from docx import Document as DocxDocument
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc = DocxDocument()
+        table = doc.add_table(rows=2, cols=15)
+        for col in range(15):
+            table.cell(0, col).text = f"H{col}"
+            table.cell(1, col).text = f"D{col}"
+
+        test_path = Path(tmp_dir) / "test_wide.docx"
+        doc.save(str(test_path))
+
+        blocks, _ = extract_blocks(str(test_path))
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1
+
+        metadata = table_blocks_list[0].table_metadata
+        assert metadata is not None
+        assert metadata["cols"] == 15
+
+
+def test_tall_table_extraction() -> None:
+    """Test that a tall table (100 rows) is extracted efficiently."""
+    import tempfile
+    import time
+    from docx import Document as DocxDocument
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc = DocxDocument()
+        table = doc.add_table(rows=100, cols=3)
+        for row in range(100):
+            for col in range(3):
+                table.cell(row, col).text = f"R{row}C{col}"
+
+        test_path = Path(tmp_dir) / "test_tall.docx"
+        doc.save(str(test_path))
+
+        start = time.time()
+        blocks, _ = extract_blocks(str(test_path))
+        elapsed = time.time() - start
+
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1
+        assert table_blocks_list[0].table_metadata["rows"] == 100
+        assert elapsed < 5.0, f"Extraction took too long: {elapsed:.1f}s"
+
+
+# ============================================================================
+# US-T24: Validate tables in sidedoc
+# ============================================================================
+
+
+def test_validate_detects_table_dimension_mismatch() -> None:
+    """Test that validation catches table dimension mismatches."""
+    import tempfile
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+    from tests.helpers import create_sidedoc_dir
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_path = Path(tmp_dir) / "test.sidedoc"
+        content = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        structure = {
+            "blocks": [{
+                "id": "block-0",
+                "type": "table",
+                "docx_paragraph_index": -1,
+                "content_start": 0,
+                "content_end": len(content),
+                "content_hash": "abc",
+                "level": None,
+                "image_path": None,
+                "inline_formatting": None,
+                "table_metadata": {
+                    "rows": 5,  # Wrong! Content has 2 rows
+                    "cols": 2,
+                    "cells": [],
+                    "column_alignments": ["left", "left"],
+                    "docx_table_index": 0,
+                },
+                "track_changes": None,
+            }]
+        }
+        create_sidedoc_dir(sidedoc_path, content, structure)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["validate", str(sidedoc_path)])
+        # Validation should report a warning about dimension mismatch
+        assert "mismatch" in result.output.lower()
+
+
+# ============================================================================
+# US-T27: Roundtrip integration tests
+# ============================================================================
+
+
+def test_roundtrip_simple_table() -> None:
+    """Roundtrip test: extract -> build for simple tables."""
+    import tempfile
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    assert table.cell(0, 0).text == "Name"
+    assert table.cell(1, 0).text == "Alice"
+    assert table.cell(2, 0).text == "Bob"
+    assert len(table.rows) == 3
+    assert len(table.columns) == 3
+
+
+def test_roundtrip_formatted_table() -> None:
+    """Roundtrip test: extract -> build for formatted tables."""
+    import tempfile
+    from docx.oxml.ns import qn
+
+    fixture_path = Path("tests/fixtures/tables_formatted.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+
+    # Verify shading survived
+    cell_0_0 = table.cell(0, 0)
+    tcPr = cell_0_0._tc.find(qn('w:tcPr'))
+    assert tcPr is not None
+    shd = tcPr.find(qn('w:shd'))
+    assert shd is not None, "Shading should survive roundtrip"
+
+    # Verify borders survived
+    tcBorders = tcPr.find(qn('w:tcBorders'))
+    assert tcBorders is not None, "Borders should survive roundtrip"
+
+
+def test_roundtrip_cell_edit_sync() -> None:
+    """Roundtrip test: extract -> edit -> sync -> build for cell edits."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+
+    styles_dict = _build_styles_dict(styles)
+
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace("Alice", "Alice Smith")
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        doc = Document(str(output_path))
+        assert len(doc.tables) >= 1
+        table = doc.tables[0]
+
+        all_text = [
+            table.cell(r, c).text
+            for r in range(len(table.rows))
+            for c in range(len(table.columns))
+        ]
+        assert "Alice Smith" in all_text
+        assert "Name" in all_text  # Header preserved
+        assert "Bob" in all_text  # Other data preserved
+
+
+# ============================================================================
+# Fix 1: Table dimension pre-validation in create_table_from_gfm
+# ============================================================================
+
+
+def test_create_table_from_gfm_rejects_oversized_rows() -> None:
+    """Test that create_table_from_gfm rejects tables exceeding MAX_TABLE_ROWS."""
+    import pytest
+    from unittest.mock import patch
+    from sidedoc.reconstruct import create_table_from_gfm
+
+    # Build a table with 6 data rows + header = 7 total
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data_rows = "\n".join(f"| R{i} | D{i} |" for i in range(6))
+    table_content = f"{header}\n{sep}\n{data_rows}"
+
+    doc = Document()
+    styles: dict[str, Any] = {"block_styles": {}}
+
+    with patch("sidedoc.reconstruct.MAX_TABLE_ROWS", 3):
+        with pytest.raises(ValueError, match="too many rows"):
+            create_table_from_gfm(doc, table_content, styles, "block-0")
+
+
+def test_create_table_from_gfm_rejects_oversized_cols() -> None:
+    """Test that create_table_from_gfm rejects tables exceeding MAX_TABLE_COLS."""
+    import pytest
+    from unittest.mock import patch
+    from sidedoc.reconstruct import create_table_from_gfm
+
+    # Build a table with 5 columns
+    header = "| A | B | C | D | E |"
+    sep = "| --- | --- | --- | --- | --- |"
+    data = "| 1 | 2 | 3 | 4 | 5 |"
+    table_content = f"{header}\n{sep}\n{data}"
+
+    doc = Document()
+    styles: dict[str, Any] = {"block_styles": {}}
+
+    with patch("sidedoc.reconstruct.MAX_TABLE_COLS", 3):
+        with pytest.raises(ValueError, match="too many columns"):
+            create_table_from_gfm(doc, table_content, styles, "block-0")
+
+
+def test_prevalidation_does_not_call_parse_gfm_table() -> None:
+    """Test that pre-validation rejects before parse_gfm_table is called."""
+    import pytest
+    from unittest.mock import patch, MagicMock
+    from sidedoc.reconstruct import create_table_from_gfm
+
+    # Build a table with 6 data rows + header = 7 total
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data_rows = "\n".join(f"| R{i} | D{i} |" for i in range(6))
+    table_content = f"{header}\n{sep}\n{data_rows}"
+
+    doc = Document()
+    styles: dict[str, Any] = {"block_styles": {}}
+
+    mock_parse = MagicMock()
+
+    with patch("sidedoc.reconstruct.MAX_TABLE_ROWS", 3), \
+         patch("sidedoc.reconstruct.parse_gfm_table", mock_parse):
+        with pytest.raises(ValueError, match="too many rows"):
+            create_table_from_gfm(doc, table_content, styles, "block-0")
+
+    mock_parse.assert_not_called()
+
+
+# ============================================================================
+# Fix 3: CriticMarkup and hyperlinks in table cells
+# ============================================================================
+
+
+def test_reconstruct_table_cell_with_criticmarkup_insertion() -> None:
+    """Test that CriticMarkup insertions in table cells produce w:ins elements."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Status |
+| --- | --- |
+| Alice | {++promoted++} |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={"rows": 2, "cols": 2, "cells": [], "docx_table_index": 0},
+        )
+    ]
+
+    styles: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    cell = table.cell(1, 1)
+
+    # The cell should contain a w:ins element
+    ins_elements = cell._tc.findall(f'.//{{{qn("w:ins").split("}")[0][1:]}}}ins')
+    assert len(ins_elements) >= 1, (
+        f"Cell should contain w:ins element for CriticMarkup insertion. "
+        f"Cell XML: {cell._tc.xml[:300]}"
+    )
+
+
+def test_reconstruct_table_cell_with_criticmarkup_deletion() -> None:
+    """Test that CriticMarkup deletions in table cells produce w:del elements."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Status |
+| --- | --- |
+| Bob | {--demoted--} |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={"rows": 2, "cols": 2, "cells": [], "docx_table_index": 0},
+        )
+    ]
+
+    styles: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    cell = table.cell(1, 1)
+
+    # The cell should contain a w:del element
+    del_elements = cell._tc.findall(f'.//{{{qn("w:del").split("}")[0][1:]}}}del')
+    assert len(del_elements) >= 1, (
+        f"Cell should contain w:del element for CriticMarkup deletion. "
+        f"Cell XML: {cell._tc.xml[:300]}"
+    )
+
+
+def test_reconstruct_table_cell_with_hyperlink() -> None:
+    """Test that hyperlinks in table cells produce w:hyperlink elements."""
+    from docx.oxml.ns import qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Link |
+| --- | --- |
+| Alice | [homepage](https://example.com) |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={"rows": 2, "cols": 2, "cells": [], "docx_table_index": 0},
+        )
+    ]
+
+    styles: dict[str, Any] = {"block_styles": {}}
+    doc = create_docx_from_blocks(blocks, styles)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+    cell = table.cell(1, 1)
+
+    # The cell should contain a w:hyperlink element
+    hyperlink_elements = cell._tc.findall(f'.//{{{qn("w:hyperlink").split("}")[0][1:]}}}hyperlink')
+    assert len(hyperlink_elements) >= 1, (
+        f"Cell should contain w:hyperlink element. "
+        f"Cell XML: {cell._tc.xml[:300]}"
+    )
+
+
+# ============================================================================
+# PR #42 review fixes: Separator line attack, validate DoS, hyperlink extraction
+# ============================================================================
+
+
+def test_separator_line_attack_rejected() -> None:
+    """Test that tables with excessive separator lines are rejected."""
+    import pytest
+    from unittest.mock import patch
+    from sidedoc.reconstruct import validate_gfm_table_dimensions
+
+    # Build a table with 2 data rows but thousands of separator lines
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data = "| X | Y |"
+    # 2 data rows + 2001 separator lines = 2003 total lines
+    lines = [header, sep, data] + [sep] * 2001
+    table_content = "\n".join(lines)
+
+    with pytest.raises(ValueError, match="too many lines"):
+        validate_gfm_table_dimensions(table_content)
+
+
+def test_separator_lines_within_limit_accepted() -> None:
+    """Test that tables within the line limit pass validation."""
+    from sidedoc.reconstruct import validate_gfm_table_dimensions
+
+    header = "| A | B |"
+    sep = "| --- | --- |"
+    data = "| X | Y |"
+    # Small table is fine
+    table_content = f"{header}\n{sep}\n{data}"
+    # Should not raise
+    validate_gfm_table_dimensions(table_content)
+
+
+def test_validate_command_pre_validates_table_dimensions() -> None:
+    """Test that the validate command calls validate_gfm_table_dimensions before parse."""
+    import pytest
+    import tempfile
+    import json
+    from unittest.mock import patch
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_dir = Path(tmp_dir) / "test.sidedoc"
+        sidedoc_dir.mkdir()
+
+        # Create a table with 6 data rows in content.md
+        header = "| A | B |"
+        sep = "| --- | --- |"
+        data_rows = "\n".join(f"| R{i} | D{i} |" for i in range(6))
+        table_content = f"{header}\n{sep}\n{data_rows}"
+
+        content = f"# Heading\n\n{table_content}\n"
+        (sidedoc_dir / "content.md").write_text(content)
+
+        # Build structure.json with a table block pointing at the table content
+        table_start = content.index("|")
+        table_end = len(content.rstrip())
+        structure = {
+            "blocks": [
+                {
+                    "id": "block-0",
+                    "type": "heading",
+                    "content": "# Heading",
+                    "content_start": 0,
+                    "content_end": 9,
+                },
+                {
+                    "id": "block-1",
+                    "type": "table",
+                    "content": table_content,
+                    "content_start": table_start,
+                    "content_end": table_end,
+                    "table_metadata": {
+                        "rows": 7,
+                        "cols": 2,
+                        "cells": [],
+                        "docx_table_index": 0,
+                    },
+                },
+            ]
+        }
+        (sidedoc_dir / "structure.json").write_text(json.dumps(structure))
+        (sidedoc_dir / "styles.json").write_text(json.dumps({"block_styles": {}}))
+
+        runner = CliRunner()
+        # Patch MAX_TABLE_ROWS to 3 so the 6-row table is rejected
+        with patch("sidedoc.cli.validate_gfm_table_dimensions") as mock_validate:
+            mock_validate.side_effect = ValueError("Table has too many rows (7), maximum is 3")
+            result = runner.invoke(cli, ["validate", str(sidedoc_dir)])
+
+        # validate_gfm_table_dimensions should have been called before parse_gfm_table
+        mock_validate.assert_called_once()
+        # The error is caught and reported as a warning (not an unhandled crash)
+        assert "too many rows" in result.output or "unable to parse" in result.output
+
+
+def test_extract_table_cell_hyperlink() -> None:
+    """Test that hyperlinks in table cells are extracted as markdown links."""
+    import tempfile
+    from lxml import etree
+    from docx.oxml.ns import qn as docx_qn
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a docx with a table containing a hyperlink
+        doc = Document()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Name"
+        table.cell(0, 1).text = "Link"
+        table.cell(1, 0).text = "Alice"
+
+        # Manually add a hyperlink to cell (1, 1) via XML
+        cell = table.cell(1, 1)
+        # Clear existing paragraph text
+        paragraph = cell.paragraphs[0]
+        paragraph.clear()
+
+        # Add a relationship for the hyperlink
+        r_id = doc.part.relate_to(
+            "https://example.com",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+            is_external=True,
+        )
+
+        # Build the hyperlink XML
+        hyperlink = etree.SubElement(
+            paragraph._element,
+            docx_qn("w:hyperlink"),
+            {docx_qn("r:id"): r_id},
+        )
+        run = etree.SubElement(hyperlink, docx_qn("w:r"))
+        t_elem = etree.SubElement(run, docx_qn("w:t"))
+        t_elem.text = "homepage"
+
+        test_path = Path(tmp_dir) / "test_hyperlink_table.docx"
+        doc.save(str(test_path))
+
+        # Extract and check
+        blocks, _ = extract_blocks(str(test_path))
+
+        # Find the table block
+        table_blocks = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks) == 1
+
+        # The cell should contain a markdown hyperlink
+        assert "[homepage](https://example.com)" in table_blocks[0].content

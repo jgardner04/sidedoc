@@ -72,6 +72,7 @@ ALIGNMENT_NUMERIC_TO_STRING = {
 # Maximum table dimensions to prevent memory exhaustion from malicious input
 MAX_TABLE_ROWS = 1000
 MAX_TABLE_COLS = 100
+MAX_TABLE_LINES = 2000
 
 # EMU (English Metric Units) conversion constant
 # 1 inch = 914400 EMUs in Office Open XML
@@ -93,6 +94,29 @@ GFM_SEPARATOR_PATTERNS = {
     (False, True): "right",     # ---:
     (True, True): "center",     # :---:
 }
+
+# =============================================================================
+# Cell Formatting Constants
+# =============================================================================
+
+# Valid border styles for cell borders (whitelist for security)
+VALID_BORDER_STYLES = frozenset({
+    'single', 'double', 'dashed', 'dotted', 'thick',
+    'hairline', 'dashSmallGap', 'dotDash', 'dotDotDash',
+    'triple', 'thinThickSmallGap', 'thickThinSmallGap',
+    'thinThickThinSmallGap', 'thinThickMediumGap',
+    'thickThinMediumGap', 'thinThickThinMediumGap',
+    'thinThickLargeGap', 'thickThinLargeGap',
+    'thinThickThinLargeGap', 'wave', 'doubleWave',
+    'dashDotStroked', 'threeDEmboss', 'threeDEngrave',
+    'outset', 'inset', 'nil', 'none',
+})
+
+# Regex for validating hex color values
+HEX_COLOR_PATTERN = r'^[0-9A-Fa-f]{6}$'
+
+# Maximum border width in eighths of a point (12pt)
+MAX_BORDER_WIDTH = 96
 
 # =============================================================================
 # CriticMarkup Patterns

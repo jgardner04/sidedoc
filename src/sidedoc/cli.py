@@ -22,7 +22,7 @@ from sidedoc.constants import (
 from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
 from sidedoc.models import Block
 from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
-from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_blocks
+from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
 from sidedoc.store import SidedocStore, detect_sidedoc_format
 from sidedoc.sync import (
     generate_updated_docx,
@@ -113,6 +113,7 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
                 level=block_data.get("level"),
                 image_path=block_data.get("image_path"),
                 inline_formatting=block_data.get("inline_formatting"),
+                table_metadata=block_data.get("table_metadata"),
             )
         )
     return old_blocks
@@ -328,6 +329,78 @@ def _validate_track_changes(structure: dict, content: str) -> list[str]:
     return warnings
 
 
+def _validate_tables(structure: dict, content: str) -> list[str]:
+    """Validate table blocks in structure.json against content.md.
+
+    Checks:
+    - Table metadata rows/cols match content dimensions
+    - Merged cell regions are within bounds
+
+    Args:
+        structure: Parsed structure.json data
+        content: Content from content.md
+
+    Returns:
+        List of warning messages (empty if no issues)
+    """
+    warnings = []
+
+    for block in structure.get("blocks", []):
+        if block.get("type") != "table":
+            continue
+
+        block_id = block.get("id", "unknown")
+        metadata = block.get("table_metadata")
+        if not metadata:
+            continue
+
+        # Extract table content from content.md
+        start = block.get("content_start", 0)
+        end = block.get("content_end", 0)
+        table_content = content[start:end]
+
+        # Parse GFM to get actual dimensions
+        try:
+            validate_gfm_table_dimensions(table_content)
+            rows, _ = parse_gfm_table(table_content)
+        except ValueError as e:
+            warnings.append(f"Table {block_id}: unable to parse GFM content: {e}")
+            continue
+
+        actual_rows = len(rows)
+        actual_cols = len(rows[0]) if rows else 0
+        expected_rows = metadata.get("rows", 0)
+        expected_cols = metadata.get("cols", 0)
+
+        if actual_rows != expected_rows:
+            warnings.append(
+                f"Table {block_id}: row count mismatch "
+                f"(metadata={expected_rows}, content={actual_rows})"
+            )
+        if actual_cols != expected_cols:
+            warnings.append(
+                f"Table {block_id}: column count mismatch "
+                f"(metadata={expected_cols}, content={actual_cols})"
+            )
+
+        # Validate merged cell regions
+        for merge in metadata.get("merged_cells", []):
+            end_row = merge.get("start_row", 0) + merge.get("row_span", 1) - 1
+            end_col = merge.get("start_col", 0) + merge.get("col_span", 1) - 1
+            if end_row >= expected_rows:
+                warnings.append(
+                    f"Table {block_id}: merged cell exceeds row bounds "
+                    f"(end_row={end_row}, rows={expected_rows})"
+                )
+            if end_col >= expected_cols:
+                warnings.append(
+                    f"Table {block_id}: merged cell exceeds column bounds "
+                    f"(end_col={end_col}, cols={expected_cols})"
+                )
+
+    return warnings
+
+
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 def validate(input_file: str) -> None:
@@ -374,16 +447,19 @@ def validate(input_file: str) -> None:
                     click.echo(f"✗ Invalid JSON in {json_file}: {e}", err=True)
                     sys.exit(EXIT_INVALID_FORMAT)
 
-            # Validate track changes if structure.json is present
+            # Validate track changes and tables if structure.json is present
             if store.has_file("structure.json") and store.has_file("content.md"):
                 content = store.read_text("content.md")
                 structure = store.read_json("structure.json")
-                tc_warnings = _validate_track_changes(structure, content)
 
-                if tc_warnings:
-                    for warning in tc_warnings:
+                tc_warnings = _validate_track_changes(structure, content)
+                table_warnings = _validate_tables(structure, content)
+                all_warnings = tc_warnings + table_warnings
+
+                if all_warnings:
+                    for warning in all_warnings:
                         click.echo(f"⚠ Warning: {warning}", err=True)
-                    click.echo(f"✗ Sidedoc has {len(tc_warnings)} track change issue(s)")
+                    click.echo(f"✗ Sidedoc has {len(all_warnings)} issue(s)")
                     sys.exit(EXIT_INVALID_FORMAT)
 
             click.echo("✓ Sidedoc is valid")

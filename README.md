@@ -2,7 +2,7 @@
 
 An AI-native document format that separates content from formatting, enabling efficient AI interaction with documents while preserving rich formatting for human consumption.
 
-**Status:** ✅ MVP Complete - All features implemented and tested
+**Status:** ✅ MVP Complete with Table, Hyperlink, and Track Changes support
 
 ---
 
@@ -192,9 +192,38 @@ Created: quarterly_report_updated.docx
 | Bulleted lists | `- item` | Single level for MVP |
 | Numbered lists | `1. item` | Single level for MVP |
 | Images | `![alt](path)` | Copied to assets/ |
+| Tables | GFM pipe tables | See Tables section |
 | Track Changes | CriticMarkup | See Track Changes section |
 
 See the [PRD](docs/slidedoc-prd.md) for full details on supported and unsupported elements.
+
+---
+
+## Table Support
+
+Sidedoc extracts Word tables as [GitHub Flavored Markdown](https://github.github.com/gfm/#tables-extension-) pipe tables:
+
+```markdown
+| Department | Q1 Revenue | Q2 Revenue |
+| --- | --- | --- |
+| Sales | $1,200,000 | $1,350,000 |
+| Marketing | $800,000 | $920,000 |
+```
+
+### Features
+
+- **Column alignment:** `:---` (left), `:---:` (center), `---:` (right)
+- **Cell formatting:** Background colors, borders preserved in styles.json
+- **Inline formatting:** Bold, italic, and hyperlinks within cells
+- **Merged cells:** Horizontal and vertical merges detected and restored
+- **Structural edits:** Add/remove rows and columns by editing the markdown
+- **Special characters:** Pipe characters escaped as `\|`
+
+### Limitations
+
+- Nested tables are not supported (rare in Word documents)
+- Formulas are extracted as static text values
+- CriticMarkup (track changes) is supported within table cells
 
 ---
 

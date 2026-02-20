@@ -49,7 +49,7 @@ class Block:
     level: Optional[int] = None  # For headings (1-6)
     image_path: Optional[str] = None  # For images
     inline_formatting: Optional[list[dict[str, Any]]] = None
-    table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, docx_table_index
+    table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
     track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
 
 
@@ -69,7 +69,7 @@ class Style:
     bold: Optional[bool] = None
     italic: Optional[bool] = None
     underline: Optional[bool] = None
-    table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style
+    table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style, cell_styles
 
 
 @dataclass
