@@ -3,9 +3,37 @@
 from pathlib import Path
 from docx import Document
 from docx.shared import Inches
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 # Get the directory where this script is located
 FIXTURES_DIR = Path(__file__).parent
+
+
+def _apply_cell_shading(cell: object, fill_color: str) -> None:
+    """Apply background shading to a cell."""
+    tc = cell._tc  # type: ignore[attr-defined]
+    tcPr = tc.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), fill_color)
+    tcPr.append(shd)
+
+
+def _apply_cell_borders(cell: object, color: str, width: str = '4') -> None:
+    """Apply borders to all four sides of a cell."""
+    tc = cell._tc  # type: ignore[attr-defined]
+    tcPr = tc.get_or_add_tcPr()
+    tcBorders = OxmlElement('w:tcBorders')
+    for side in ['top', 'bottom', 'left', 'right']:
+        border = OxmlElement(f'w:{side}')
+        border.set(qn('w:val'), 'single')
+        border.set(qn('w:sz'), width)
+        border.set(qn('w:color'), color)
+        border.set(qn('w:space'), '0')
+        tcBorders.append(border)
+    tcPr.append(tcBorders)
 
 
 def create_simple_docx() -> None:
@@ -185,9 +213,6 @@ def create_tables_formatted_docx() -> None:
     | Marketing  | $800,000   | $920,000   |   <- Light gray alternating shading
     | Engineering| $950,000   | $1,100,000 |   <- White background
     """
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
-
     doc = Document()
     doc.add_heading("Formatted Table Example", level=1)
     doc.add_paragraph("This document contains a styled table with colors and borders.")
@@ -208,30 +233,6 @@ def create_tables_formatted_docx() -> None:
     for row_idx, row_data in enumerate(data):
         for col_idx, value in enumerate(row_data):
             table.cell(row_idx + 1, col_idx).text = value
-
-    def _apply_cell_shading(cell: object, fill_color: str) -> None:
-        """Apply background shading to a cell."""
-        tc = cell._tc  # type: ignore[attr-defined]
-        tcPr = tc.get_or_add_tcPr()
-        shd = OxmlElement('w:shd')
-        shd.set(qn('w:val'), 'clear')
-        shd.set(qn('w:color'), 'auto')
-        shd.set(qn('w:fill'), fill_color)
-        tcPr.append(shd)
-
-    def _apply_cell_borders(cell: object, color: str, width: str = '4') -> None:
-        """Apply borders to all four sides of a cell."""
-        tc = cell._tc  # type: ignore[attr-defined]
-        tcPr = tc.get_or_add_tcPr()
-        tcBorders = OxmlElement('w:tcBorders')
-        for side in ['top', 'bottom', 'left', 'right']:
-            border = OxmlElement(f'w:{side}')
-            border.set(qn('w:val'), 'single')
-            border.set(qn('w:sz'), width)
-            border.set(qn('w:color'), color)
-            border.set(qn('w:space'), '0')
-            tcBorders.append(border)
-        tcPr.append(tcBorders)
 
     # Apply header row formatting: blue background + accent borders
     for col_idx in range(3):
@@ -339,6 +340,94 @@ def create_complex_docx() -> None:
     print("✓ Created complex.docx")
 
 
+def create_tables_complex_docx() -> None:
+    """Create tables_complex.docx with all table features combined.
+
+    Table structure (5 rows x 4 columns):
+    | Project Status (merged cols 0-1) | Priority | Owner       |  <- Blue header, accent borders, bold, center
+    |----------------------------------|----------|-------------|
+    | **Phase 1**                      | High     | Alice       |  <- White
+    | Completed tasks                  | Medium   | **Bob**     |  <- Alternating gray (F2F2F2)
+    | Summary (merged rows 3-4, col 0) | Low      | *Charlie*   |  <- White
+    | (continuation)                   |          | Dave        |  <- Alternating gray (F2F2F2)
+
+    Mixed column alignments: left, center, right, left
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    doc.add_heading("Complex Table Example", level=1)
+    doc.add_paragraph("This document contains a table with all supported features.")
+
+    table = doc.add_table(rows=5, cols=4)
+
+    # Populate cells
+    data = [
+        ["Project Status", "Phase", "Priority", "Owner"],
+        ["Phase 1", "Design", "High", "Alice"],
+        ["Completed tasks", "Build", "Medium", "Bob"],
+        ["Summary", "Test", "Low", "Charlie"],
+        ["", "Deploy", "", "Dave"],
+    ]
+
+    for row_idx, row_data in enumerate(data):
+        for col_idx, value in enumerate(row_data):
+            table.cell(row_idx, col_idx).text = value
+
+    # Apply header row formatting: blue background + accent borders + bold + center
+    for col_idx in range(4):
+        cell = table.cell(0, col_idx)
+        _apply_cell_shading(cell, 'D9E2F3')
+        _apply_cell_borders(cell, '4472C4', '8')
+        for paragraph in cell.paragraphs:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for run in paragraph.runs:
+                run.bold = True
+
+    # Apply column alignments: left, center, right, left
+    alignment_map = [
+        WD_ALIGN_PARAGRAPH.LEFT,
+        WD_ALIGN_PARAGRAPH.CENTER,
+        WD_ALIGN_PARAGRAPH.RIGHT,
+        WD_ALIGN_PARAGRAPH.LEFT,
+    ]
+    for row_idx in range(1, 5):
+        for col_idx in range(4):
+            cell = table.cell(row_idx, col_idx)
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = alignment_map[col_idx]
+
+    # Apply alternating row shading (rows 2 and 4, i.e. data rows 2 and 4)
+    for col_idx in range(4):
+        _apply_cell_shading(table.cell(2, col_idx), 'F2F2F2')
+        _apply_cell_shading(table.cell(4, col_idx), 'F2F2F2')
+
+    # Apply inline formatting: bold in cell (1,0), bold in cell (3,3) italic
+    cell_1_0 = table.cell(1, 0)
+    cell_1_0.text = ""
+    p = cell_1_0.paragraphs[0]
+    p.alignment = alignment_map[0]
+    run = p.add_run("Phase 1")
+    run.bold = True
+
+    cell_3_3 = table.cell(3, 3)
+    cell_3_3.text = ""
+    p = cell_3_3.paragraphs[0]
+    p.alignment = alignment_map[3]
+    run = p.add_run("Charlie")
+    run.italic = True
+
+    # Apply horizontal merge: row 0, cols 0-1
+    table.cell(0, 0).merge(table.cell(0, 1))
+
+    # Apply vertical merge: rows 3-4, col 0
+    table.cell(3, 0).merge(table.cell(4, 0))
+
+    doc.add_paragraph("Text after the complex table.")
+    doc.save(str(FIXTURES_DIR / "tables_complex.docx"))
+    print("✓ Created tables_complex.docx")
+
+
 if __name__ == "__main__":
     print("Creating test fixtures...")
     create_simple_docx()
@@ -349,4 +438,5 @@ if __name__ == "__main__":
     create_tables_simple_docx()
     create_tables_formatted_docx()
     create_tables_merged_docx()
+    create_tables_complex_docx()
     print("\nAll fixtures created successfully!")

@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from docx import Document
+from docx.oxml.ns import qn
 from sidedoc.models import Block
 from sidedoc.sync import match_blocks, generate_updated_docx, update_sidedoc_metadata, remap_styles
 
@@ -1563,3 +1564,105 @@ def test_sync_preserves_track_changes_in_structure() -> None:
         assert block["track_changes"][0]["author"] == "Test Author"
 
 
+# ============================================================================
+# Tests for sync rendering: hyperlinks, images, CriticMarkup
+# ============================================================================
+
+
+def test_sync_preserves_hyperlinks():
+    """Test that generate_updated_docx produces w:hyperlink elements for markdown links."""
+    new_blocks = [
+        Block(
+            id="block-0",
+            type="paragraph",
+            content="Visit [Example](https://example.com) for details.",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=50,
+            content_hash=compute_hash("Visit [Example](https://example.com) for details."),
+        ),
+    ]
+    matches: dict[str, Block] = {}
+    styles: dict = {"block_styles": {}}
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+        output_path = f.name
+
+    try:
+        generate_updated_docx(new_blocks, matches, styles, output_path)
+        doc = Document(output_path)
+
+        # Find w:hyperlink elements in the document
+        body = doc.element.body
+        hyperlinks = body.findall(f'.//{{{qn("w:hyperlink").split("}")[0][1:]}}}hyperlink')
+        assert len(hyperlinks) >= 1, \
+            f"Expected at least one w:hyperlink element, found {len(hyperlinks)}"
+    finally:
+        Path(output_path).unlink(missing_ok=True)
+
+
+def test_sync_preserves_images():
+    """Test that generate_updated_docx handles image blocks (placeholder when no assets)."""
+    new_blocks = [
+        Block(
+            id="block-0",
+            type="image",
+            content="![Image 1](assets/image1.png)",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=29,
+            content_hash=compute_hash("![Image 1](assets/image1.png)"),
+            image_path="assets/image1.png",
+        ),
+    ]
+    matches: dict[str, Block] = {}
+    styles: dict = {"block_styles": {}}
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+        output_path = f.name
+
+    try:
+        generate_updated_docx(new_blocks, matches, styles, output_path)
+        doc = Document(output_path)
+
+        # Should have at least one paragraph (placeholder text for missing image)
+        assert len(doc.paragraphs) >= 1
+        # The placeholder should indicate it's an image
+        full_text = " ".join(p.text for p in doc.paragraphs)
+        assert "Image" in full_text or "image" in full_text, \
+            f"Expected image placeholder text, got: {full_text}"
+    finally:
+        Path(output_path).unlink(missing_ok=True)
+
+
+def test_sync_preserves_criticmarkup():
+    """Test that generate_updated_docx converts CriticMarkup to track changes."""
+    new_blocks = [
+        Block(
+            id="block-0",
+            type="paragraph",
+            content="Hello {++world++}",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=18,
+            content_hash=compute_hash("Hello {++world++}"),
+        ),
+    ]
+    matches: dict[str, Block] = {}
+    styles: dict = {"block_styles": {}}
+
+    with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+        output_path = f.name
+
+    try:
+        generate_updated_docx(new_blocks, matches, styles, output_path)
+        doc = Document(output_path)
+
+        # Find w:ins elements (track change insertions)
+        NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        body = doc.element.body
+        ins_elements = body.findall(f'.//{{{NS}}}ins')
+        assert len(ins_elements) >= 1, \
+            f"Expected at least one w:ins element for CriticMarkup, found {len(ins_elements)}"
+    finally:
+        Path(output_path).unlink(missing_ok=True)

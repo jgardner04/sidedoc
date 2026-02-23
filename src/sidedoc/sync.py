@@ -4,13 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Optional, Any
-from docx import Document
 from sidedoc.models import Block
 from sidedoc.utils import get_iso_timestamp, compute_similarity
 from sidedoc.constants import (
     SIMILARITY_THRESHOLD,
 )
-from sidedoc.reconstruct import create_table_from_gfm, apply_inline_formatting, _apply_block_formatting
+from sidedoc.reconstruct import create_docx_from_blocks
 
 # Default author for new track changes created during sync
 DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
@@ -125,68 +124,8 @@ def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
     Returns:
         Dictionary mapping new block IDs to old block IDs
     """
-    new_to_old: dict[str, str] = {}
-    for old_id, new_block in matches.items():
-        new_to_old[new_block.id] = old_id
-    return new_to_old
+    return {new_block.id: old_id for old_id, new_block in matches.items()}
 
-
-def _get_block_style(
-    block: Block,
-    new_to_old: dict[str, str],
-    styles: dict[str, Any]
-) -> dict[str, Any]:
-    """Get the style for a block if it was matched to an old block.
-
-    Args:
-        block: The new block to get style for
-        new_to_old: Mapping from new block IDs to old block IDs
-        styles: Style information dictionary with block_styles
-
-    Returns:
-        Style dictionary for the block, or empty dict if no style
-    """
-    old_block_id = new_to_old.get(block.id)
-    if old_block_id:
-        block_styles: dict[str, Any] = styles.get("block_styles", {})
-        result: dict[str, Any] = block_styles.get(old_block_id, {})
-        return result
-    return {}
-
-
-def _create_paragraph_from_block(
-    doc: Any, block: Block, styles: dict[str, Any], old_block_id: str | None = None
-) -> Optional[Any]:
-    """Create a paragraph or table from a block based on its type.
-
-    Args:
-        doc: python-docx Document object
-        block: Block to create paragraph/table from
-        styles: Style information dictionary with block_styles
-        old_block_id: Resolved old block ID for style lookup during sync
-
-    Returns:
-        python-docx Paragraph object, or None for tables
-    """
-    if block.type == "heading" and block.level:
-        text = block.content.lstrip("#").strip()
-        style_name = f"Heading {block.level}"
-        return doc.add_paragraph(text, style=style_name)
-    elif block.type == "table":
-        # Use old block ID for style lookup if available (during sync),
-        # otherwise fall back to new block ID
-        style_id = old_block_id if old_block_id else block.id
-        create_table_from_gfm(doc, block.content, styles, style_id, block.table_metadata)
-        return None
-    elif block.type == "paragraph":
-        if "**" in block.content or "*" in block.content:
-            para = doc.add_paragraph()
-            apply_inline_formatting(para, block.content)
-            return para
-        else:
-            return doc.add_paragraph(block.content)
-    else:
-        return doc.add_paragraph(block.content)
 
 
 def generate_updated_docx(
@@ -197,12 +136,9 @@ def generate_updated_docx(
 ) -> None:
     """Generate an updated docx file from new blocks.
 
-    This function creates a new docx with content from new_blocks.
-    - Matched blocks preserve their formatting from styles
-    - New blocks receive default formatting based on type
-    - Deleted blocks are omitted (not in new_blocks)
-    - Inline formatting from markdown is applied
-    - Table blocks create actual Table objects
+    Delegates to create_docx_from_blocks with style ID remapping so matched
+    blocks preserve their formatting. Handles images, hyperlinks, CriticMarkup,
+    inline formatting, and table blocks.
 
     Args:
         new_blocks: List of new Block objects from edited content.md
@@ -210,16 +146,8 @@ def generate_updated_docx(
         styles: Style information dictionary with block_styles
         output_path: Path where docx should be saved
     """
-    doc = Document()
     new_to_old = _create_reverse_mapping(matches)
-
-    for block in new_blocks:
-        old_block_id = new_to_old.get(block.id)
-        block_style = _get_block_style(block, new_to_old, styles)
-        para = _create_paragraph_from_block(doc, block, styles, old_block_id)
-        if para is not None:
-            _apply_block_formatting(para, block_style)
-
+    doc = create_docx_from_blocks(new_blocks, styles, style_id_remap=new_to_old)
     doc.save(output_path)
 
 
@@ -337,65 +265,32 @@ def sync_sidedoc_to_docx(
 ) -> None:
     """Sync a sidedoc archive to a Word document with CriticMarkup support.
 
-    Reads the content.md from the sidedoc, parses CriticMarkup syntax, and
-    generates a docx with proper track changes (w:ins and w:del elements).
+    Delegates to create_docx_from_blocks for full rendering (images, hyperlinks,
+    inline formatting, CriticMarkup, tables). CriticMarkup in content.md is
+    converted to w:ins/w:del track changes with the specified author.
 
     Args:
         sidedoc_path: Path to .sidedoc file
         output_path: Path for output .docx file
         author: Author name for new track changes (default: 'Sidedoc AI')
     """
-    from sidedoc.reconstruct import (
-        parse_markdown_to_blocks,
-        has_criticmarkup,
-        add_text_with_track_changes,
-    )
+    from sidedoc.reconstruct import parse_markdown_to_blocks
 
     if author is None:
         author = DEFAULT_SYNC_AUTHOR
 
-    # Get current timestamp for new track changes
     sync_date = get_iso_timestamp()
 
-    # Read sidedoc contents (supports both directory and ZIP formats)
     from sidedoc.store import SidedocStore
 
     with SidedocStore.open(sidedoc_path) as store:
         content_md = store.read_text("content.md")
         styles_data = store.read_json("styles.json")
-        structure_data = store.read_json("structure.json")
 
-    # Parse markdown to blocks
     blocks = parse_markdown_to_blocks(content_md)
 
-    # Create document
-    doc = Document()
-
-    for block in blocks:
-        para = None
-        if block.type == "heading" and block.level:
-            style_name = f"Heading {block.level}"
-            text = block.content.lstrip("#").strip()
-
-            if has_criticmarkup(text):
-                para = doc.add_paragraph(style=style_name)
-                add_text_with_track_changes(para, text, default_author=author, default_date=sync_date)
-            else:
-                para = doc.add_paragraph(text, style=style_name)
-        elif block.type == "table":
-            create_table_from_gfm(doc, block.content, styles_data, block.id, block.table_metadata)
-        else:
-            content = block.content
-
-            if has_criticmarkup(content):
-                para = doc.add_paragraph()
-                add_text_with_track_changes(para, content, default_author=author, default_date=sync_date)
-            else:
-                para = doc.add_paragraph(content)
-
-        # Apply styling if available (only for paragraph-based blocks)
-        if para is not None:
-            block_style = styles_data.get("block_styles", {}).get(block.id, {})
-            _apply_block_formatting(para, block_style)
-
+    doc = create_docx_from_blocks(
+        blocks, styles_data,
+        default_tc_author=author, default_tc_date=sync_date,
+    )
     doc.save(output_path)
