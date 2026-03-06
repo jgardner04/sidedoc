@@ -8,7 +8,7 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 
 **Project Repository:** `sidedoc` (Python package)
 **Author:** Jonathan Gardner
-**Status:** Post-MVP Phase 2 (Tables)
+**Status:** Complete — All phases implemented and merged (PR #40, #42)
 
 ## Goals
 
@@ -43,62 +43,62 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 **Description:** As an AI developer, I want tables extracted as GFM pipe tables so that I can read and process tabular data efficiently.
 
 **Acceptance Criteria:**
-- [ ] Tables in docx are extracted as GFM pipe table syntax in content.md
-- [ ] Column alignment is represented using GFM syntax (`:---|`, `:---:|`, `---:|`)
-- [ ] Each table becomes a block with type "table" in structure.json
-- [ ] structure.json records table dimensions (rows, cols) and cell metadata
-- [ ] Empty cells are preserved as empty pipe segments `| |`
-- [ ] Typecheck passes
-- [ ] Unit tests cover simple, multi-row, and multi-column tables
+- [x] Tables in docx are extracted as GFM pipe table syntax in content.md
+- [x] Column alignment is represented using GFM syntax (`:---|`, `:---:|`, `---:|`)
+- [x] Each table becomes a block with type "table" in structure.json
+- [x] structure.json records table dimensions (rows, cols) and cell metadata
+- [x] Empty cells are preserved as empty pipe segments `| |`
+- [x] Typecheck passes
+- [x] Unit tests cover simple, multi-row, and multi-column tables
 
 #### US-T02: Store table structure metadata
 **Description:** As a developer, I need table structure stored in structure.json so that tables can be reconstructed accurately.
 
 **Acceptance Criteria:**
-- [ ] structure.json stores `rows`, `cols`, `cells` array for each table block
-- [ ] Each cell has `row`, `col`, `content_hash`, and `docx_cell_paragraphs` mapping
-- [ ] `header_rows` field indicates which rows are header rows
-- [ ] Cell positions enable change detection during sync
-- [ ] Typecheck passes
-- [ ] Unit tests verify structure schema compliance
+- [x] structure.json stores `rows`, `cols`, `cells` array for each table block
+- [x] Each cell has `row`, `col`, `content_hash`, and `docx_cell_paragraphs` mapping
+- [x] `header_rows` field indicates which rows are header rows
+- [x] Cell positions enable change detection during sync
+- [x] Typecheck passes
+- [x] Unit tests verify structure schema compliance
 
 #### US-T03: Store table formatting metadata
 **Description:** As a developer, I need table formatting stored in styles.json so that visual appearance survives roundtrip.
 
 **Acceptance Criteria:**
-- [ ] styles.json stores `table_style` (Word built-in style name)
-- [ ] styles.json stores `column_widths` array
-- [ ] styles.json stores `table_alignment` (left, center, right)
-- [ ] Cell-level formatting stored in `cell_styles` keyed by "row,col"
-- [ ] Cell styles include: alignment, vertical_alignment, background_color, borders
-- [ ] Only non-default cells are stored (compact representation)
-- [ ] Typecheck passes
-- [ ] Unit tests verify formatting extraction for various table styles
+- [x] styles.json stores `table_style` (Word built-in style name)
+- [x] styles.json stores `column_widths` array
+- [x] styles.json stores `table_alignment` (left, center, right)
+- [x] Cell-level formatting stored in `cell_styles` keyed by "row,col"
+- [x] Cell styles include: alignment, vertical_alignment, background_color, borders
+- [x] Only non-default cells are stored (compact representation)
+- [x] Typecheck passes
+- [x] Unit tests verify formatting extraction for various table styles
 
 #### US-T04: Reconstruct tables in docx from sidedoc
 **Description:** As a user, I want tables in the rebuilt docx to look identical to the original so that formatting is preserved.
 
 **Acceptance Criteria:**
-- [ ] GFM pipe table syntax converts to docx tables via `doc.add_table()`
-- [ ] Column widths match original
-- [ ] Cell alignment (horizontal and vertical) applied correctly
-- [ ] Borders render correctly on all sides
-- [ ] Cell shading/background colors applied
+- [x] GFM pipe table syntax converts to docx tables via `doc.add_table()`
+- [x] Column widths match original
+- [x] Cell alignment (horizontal and vertical) applied correctly
+- [x] Borders render correctly on all sides
+- [x] Cell shading/background colors applied
 - [ ] Tables work in Microsoft Word, Google Docs, and LibreOffice
-- [ ] Typecheck passes
+- [x] Typecheck passes
 - [ ] Visual comparison confirms 95%+ fidelity
 
 #### US-T05: Handle table edge cases during extraction
 **Description:** As a developer, I need edge cases handled gracefully so that extraction doesn't fail on complex documents.
 
 **Acceptance Criteria:**
-- [ ] Empty tables (0 rows or 0 cols) handled gracefully
-- [ ] Tables with only header rows work correctly
-- [ ] Very wide tables (20+ columns) preserved correctly
-- [ ] Very tall tables (100+ rows) processed efficiently
-- [ ] Tables with special characters in cells (pipes, backticks) are escaped
-- [ ] Typecheck passes
-- [ ] Unit tests cover all edge cases
+- [x] Empty tables (0 rows or 0 cols) handled gracefully
+- [x] Tables with only header rows work correctly
+- [x] Very wide tables (20+ columns) preserved correctly
+- [x] Very tall tables (100+ rows) processed efficiently
+- [x] Tables with special characters in cells (pipes, backticks) are escaped
+- [x] Typecheck passes
+- [x] Unit tests cover all edge cases
 
 ---
 
@@ -108,35 +108,35 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 **Description:** As an AI agent, I want to edit cell text and have changes reflected in the synced docx.
 
 **Acceptance Criteria:**
-- [ ] Cell content hash changes are detected during sync
-- [ ] Modified cell content updates in docx while preserving cell formatting
-- [ ] Unchanged cells retain exact original formatting
-- [ ] Sync handles multiple cell edits in same table
-- [ ] Typecheck passes
-- [ ] Integration test confirms cell edit sync works
+- [x] Cell content hash changes are detected during sync
+- [x] Modified cell content updates in docx while preserving cell formatting
+- [x] Unchanged cells retain exact original formatting
+- [x] Sync handles multiple cell edits in same table
+- [x] Typecheck passes
+- [x] Integration test confirms cell edit sync works
 
 #### US-T07: Support inline formatting in table cells
 **Description:** As an AI agent, I want to use bold, italic, and hyperlinks in table cells.
 
 **Acceptance Criteria:**
-- [ ] `**bold**` in cell content renders as bold in docx cell
-- [ ] `*italic*` in cell content renders as italic
-- [ ] `[text](url)` in cell content creates clickable hyperlink
-- [ ] Mixed formatting (`**bold** and *italic*`) works correctly
-- [ ] Inline formatting preserved on roundtrip
-- [ ] Typecheck passes
-- [ ] Unit tests cover inline formatting in cells
+- [x] `**bold**` in cell content renders as bold in docx cell
+- [x] `*italic*` in cell content renders as italic
+- [x] `[text](url)` in cell content creates clickable hyperlink
+- [x] Mixed formatting (`**bold** and *italic*`) works correctly
+- [x] Inline formatting preserved on roundtrip
+- [x] Typecheck passes
+- [x] Unit tests cover inline formatting in cells
 
 #### US-T08: Preserve cell formatting during content edits
 **Description:** As a user, I want cell formatting preserved when AI edits cell content.
 
 **Acceptance Criteria:**
-- [ ] Editing cell text preserves cell background color
-- [ ] Editing cell text preserves cell borders
-- [ ] Editing cell text preserves cell alignment
-- [ ] Editing cell text preserves font settings
-- [ ] Typecheck passes
-- [ ] Integration test confirms formatting preservation
+- [x] Editing cell text preserves cell background color
+- [x] Editing cell text preserves cell borders
+- [x] Editing cell text preserves cell alignment
+- [x] Editing cell text preserves font settings
+- [x] Typecheck passes
+- [x] Integration test confirms formatting preservation
 
 ---
 
@@ -146,44 +146,44 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 **Description:** As an AI agent, I want to add new rows to tables by editing content.md.
 
 **Acceptance Criteria:**
-- [ ] Adding a row in GFM table adds row in synced docx
-- [ ] New row inherits formatting from adjacent row (smart inheritance)
-- [ ] Row can be added at beginning, middle, or end of table
-- [ ] Multiple rows can be added in single sync
-- [ ] Typecheck passes
-- [ ] Unit tests verify row addition scenarios
+- [x] Adding a row in GFM table adds row in synced docx
+- [x] New row inherits formatting from adjacent row (smart inheritance)
+- [x] Row can be added at beginning, middle, or end of table
+- [x] Multiple rows can be added in single sync
+- [x] Typecheck passes
+- [x] Unit tests verify row addition scenarios
 
 #### US-T10: Remove rows from tables via markdown
 **Description:** As an AI agent, I want to remove rows from tables by editing content.md.
 
 **Acceptance Criteria:**
-- [ ] Removing a row in GFM table removes row in synced docx
-- [ ] Remaining rows maintain correct formatting
-- [ ] Removing header row is handled gracefully (warning or new header)
-- [ ] Multiple rows can be removed in single sync
-- [ ] Typecheck passes
-- [ ] Unit tests verify row removal scenarios
+- [x] Removing a row in GFM table removes row in synced docx
+- [x] Remaining rows maintain correct formatting
+- [x] Removing header row is handled gracefully (warning or new header)
+- [x] Multiple rows can be removed in single sync
+- [x] Typecheck passes
+- [x] Unit tests verify row removal scenarios
 
 #### US-T11: Add columns to tables via markdown
 **Description:** As an AI agent, I want to add new columns to tables by editing content.md.
 
 **Acceptance Criteria:**
-- [ ] Adding a column in GFM table adds column in synced docx
-- [ ] New column inherits width from adjacent column
-- [ ] New column cells inherit formatting from adjacent cells
-- [ ] Column can be added at beginning, middle, or end
-- [ ] Typecheck passes
-- [ ] Unit tests verify column addition scenarios
+- [x] Adding a column in GFM table adds column in synced docx
+- [x] New column inherits width from adjacent column
+- [x] New column cells inherit formatting from adjacent cells
+- [x] Column can be added at beginning, middle, or end
+- [x] Typecheck passes
+- [x] Unit tests verify column addition scenarios
 
 #### US-T12: Remove columns from tables via markdown
 **Description:** As an AI agent, I want to remove columns from tables by editing content.md.
 
 **Acceptance Criteria:**
-- [ ] Removing a column in GFM table removes column in synced docx
-- [ ] Remaining columns maintain correct formatting and widths
-- [ ] Multiple columns can be removed in single sync
-- [ ] Typecheck passes
-- [ ] Unit tests verify column removal scenarios
+- [x] Removing a column in GFM table removes column in synced docx
+- [x] Remaining columns maintain correct formatting and widths
+- [x] Multiple columns can be removed in single sync
+- [x] Typecheck passes
+- [x] Unit tests verify column removal scenarios
 
 ---
 
@@ -193,60 +193,60 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 **Description:** As a user, I want merged cells preserved so that complex table layouts survive roundtrip.
 
 **Acceptance Criteria:**
-- [ ] Horizontally merged cells detected and stored in structure.json
-- [ ] Vertically merged cells detected and stored in structure.json
-- [ ] `merged_cells` array contains `{start_row, start_col, row_span, col_span}`
-- [ ] content.md shows all cell positions (secondary merge cells are empty)
-- [ ] Rebuilt docx applies merges correctly via `cell.merge()`
-- [ ] Typecheck passes
-- [ ] Unit tests cover horizontal, vertical, and complex merges
+- [x] Horizontally merged cells detected and stored in structure.json
+- [x] Vertically merged cells detected and stored in structure.json
+- [x] `merged_cells` array contains `{start_row, start_col, row_span, col_span}`
+- [x] content.md shows all cell positions (secondary merge cells are empty)
+- [x] Rebuilt docx applies merges correctly via `cell.merge()`
+- [x] Typecheck passes
+- [x] Unit tests cover horizontal, vertical, and complex merges
 
 #### US-T14: Extract all cell border styles
 **Description:** As a user, I want all border styles preserved so that tables look identical.
 
 **Acceptance Criteria:**
-- [ ] All four borders (top, bottom, left, right) extracted per cell
-- [ ] Border style (single, double, dashed, etc.) preserved
-- [ ] Border width preserved
-- [ ] Border color preserved
-- [ ] Borders applied correctly during rebuild
-- [ ] Typecheck passes
-- [ ] Unit tests verify border extraction for various styles
+- [x] All four borders (top, bottom, left, right) extracted per cell
+- [x] Border style (single, double, dashed, etc.) preserved
+- [x] Border width preserved
+- [x] Border color preserved
+- [x] Borders applied correctly during rebuild
+- [x] Typecheck passes
+- [x] Unit tests verify border extraction for various styles
 
 #### US-T15: Extract cell shading and background colors
 **Description:** As a user, I want cell colors preserved so that formatted tables look correct.
 
 **Acceptance Criteria:**
-- [ ] Cell background/shading color extracted as hex value
-- [ ] Pattern fills preserved where applicable
-- [ ] Colors applied correctly during rebuild
-- [ ] Header row styling preserved
-- [ ] Alternating row colors preserved (if using table style)
-- [ ] Typecheck passes
-- [ ] Unit tests verify color extraction
+- [x] Cell background/shading color extracted as hex value
+- [x] Pattern fills preserved where applicable
+- [x] Colors applied correctly during rebuild
+- [x] Header row styling preserved
+- [x] Alternating row colors preserved (if using table style)
+- [x] Typecheck passes
+- [x] Unit tests verify color extraction
 
 #### US-T16: Handle header row designation
 **Description:** As a user, I want header rows marked so that accessibility and styling are preserved.
 
 **Acceptance Criteria:**
-- [ ] Header rows identified during extraction
-- [ ] `header_rows` field in structure.json indicates header count
-- [ ] Header row styling preserved separately
-- [ ] Rebuilt table marks rows as headers for accessibility
-- [ ] Typecheck passes
-- [ ] Unit tests verify header handling
+- [x] Header rows identified during extraction
+- [x] `header_rows` field in structure.json indicates header count
+- [x] Header row styling preserved separately
+- [x] Rebuilt table marks rows as headers for accessibility
+- [x] Typecheck passes
+- [x] Unit tests verify header handling
 
 #### US-T17: Validate sidedoc with tables
 **Description:** As a user, I want validation to check table integrity so that I catch issues before building.
 
 **Acceptance Criteria:**
-- [ ] `sidedoc validate` checks table structure in structure.json
-- [ ] Validation confirms cell count matches GFM table in content.md
-- [ ] Validation checks merged cell regions don't overlap
-- [ ] Validation warns if table formatting is incomplete
-- [ ] Clear error messages for table-related validation failures
-- [ ] Typecheck passes
-- [ ] Unit tests cover validation scenarios
+- [x] `sidedoc validate` checks table structure in structure.json
+- [x] Validation confirms cell count matches GFM table in content.md
+- [x] Validation checks merged cell regions don't overlap
+- [x] Validation warns if table formatting is incomplete
+- [x] Clear error messages for table-related validation failures
+- [x] Typecheck passes
+- [x] Unit tests cover validation scenarios
 
 ---
 
@@ -256,34 +256,34 @@ This feature enables AI agents to work with tabular data using standard GFM (Git
 **Description:** As a developer, I need test fixtures that include tables so that automated tests verify the feature.
 
 **Acceptance Criteria:**
-- [ ] Create `tests/fixtures/tables_simple.docx` with basic 3x3 table
-- [ ] Create `tests/fixtures/tables_formatted.docx` with borders, shading
-- [ ] Create `tests/fixtures/tables_merged.docx` with merged cells
-- [ ] Create `tests/fixtures/tables_complex.docx` with all features
-- [ ] Document fixture contents in test file comments
-- [ ] Typecheck passes
+- [x] Create `tests/fixtures/tables_simple.docx` with basic 3x3 table
+- [x] Create `tests/fixtures/tables_formatted.docx` with borders, shading
+- [x] Create `tests/fixtures/tables_merged.docx` with merged cells
+- [x] Create `tests/fixtures/tables_complex.docx` with all features
+- [x] Document fixture contents in test file comments
+- [x] Typecheck passes
 
 #### US-T19: Update CLI help and documentation
 **Description:** As a user, I want documentation updated so that I understand table support is available.
 
 **Acceptance Criteria:**
-- [ ] README.md updated with table support in "Supported Elements" section
+- [x] README.md updated with table support in "Supported Elements" section
 - [ ] Format specification updated with table structure/styles schema
 - [ ] CHANGELOG.md entry for table feature
 - [ ] Examples showing table extraction and reconstruction
-- [ ] Typecheck passes
+- [x] Typecheck passes
 
 #### US-T20: Create table roundtrip integration tests
 **Description:** As a developer, I need comprehensive integration tests to ensure table quality.
 
 **Acceptance Criteria:**
-- [ ] Roundtrip test: extract → build for simple tables
-- [ ] Roundtrip test: extract → edit → sync → build for cell edits
-- [ ] Roundtrip test: structural changes (add/remove rows/cols)
-- [ ] Roundtrip test: complex tables with merges and formatting
+- [x] Roundtrip test: extract → build for simple tables
+- [x] Roundtrip test: extract → edit → sync → build for cell edits
+- [x] Roundtrip test: structural changes (add/remove rows/cols)
+- [x] Roundtrip test: complex tables with merges and formatting
 - [ ] Visual diff comparison in CI pipeline
 - [ ] 95%+ fidelity metric automated
-- [ ] Typecheck passes
+- [x] Typecheck passes
 
 ## Functional Requirements
 
@@ -437,38 +437,42 @@ The existing block-level sync extends naturally:
 
 ## Implementation Phases
 
-### Phase 1: Basic Extraction & Rebuild (US-T01 through US-T05)
-Foundation: extract tables, store structure/formatting, rebuild identical tables.
+### Phase 1: Basic Extraction & Rebuild (US-T01 through US-T05) — Complete
+Foundation: extract tables, store structure/formatting, rebuild identical tables. Merged via PR #40.
 
-### Phase 2: Cell Editing + Sync (US-T06 through US-T08)
-Enable AI to edit cell content while preserving formatting.
+### Phase 2: Cell Editing + Sync (US-T06 through US-T08) — Complete
+Enable AI to edit cell content while preserving formatting. Merged via PR #40.
 
-### Phase 3: Structural Manipulation (US-T09 through US-T12)
-Enable AI to add/remove rows and columns with smart inheritance.
+### Phase 3: Structural Manipulation (US-T09 through US-T12) — Complete
+Enable AI to add/remove rows and columns with smart inheritance. Merged via PR #40.
 
-### Phase 4: Full Formatting Fidelity (US-T13 through US-T17)
-Complete formatting: merged cells, all borders, colors, validation.
+### Phase 4: Full Formatting Fidelity (US-T13 through US-T17) — Complete
+Complete formatting: merged cells, all borders, colors, validation. Merged via PR #40, review fixes in PR #42.
 
-### Phase 5: Documentation & Polish (US-T18 through US-T20)
-Test fixtures, documentation, integration tests, CI metrics.
+### Phase 5: Documentation & Polish (US-T18 through US-T20) — Partial
+Test fixtures created (3 of 4). README updated. Roundtrip tests for simple and formatted tables. Remaining: `tables_complex.docx` fixture, CHANGELOG entry, format spec docs, structural/merge roundtrip tests, CI visual diff automation.
 
 ## Open Questions
 
 1. **Should we support `mailto:` links in table cells?** Currently deferred with hyperlinks feature.
 
    **Recommendation:** Follow hyperlinks PRD decision (deferred).
+   **Resolution:** Deferred. Hyperlinks in table cells are supported (`[text](url)`), but `mailto:` links remain out of scope.
 
 2. **How should we handle tables with images in cells?** Images in cells are complex.
 
    **Recommendation:** Extract image reference but flag as "may not roundtrip perfectly."
+   **Resolution:** Out of scope per Non-Goals (drawing objects in cells).
 
 3. **Should table formulas be preserved as formula text or computed values?**
 
    **Recommendation:** Extract as static computed values (formulas are rare and complex).
+   **Resolution:** Accepted — formulas extracted as static text per Non-Goals.
 
 4. **How to handle tables that span page breaks?** Word handles this automatically.
 
    **Recommendation:** No special handling needed; Word manages pagination.
+   **Resolution:** Accepted — no special handling implemented. Word manages pagination.
 
 ---
 

@@ -2091,3 +2091,454 @@ def test_extract_table_cell_hyperlink() -> None:
 
         # The cell should contain a markdown hyperlink
         assert "[homepage](https://example.com)" in table_blocks[0].content
+
+
+# ============================================================================
+# US-T18: Create tables_complex.docx fixture
+# ============================================================================
+
+
+def test_tables_complex_fixture_exists() -> None:
+    """Verify tables_complex.docx fixture exists and has expected structure."""
+    from docx.oxml.ns import qn as docx_qn
+
+    fixtures_dir = Path("tests/fixtures")
+    fixture_path = fixtures_dir / "tables_complex.docx"
+
+    assert fixture_path.exists(), "tables_complex.docx should exist"
+
+    doc = Document(str(fixture_path))
+    assert len(doc.tables) >= 1, "Document should have at least one table"
+
+    table = doc.tables[0]
+
+    # Should have 5 rows x 4 columns
+    assert len(table.rows) == 5, f"Table should have 5 rows, got {len(table.rows)}"
+    assert len(table.columns) == 4, f"Table should have 4 columns, got {len(table.columns)}"
+
+    # Verify horizontal merge: row 0, cols 0-1 should reference same tc element
+    assert table.cell(0, 0)._tc is table.cell(0, 1)._tc, \
+        "Row 0, col 0 and col 1 should be merged horizontally"
+
+    # Verify vertical merge: rows 3-4, col 0 should reference same tc element
+    assert table.cell(3, 0)._tc is table.cell(4, 0)._tc, \
+        "Row 3, col 0 and row 4, col 0 should be merged vertically"
+
+    # Verify header row shading (blue D9E2F3)
+    header_cell = table.cell(0, 0)
+    tcPr = header_cell._tc.find(docx_qn('w:tcPr'))
+    assert tcPr is not None, "Header cell should have tcPr"
+    shd = tcPr.find(docx_qn('w:shd'))
+    assert shd is not None, "Header cell should have shading"
+    fill = shd.get(docx_qn('w:fill'))
+    assert fill == 'D9E2F3', f"Header cell should have blue fill D9E2F3, got {fill}"
+
+
+# ============================================================================
+# US-T15: Pattern fill support
+# ============================================================================
+
+
+def test_extract_cell_pattern_fill() -> None:
+    """Test that pattern fills are extracted from cell shading elements."""
+    import tempfile
+    from docx import Document as DocxDocument
+    from docx.oxml.ns import qn as docx_qn
+    from docx.oxml import OxmlElement
+    from sidedoc.extract import extract_cell_pattern_fill
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        doc = DocxDocument()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Header"
+        table.cell(0, 1).text = "Value"
+        table.cell(1, 0).text = "A"
+        table.cell(1, 1).text = "B"
+
+        # Apply a pattern fill to cell (1, 0)
+        cell = table.cell(1, 0)
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(docx_qn('w:val'), 'diagStripe')
+        shd.set(docx_qn('w:color'), 'auto')
+        shd.set(docx_qn('w:fill'), 'FFFFFF')
+        tcPr.append(shd)
+
+        # Test extraction
+        pattern = extract_cell_pattern_fill(cell)
+        assert pattern == 'diagStripe', f"Expected 'diagStripe', got {pattern}"
+
+        # Cell without pattern fill should return None
+        pattern_none = extract_cell_pattern_fill(table.cell(0, 0))
+        assert pattern_none is None, "Cell without pattern should return None"
+
+
+def test_reconstruct_applies_pattern_fill() -> None:
+    """Test that pattern_fill in cell_styles is applied as w:val in shading."""
+    from docx.oxml.ns import qn as docx_qn
+    from sidedoc.models import Block
+
+    table_content = """| Name | Role |
+| --- | --- |
+| Alice | Engineer |"""
+
+    blocks = [
+        Block(
+            id="block-0",
+            type="table",
+            content=table_content,
+            docx_paragraph_index=-1,
+            content_start=0,
+            content_end=len(table_content),
+            content_hash="abc123",
+            table_metadata={
+                "rows": 2,
+                "cols": 2,
+                "cells": [],
+                "docx_table_index": 0,
+            },
+        )
+    ]
+
+    styles_dict: dict[str, Any] = {
+        "block_styles": {
+            "block-0": {
+                "table_formatting": {
+                    "column_widths": [2.0, 2.0],
+                    "table_alignment": "left",
+                    "cell_styles": {
+                        "1,0": {
+                            "background_color": "FFFFFF",
+                            "pattern_fill": "horzStripe",
+                        },
+                    },
+                }
+            }
+        }
+    }
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+    assert len(doc.tables) >= 1
+
+    table = doc.tables[0]
+    cell_1_0 = table.cell(1, 0)
+    tcPr = cell_1_0._tc.find(docx_qn('w:tcPr'))
+    assert tcPr is not None, "Cell should have tcPr"
+    shd = tcPr.find(docx_qn('w:shd'))
+    assert shd is not None, "Cell should have shading"
+    assert shd.get(docx_qn('w:val')) == 'horzStripe', \
+        f"Pattern should be horzStripe, got {shd.get(docx_qn('w:val'))}"
+
+
+def test_pattern_fill_roundtrip() -> None:
+    """Test that pattern fill survives extract -> build roundtrip."""
+    import tempfile
+    from docx import Document as DocxDocument
+    from docx.oxml.ns import qn as docx_qn
+    from docx.oxml import OxmlElement
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Create a docx with a pattern fill
+        doc = DocxDocument()
+        table = doc.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Header1"
+        table.cell(0, 1).text = "Header2"
+        table.cell(1, 0).text = "Data1"
+        table.cell(1, 1).text = "Data2"
+
+        # Apply pattern fill to cell (1, 0)
+        cell = table.cell(1, 0)
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        shd = OxmlElement('w:shd')
+        shd.set(docx_qn('w:val'), 'vertStripe')
+        shd.set(docx_qn('w:color'), 'auto')
+        shd.set(docx_qn('w:fill'), 'CCCCCC')
+        tcPr.append(shd)
+
+        test_path = Path(tmp_dir) / "test_pattern.docx"
+        doc.save(str(test_path))
+
+        # Extract
+        blocks, _ = extract_blocks(str(test_path))
+        styles = extract_styles(str(test_path), blocks)
+
+        # Verify pattern was extracted
+        table_blocks_list = [b for b in blocks if b.type == "table"]
+        assert len(table_blocks_list) >= 1
+        table_style = [s for s in styles if s.block_id == table_blocks_list[0].id][0]
+        assert table_style.table_formatting is not None
+        cell_styles = table_style.table_formatting.get("cell_styles", {})
+        assert "1,0" in cell_styles, "Cell (1,0) should have styling"
+        assert cell_styles["1,0"].get("pattern_fill") == "vertStripe", \
+            f"Pattern should be vertStripe, got {cell_styles['1,0'].get('pattern_fill')}"
+
+        # Rebuild
+        styles_dict = _build_styles_dict(styles)
+        rebuilt_doc = create_docx_from_blocks(blocks, styles_dict)
+
+        # Verify pattern in rebuilt doc
+        rebuilt_table = rebuilt_doc.tables[0]
+        rebuilt_cell = rebuilt_table.cell(1, 0)
+        rebuilt_tcPr = rebuilt_cell._tc.find(docx_qn('w:tcPr'))
+        assert rebuilt_tcPr is not None
+        rebuilt_shd = rebuilt_tcPr.find(docx_qn('w:shd'))
+        assert rebuilt_shd is not None
+        assert rebuilt_shd.get(docx_qn('w:val')) == 'vertStripe', \
+            f"Pattern should survive roundtrip, got {rebuilt_shd.get(docx_qn('w:val'))}"
+
+
+# ============================================================================
+# US-T17: Validation warning for incomplete formatting
+# ============================================================================
+
+
+def test_validate_warns_missing_table_formatting() -> None:
+    """Test that validation warns when styles.json exists but table block has no style entry."""
+    import tempfile
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+    from tests.helpers import create_sidedoc_dir
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_path = Path(tmp_dir) / "test.sidedoc"
+        content = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        structure = {
+            "blocks": [{
+                "id": "block-0",
+                "type": "table",
+                "docx_paragraph_index": -1,
+                "content_start": 0,
+                "content_end": len(content),
+                "content_hash": "abc",
+                "level": None,
+                "image_path": None,
+                "inline_formatting": None,
+                "table_metadata": {
+                    "rows": 2,
+                    "cols": 2,
+                    "cells": [],
+                    "column_alignments": ["left", "left"],
+                    "docx_table_index": 0,
+                },
+                "track_changes": None,
+            }]
+        }
+        # styles.json exists but has NO entry for block-0
+        styles = {"block_styles": {}}
+        create_sidedoc_dir(sidedoc_path, content, structure, styles=styles)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["validate", str(sidedoc_path)])
+        assert "missing style entry" in result.output.lower() or "no style entry" in result.output.lower(), \
+            f"Should warn about missing style entry, got: {result.output}"
+
+
+def test_validate_passes_complete_table_formatting() -> None:
+    """Test that validation passes when table formatting is present."""
+    import tempfile
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+    from tests.helpers import create_sidedoc_dir
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_path = Path(tmp_dir) / "test.sidedoc"
+        content = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        structure = {
+            "blocks": [{
+                "id": "block-0",
+                "type": "table",
+                "docx_paragraph_index": -1,
+                "content_start": 0,
+                "content_end": len(content),
+                "content_hash": "abc",
+                "level": None,
+                "image_path": None,
+                "inline_formatting": None,
+                "table_metadata": {
+                    "rows": 2,
+                    "cols": 2,
+                    "cells": [],
+                    "column_alignments": ["left", "left"],
+                    "docx_table_index": 0,
+                },
+                "track_changes": None,
+            }]
+        }
+        styles = {
+            "block_styles": {
+                "block-0": {
+                    "table_formatting": {
+                        "column_widths": [2.0, 2.0],
+                        "table_alignment": "left",
+                    }
+                }
+            }
+        }
+        create_sidedoc_dir(sidedoc_path, content, structure, styles=styles)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["validate", str(sidedoc_path)])
+        assert "missing style entry" not in result.output.lower()
+        assert "no style entry" not in result.output.lower()
+
+
+def test_validate_skips_formatting_check_without_styles() -> None:
+    """Test that formatting check is skipped when styles.json has no block_styles."""
+    import tempfile
+    from click.testing import CliRunner
+    from sidedoc.cli import main as cli
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sidedoc_path = Path(tmp_dir) / "test.sidedoc"
+        sidedoc_path.mkdir()
+
+        content = "| A | B |\n| --- | --- |\n| 1 | 2 |"
+        (sidedoc_path / "content.md").write_text(content)
+        # Minimal styles.json — no block_styles to check against
+        (sidedoc_path / "styles.json").write_text(json.dumps({"block_styles": {}}))
+        # No structure.json → validation skips table checks entirely
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["validate", str(sidedoc_path)])
+        # Should pass without formatting warnings
+        assert "missing style entry" not in result.output.lower()
+        assert "no style entry" not in result.output.lower()
+
+
+# ============================================================================
+# US-T20: Structural roundtrip tests
+# ============================================================================
+
+
+def test_roundtrip_structural_add_row_and_column() -> None:
+    """Roundtrip: extract -> add row+column -> sync/rebuild -> re-extract -> verify."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+    styles_dict = _build_styles_dict(styles)
+
+    # Add a row AND a column
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace(
+        "| Name | Role | Start Date |",
+        "| Name | Role | Start Date | Email |"
+    ).replace(
+        "| --- | --- | --- |",
+        "| --- | --- | --- | --- |"
+    ).replace(
+        "| Alice | Engineer | 2024-01-15 |",
+        "| Alice | Engineer | 2024-01-15 | alice@co.com |"
+    ).replace(
+        "| Bob | Designer | 2024-02-01 |",
+        "| Bob | Designer | 2024-02-01 | bob@co.com |\n| Charlie | Manager | 2024-03-15 | charlie@co.com |"
+    )
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        # Re-extract
+        re_blocks, _ = extract_blocks(str(output_path))
+        re_table_blocks = [b for b in re_blocks if b.type == "table"]
+        assert len(re_table_blocks) >= 1
+
+        re_metadata = re_table_blocks[0].table_metadata
+        assert re_metadata is not None
+        assert re_metadata["rows"] == 4, f"Expected 4 rows, got {re_metadata['rows']}"
+        assert re_metadata["cols"] == 4, f"Expected 4 cols, got {re_metadata['cols']}"
+
+        # Verify content present
+        content = re_table_blocks[0].content
+        assert "Charlie" in content
+        assert "Email" in content
+        assert "alice@co.com" in content
+
+
+def test_roundtrip_structural_remove_row() -> None:
+    """Roundtrip: extract -> remove data row -> sync/rebuild -> re-extract -> verify."""
+    import tempfile
+    from sidedoc.sync import generate_updated_docx, match_blocks
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    fixture_path = Path("tests/fixtures/tables_simple.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+    styles_dict = _build_styles_dict(styles)
+
+    # Remove Bob's row
+    original_md = blocks_to_markdown(blocks)
+    modified_md = original_md.replace("| Bob | Designer | 2024-02-01 |\n", "")
+
+    new_blocks = parse_markdown_to_blocks(modified_md)
+    matches = match_blocks(blocks, new_blocks)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / "output.docx"
+        generate_updated_docx(new_blocks, matches, styles_dict, str(output_path))
+
+        # Re-extract
+        re_blocks, _ = extract_blocks(str(output_path))
+        re_table_blocks = [b for b in re_blocks if b.type == "table"]
+        assert len(re_table_blocks) >= 1
+
+        re_metadata = re_table_blocks[0].table_metadata
+        assert re_metadata is not None
+        assert re_metadata["rows"] == 2, f"Expected 2 rows, got {re_metadata['rows']}"
+
+        content = re_table_blocks[0].content
+        assert "Alice" in content
+        assert "Bob" not in content
+
+
+# ============================================================================
+# US-T20: Complex merge/formatting roundtrip test
+# ============================================================================
+
+
+def test_roundtrip_complex_table_with_merges_and_formatting() -> None:
+    """Roundtrip: extract tables_complex.docx -> build -> verify merges, shading, borders."""
+    from docx.oxml.ns import qn as docx_qn
+
+    fixture_path = Path("tests/fixtures/tables_complex.docx")
+    blocks, _ = extract_blocks(str(fixture_path))
+    styles = extract_styles(str(fixture_path), blocks)
+    styles_dict = _build_styles_dict(styles)
+
+    doc = create_docx_from_blocks(blocks, styles_dict)
+
+    assert len(doc.tables) >= 1
+    table = doc.tables[0]
+
+    # Verify dimensions
+    assert len(table.rows) == 5, f"Expected 5 rows, got {len(table.rows)}"
+    assert len(table.columns) == 4, f"Expected 4 cols, got {len(table.columns)}"
+
+    # Verify horizontal merge survived (row 0, cols 0-1 should be merged)
+    assert table.cell(0, 0)._tc is table.cell(0, 1)._tc, \
+        "Horizontal merge should survive roundtrip"
+
+    # Verify vertical merge survived (rows 3-4, col 0)
+    assert table.cell(3, 0)._tc is table.cell(4, 0)._tc, \
+        "Vertical merge should survive roundtrip"
+
+    # Verify header row shading survived
+    header_cell = table.cell(0, 0)
+    tcPr = header_cell._tc.find(docx_qn('w:tcPr'))
+    assert tcPr is not None, "Header cell should have tcPr after roundtrip"
+    shd = tcPr.find(docx_qn('w:shd'))
+    assert shd is not None, "Header cell should have shading after roundtrip"
+    assert shd.get(docx_qn('w:fill')) == 'D9E2F3', \
+        f"Header fill should be D9E2F3, got {shd.get(docx_qn('w:fill'))}"
+
+    # Verify borders survived on header
+    tcBorders = tcPr.find(docx_qn('w:tcBorders'))
+    assert tcBorders is not None, "Header cell should have borders after roundtrip"
