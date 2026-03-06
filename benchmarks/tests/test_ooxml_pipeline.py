@@ -7,16 +7,12 @@ import zipfile
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
-
-
 class TestOoxmlPipeline:
     """Test that the OOXML pipeline works correctly."""
 
-    def test_pipeline_module_exists(self) -> None:
+    def test_pipeline_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that ooxml_pipeline.py exists."""
-        pipeline_path = BENCHMARKS_DIR / "pipelines" / "ooxml_pipeline.py"
+        pipeline_path = benchmarks_dir / "pipelines" / "ooxml_pipeline.py"
         assert pipeline_path.exists(), "benchmarks/pipelines/ooxml_pipeline.py does not exist"
 
     def test_pipeline_is_importable(self) -> None:
@@ -39,16 +35,11 @@ class TestOoxmlPipeline:
         pipeline = OoxmlPipeline()
         assert pipeline is not None
 
-    def test_extract_content_returns_xml_with_comments(self) -> None:
+    def test_extract_content_returns_xml_with_comments(self, simple_docx: Path) -> None:
         """Test that extract_content returns XML with comment markers."""
         from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
 
         pipeline = OoxmlPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         assert isinstance(content, str)
@@ -56,16 +47,11 @@ class TestOoxmlPipeline:
         # OOXML content should contain XML comment markers for file names
         assert "<!-- [Content_Types].xml -->" in content
 
-    def test_extract_content_contains_document_xml(self) -> None:
+    def test_extract_content_contains_document_xml(self, simple_docx: Path) -> None:
         """Test that extract_content includes document.xml content."""
         from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
 
         pipeline = OoxmlPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         # Should contain the main document XML
@@ -101,15 +87,11 @@ class TestOoxmlPipeline:
             assert result.output_path is None
             assert result.error is not None
 
-    def test_full_pipeline_workflow(self) -> None:
+    def test_full_pipeline_workflow(self, simple_docx: Path) -> None:
         """Test the complete workflow (extract only, since edit/rebuild are no-ops)."""
         from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
 
         pipeline = OoxmlPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
 
         # Extract
         content = pipeline.extract_content(simple_docx)

@@ -9,15 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBenchmarkExecutor:
     """Test the benchmark executor (US-022)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that benchmark_executor.py exists."""
-        module_path = BENCHMARKS_DIR / "benchmark_executor.py"
+        module_path = benchmarks_dir / "benchmark_executor.py"
         assert module_path.exists(), "benchmarks/benchmark_executor.py does not exist"
 
     def test_executor_is_importable(self) -> None:

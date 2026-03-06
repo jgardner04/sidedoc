@@ -7,17 +7,17 @@ from pathlib import Path
 import pytest
 from docx import Document
 
+from benchmarks.tests.conftest import BENCHMARKS_DIR
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR / "corpus" / "synthetic"
+SYNTHETIC_DIR = BENCHMARKS_DIR / "corpus" / "synthetic"
 
 
 class TestFidelityStructuralScorer:
     """Test the structural fidelity scorer (US-013)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that fidelity_scorer.py exists."""
-        module_path = BENCHMARKS_DIR / "metrics" / "fidelity_scorer.py"
+        module_path = benchmarks_dir / "metrics" / "fidelity_scorer.py"
         assert module_path.exists(), "benchmarks/metrics/fidelity_scorer.py does not exist"
 
     def test_fidelity_scorer_is_importable(self) -> None:
@@ -31,7 +31,7 @@ class TestFidelityStructuralScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         # Comparing a document to itself should return 100
         score = scorer.score_structure(simple_docx, simple_docx)
@@ -44,7 +44,7 @@ class TestFidelityStructuralScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         score = scorer.score_structure(simple_docx, simple_docx)
 
@@ -112,7 +112,7 @@ class TestFidelityStructuralScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        lists_docx = FIXTURES_DIR / "lists.docx"
+        lists_docx = SYNTHETIC_DIR / "lists.docx"
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             rebuilt_path = Path(tmp_dir) / "rebuilt.docx"
@@ -158,7 +158,7 @@ class TestFidelityStructuralScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = str(FIXTURES_DIR / "simple.docx")
+        simple_docx = str(SYNTHETIC_DIR / "simple.docx")
 
         score = scorer.score_structure(simple_docx, simple_docx)
 
@@ -181,7 +181,7 @@ class TestFidelityStyleScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        formatted_docx = FIXTURES_DIR / "formatted.docx"
+        formatted_docx = SYNTHETIC_DIR / "formatted.docx"
 
         score = scorer.score_styles(formatted_docx, formatted_docx)
 
@@ -193,7 +193,7 @@ class TestFidelityStyleScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        formatted_docx = FIXTURES_DIR / "formatted.docx"
+        formatted_docx = SYNTHETIC_DIR / "formatted.docx"
 
         score = scorer.score_styles(formatted_docx, formatted_docx)
 
@@ -360,7 +360,7 @@ class TestFidelityStyleScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        formatted_docx = str(FIXTURES_DIR / "formatted.docx")
+        formatted_docx = str(SYNTHETIC_DIR / "formatted.docx")
 
         score = scorer.score_styles(formatted_docx, formatted_docx)
 
@@ -414,7 +414,7 @@ class TestFidelityVisualScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         score = scorer.score_visual(simple_docx, simple_docx)
 
@@ -427,7 +427,7 @@ class TestFidelityVisualScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         score = scorer.score_visual(simple_docx, simple_docx)
 
@@ -468,7 +468,7 @@ class TestFidelityVisualScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = str(FIXTURES_DIR / "simple.docx")
+        simple_docx = str(SYNTHETIC_DIR / "simple.docx")
 
         score = scorer.score_visual(simple_docx, simple_docx)
 
@@ -479,7 +479,7 @@ class TestFidelityVisualScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         # Either succeeds (dependencies available) or raises clear error
         try:
@@ -512,7 +512,7 @@ class TestFidelityCombinedScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         result = scorer.score_total(simple_docx, simple_docx)
 
@@ -527,7 +527,7 @@ class TestFidelityCombinedScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         result = scorer.score_total(simple_docx, simple_docx)
 
@@ -545,7 +545,7 @@ class TestFidelityCombinedScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         result = scorer.score_total(simple_docx, simple_docx)
 
@@ -567,7 +567,7 @@ class TestFidelityCombinedScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = FIXTURES_DIR / "simple.docx"
+        simple_docx = SYNTHETIC_DIR / "simple.docx"
 
         result = scorer.score_total(simple_docx, simple_docx)
 
@@ -582,7 +582,7 @@ class TestFidelityCombinedScorer:
         from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
         scorer = FidelityScorer()
-        simple_docx = str(FIXTURES_DIR / "simple.docx")
+        simple_docx = str(SYNTHETIC_DIR / "simple.docx")
 
         result = scorer.score_total(simple_docx, simple_docx)
 

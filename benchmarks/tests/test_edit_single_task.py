@@ -6,15 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestSingleEditTask:
     """Test the single-edit task (US-019)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that edit_single.py exists in tasks directory."""
-        module_path = BENCHMARKS_DIR / "tasks" / "edit_single.py"
+        module_path = benchmarks_dir / "tasks" / "edit_single.py"
         assert module_path.exists(), "benchmarks/tasks/edit_single.py does not exist"
 
     def test_single_edit_task_is_importable(self) -> None:

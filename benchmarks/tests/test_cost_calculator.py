@@ -5,15 +5,12 @@ from pathlib import Path
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestCostCalculator:
     """Test that the cost calculator utility works correctly."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that cost_calculator.py exists."""
-        module_path = BENCHMARKS_DIR / "metrics" / "cost_calculator.py"
+        module_path = benchmarks_dir / "metrics" / "cost_calculator.py"
         assert module_path.exists(), "benchmarks/metrics/cost_calculator.py does not exist"
 
     def test_cost_calculator_is_importable(self) -> None:

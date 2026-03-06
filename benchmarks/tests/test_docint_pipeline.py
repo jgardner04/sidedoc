@@ -8,16 +8,12 @@ import os
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
-
-
 class TestDocIntelPipeline:
     """Test that the Document Intelligence pipeline works correctly."""
 
-    def test_pipeline_module_exists(self) -> None:
+    def test_pipeline_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that docint_pipeline.py exists."""
-        pipeline_path = BENCHMARKS_DIR / "pipelines" / "docint_pipeline.py"
+        pipeline_path = benchmarks_dir / "pipelines" / "docint_pipeline.py"
         assert pipeline_path.exists(), "benchmarks/pipelines/docint_pipeline.py does not exist"
 
     def test_pipeline_is_importable(self) -> None:
@@ -60,7 +56,7 @@ class TestDocIntelPipeline:
             # Error message should be helpful
             assert "AZURE_DOCUMENT_INTELLIGENCE" in str(exc_info.value)
 
-    def test_extract_content_returns_text(self) -> None:
+    def test_extract_content_returns_text(self, simple_docx: Path) -> None:
         """Test that extract_content returns extracted text (mocked API)."""
         from benchmarks.pipelines.docint_pipeline import DocIntelPipeline
 
@@ -79,11 +75,6 @@ class TestDocIntelPipeline:
             mock_poller = MagicMock()
             mock_poller.result.return_value = mock_result
             mock_client.begin_analyze_document.return_value = mock_poller
-
-            # Use a real fixture file
-            simple_docx = FIXTURES_DIR / "simple.docx"
-            if not simple_docx.exists():
-                pytest.skip("simple.docx fixture not found")
 
             content = pipeline.extract_content(simple_docx)
 
@@ -155,7 +146,7 @@ class TestDocIntelPipeline:
             assert hasattr(result, "input_tokens")
             assert result.input_tokens >= 0
 
-    def test_full_pipeline_workflow_mocked(self) -> None:
+    def test_full_pipeline_workflow_mocked(self, simple_docx: Path) -> None:
         """Test complete extract -> edit -> rebuild workflow with mocks."""
         from benchmarks.pipelines.docint_pipeline import DocIntelPipeline
 
@@ -164,11 +155,6 @@ class TestDocIntelPipeline:
             "AZURE_DOCUMENT_INTELLIGENCE_KEY": "test-key-12345",
         }):
             pipeline = DocIntelPipeline()
-
-        # Use a real fixture file
-        simple_docx = FIXTURES_DIR / "simple.docx"
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
 
         # Mock extraction
         mock_result = MagicMock()

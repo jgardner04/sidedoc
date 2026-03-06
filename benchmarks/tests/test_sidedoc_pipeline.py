@@ -7,16 +7,12 @@ import zipfile
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
-
-
 class TestSidedocPipeline:
     """Test that the Sidedoc pipeline works correctly."""
 
-    def test_pipeline_module_exists(self) -> None:
+    def test_pipeline_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that sidedoc_pipeline.py exists."""
-        pipeline_path = BENCHMARKS_DIR / "pipelines" / "sidedoc_pipeline.py"
+        pipeline_path = benchmarks_dir / "pipelines" / "sidedoc_pipeline.py"
         assert pipeline_path.exists(), "benchmarks/pipelines/sidedoc_pipeline.py does not exist"
 
     def test_pipeline_is_importable(self) -> None:
@@ -39,48 +35,33 @@ class TestSidedocPipeline:
         pipeline = SidedocPipeline()
         assert pipeline is not None
 
-    def test_extract_content_with_simple_fixture(self) -> None:
+    def test_extract_content_with_simple_fixture(self, simple_docx: Path) -> None:
         """Test that extract_content extracts markdown from a docx file."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         # Should return non-empty string with markdown content
         assert isinstance(content, str)
         assert len(content) > 0
 
-    def test_extract_content_creates_sidedoc(self) -> None:
+    def test_extract_content_creates_sidedoc(self, simple_docx: Path) -> None:
         """Test that extract_content creates a sidedoc archive."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         pipeline.extract_content(simple_docx)
 
         # Check that sidedoc was created
         assert pipeline._sidedoc_path is not None
         assert pipeline._sidedoc_path.exists()
 
-    def test_apply_edit_modifies_content(self) -> None:
+    def test_apply_edit_modifies_content(self, simple_docx: Path) -> None:
         """Test that apply_edit modifies the content string."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         original_content = pipeline.extract_content(simple_docx)
 
         # Apply a simple edit (append text)
@@ -90,16 +71,11 @@ class TestSidedocPipeline:
         assert edit_text in edited_content
         assert len(edited_content) > len(original_content)
 
-    def test_apply_edit_updates_sidedoc_archive(self) -> None:
+    def test_apply_edit_updates_sidedoc_archive(self, simple_docx: Path) -> None:
         """Test that apply_edit updates the content.md in the sidedoc archive."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         pipeline.extract_content(simple_docx)
 
         # Apply an edit
@@ -112,16 +88,11 @@ class TestSidedocPipeline:
             content_md = zip_file.read("content.md").decode("utf-8")
             assert edit_text in content_md
 
-    def test_rebuild_document_creates_docx(self) -> None:
+    def test_rebuild_document_creates_docx(self, simple_docx: Path) -> None:
         """Test that rebuild_document creates a new docx file."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -134,17 +105,12 @@ class TestSidedocPipeline:
             assert result.output_path == output_path
             assert result.error is None
 
-    def test_rebuild_document_returns_pipeline_result(self) -> None:
+    def test_rebuild_document_returns_pipeline_result(self, simple_docx: Path) -> None:
         """Test that rebuild_document returns PipelineResult with metrics."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
         from benchmarks.pipelines.base import PipelineResult
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -157,15 +123,11 @@ class TestSidedocPipeline:
             assert result.output_tokens >= 0
             assert result.time_elapsed >= 0
 
-    def test_full_pipeline_workflow(self) -> None:
+    def test_full_pipeline_workflow(self, simple_docx: Path) -> None:
         """Test the complete extract -> edit -> rebuild workflow."""
         from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
 
         pipeline = SidedocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
 
         # Extract
         content = pipeline.extract_content(simple_docx)
