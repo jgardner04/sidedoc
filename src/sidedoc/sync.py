@@ -289,6 +289,9 @@ def sync_sidedoc_to_docx(
 
     blocks = parse_markdown_to_blocks(content_md)
 
+    # Note: no style_id_remap needed here because update_sidedoc_metadata()
+    # (called before this function in the CLI sync command) already remaps
+    # styles.json block IDs to match the freshly-parsed block IDs.
     doc = create_docx_from_blocks(
         blocks, styles_data,
         default_tc_author=author, default_tc_date=sync_date,

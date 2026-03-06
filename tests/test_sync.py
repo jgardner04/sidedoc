@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from docx import Document
-from docx.oxml.ns import qn
+
 from sidedoc.models import Block
 from sidedoc.sync import match_blocks, generate_updated_docx, update_sidedoc_metadata, remap_styles
 
@@ -1593,8 +1593,9 @@ def test_sync_preserves_hyperlinks():
         doc = Document(output_path)
 
         # Find w:hyperlink elements in the document
+        NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         body = doc.element.body
-        hyperlinks = body.findall(f'.//{{{qn("w:hyperlink").split("}")[0][1:]}}}hyperlink')
+        hyperlinks = body.findall(f'.//{{{NS}}}hyperlink')
         assert len(hyperlinks) >= 1, \
             f"Expected at least one w:hyperlink element, found {len(hyperlinks)}"
     finally:

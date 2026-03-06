@@ -3,7 +3,7 @@
 import hashlib
 import io
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
 from PIL import Image
@@ -414,7 +414,7 @@ def extract_deletion_text(del_element: Any) -> str:
 def extract_paragraph_content(
     para_elem: Any,
     doc_part: Any = None,
-    mode: str = "normal",
+    mode: Literal["normal", "accept_all", "track_changes"] = "normal",
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph XML element.
 
@@ -434,7 +434,10 @@ def extract_paragraph_content(
     """
     markdown_parts: list[str] = []
     inline_formatting: list[dict[str, Any]] = []
-    track_changes: list[TrackChange] = [] if mode == "track_changes" else []
+    valid_modes = {"normal", "accept_all", "track_changes"}
+    if mode not in valid_modes:
+        raise ValueError(f"Unknown mode: {mode!r}. Must be one of {valid_modes}")
+    track_changes: list[TrackChange] = []
     plain_text_position = 0
 
     for child in para_elem:
@@ -553,9 +556,9 @@ def extract_paragraph_content(
 # Backwards-compatible wrappers used by existing tests
 def extract_paragraph_accept_all(
     para_elem: Any, doc_part: Any = None
-) -> tuple[str, list[dict[str, Any]] | None, None]:
+) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, accepting all track changes."""
-    return extract_paragraph_content(para_elem, doc_part, mode="accept_all")  # type: ignore[return-value]
+    return extract_paragraph_content(para_elem, doc_part, mode="accept_all")
 
 
 def extract_paragraph_with_track_changes(
@@ -938,6 +941,7 @@ def _process_paragraph(
         previous_list_type = None
     else:
         # Choose extraction mode based on track changes settings
+        mode: Literal["normal", "accept_all", "track_changes"]
         if extract_track_changes:
             mode = "track_changes"
         elif track_changes_explicit is False:
