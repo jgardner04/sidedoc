@@ -96,7 +96,6 @@ def generate_executive_summary(results: dict[str, Any]) -> str:
 
     if pipeline_tokens:
         # Find best pipeline (lowest tokens)
-        best_pipeline = min(pipeline_tokens, key=lambda p: pipeline_tokens[p]["total"])
         baseline = pipeline_tokens.get("raw_docx", pipeline_tokens.get("pandoc", {}))
 
         lines.append("### Key Findings\n")

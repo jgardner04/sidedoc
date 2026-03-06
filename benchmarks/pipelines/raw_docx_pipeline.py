@@ -5,7 +5,6 @@ It serves as a baseline for comparison - it can extract text but cannot
 apply edits or rebuild documents.
 """
 
-import time
 from pathlib import Path
 
 from docx import Document
@@ -80,17 +79,13 @@ class RawDocxPipeline(BasePipeline):
         Returns:
             PipelineResult with None output_path and an explanatory error.
         """
-        start_time = time.time()
-        elapsed = time.time() - start_time
-
-        # Calculate token counts using proper tokenizer
+        # No rebuild work performed
         input_tokens = self._token_counter.count_tokens(content)
-        output_tokens = 0  # No output generated
 
         return PipelineResult(
             input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            time_elapsed=elapsed,
+            output_tokens=0,
+            time_elapsed=0.0,
             output_path=None,
             error="Raw DOCX pipeline cannot rebuild documents (baseline for comparison only)",
         )

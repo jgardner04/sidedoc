@@ -6,7 +6,6 @@ what you'd need to send to an LLM for a format-preserving round-trip
 without a purpose-built intermediate format like Sidedoc.
 """
 
-import time
 import zipfile
 from pathlib import Path
 
@@ -55,15 +54,13 @@ class OoxmlPipeline(BasePipeline):
         self, content: str, original_path: Path, output_path: Path
     ) -> PipelineResult:
         """Not supported — baseline for token comparison only."""
-        start_time = time.time()
-        elapsed = time.time() - start_time
-
+        # No rebuild work performed
         input_tokens = self._token_counter.count_tokens(content)
 
         return PipelineResult(
             input_tokens=input_tokens,
             output_tokens=0,
-            time_elapsed=elapsed,
+            time_elapsed=0.0,
             output_path=None,
             error="OOXML pipeline cannot rebuild documents (baseline for comparison only)",
         )
