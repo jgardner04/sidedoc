@@ -150,7 +150,7 @@ A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
 
 ## Benchmarks
 
-Benchmarking suite compares Sidedoc against alternative pipelines (Pandoc, raw text extraction, raw OOXML) across LLM tasks.
+Benchmarking suite compares Sidedoc against alternative document processing pipelines across LLM tasks.
 
 ```bash
 # Run benchmarks
