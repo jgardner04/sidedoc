@@ -1,0 +1,484 @@
+{
+  "metadata": {
+    "timestamp": "2026-03-06T00:33:25.075932",
+    "pipelines": [
+      "raw_docx"
+    ],
+    "tasks": [
+      "summarize",
+      "edit_single",
+      "edit_multiturn"
+    ],
+    "corpus": "synthetic",
+    "model": "gemini/gemini-2.5-flash",
+    "documents": [
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx"
+    ]
+  },
+  "results": [
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 103,
+        "completion_tokens": 301,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 112,
+        "completion_tokens": 1211,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 373,
+        "completion_tokens": 2557,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 74,
+        "completion_tokens": 164,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 83,
+        "completion_tokens": 250,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 226,
+        "completion_tokens": 925,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 167,
+        "completion_tokens": 876,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 176,
+        "completion_tokens": 1692,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 509,
+        "completion_tokens": 2277,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 42,
+        "completion_tokens": 641,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 51,
+        "completion_tokens": 958,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 158,
+        "completion_tokens": 1512,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 65,
+        "completion_tokens": 275,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 74,
+        "completion_tokens": 798,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 242,
+        "completion_tokens": 1799,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 88,
+        "completion_tokens": 390,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 97,
+        "completion_tokens": 578,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 308,
+        "completion_tokens": 1986,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 44,
+        "completion_tokens": 744,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 53,
+        "completion_tokens": 430,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 169,
+        "completion_tokens": 1487,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 45,
+        "completion_tokens": 674,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 54,
+        "completion_tokens": 1348,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 183,
+        "completion_tokens": 1915,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 43,
+        "completion_tokens": 694,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 52,
+        "completion_tokens": 725,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 169,
+        "completion_tokens": 2805,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 40,
+        "completion_tokens": 1019,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 49,
+        "completion_tokens": 773,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 155,
+        "completion_tokens": 952,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 31,
+        "completion_tokens": 483,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 40,
+        "completion_tokens": 86,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 120,
+        "completion_tokens": 258,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 34,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 43,
+        "completion_tokens": 3109,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 119,
+        "completion_tokens": 1059,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 31,
+        "completion_tokens": 785,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 40,
+        "completion_tokens": 1286,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 125,
+        "completion_tokens": 1614,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 30,
+        "completion_tokens": 143,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 39,
+        "completion_tokens": 375,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 116,
+        "completion_tokens": 498,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 35,
+        "completion_tokens": 868,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 44,
+        "completion_tokens": 484,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 143,
+        "completion_tokens": 1370,
+        "error": null
+      }
+    }
+  ]
+}

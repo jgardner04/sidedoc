@@ -1,0 +1,127 @@
+"""Tests for OOXML pipeline implementation."""
+
+from pathlib import Path
+import tempfile
+
+import pytest
+
+
+BENCHMARKS_DIR = Path(__file__).parent.parent
+FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
+
+
+class TestOoxmlPipeline:
+    """Test that the OOXML pipeline works correctly."""
+
+    def test_pipeline_module_exists(self) -> None:
+        """Test that ooxml_pipeline.py exists."""
+        pipeline_path = BENCHMARKS_DIR / "pipelines" / "ooxml_pipeline.py"
+        assert pipeline_path.exists(), "benchmarks/pipelines/ooxml_pipeline.py does not exist"
+
+    def test_pipeline_is_importable(self) -> None:
+        """Test that OoxmlPipeline can be imported."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        assert OoxmlPipeline is not None
+
+    def test_pipeline_inherits_from_base(self) -> None:
+        """Test that OoxmlPipeline inherits from BasePipeline."""
+        from benchmarks.pipelines.base import BasePipeline
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        assert issubclass(OoxmlPipeline, BasePipeline)
+
+    def test_pipeline_can_be_instantiated(self) -> None:
+        """Test that OoxmlPipeline can be instantiated."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+        assert pipeline is not None
+
+    def test_extract_content_returns_xml_with_comments(self) -> None:
+        """Test that extract_content returns XML with comment markers."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+        simple_docx = FIXTURES_DIR / "simple.docx"
+
+        if not simple_docx.exists():
+            pytest.skip("simple.docx fixture not found")
+
+        content = pipeline.extract_content(simple_docx)
+
+        assert isinstance(content, str)
+        assert len(content) > 0
+        # OOXML content should contain XML comment markers for file names
+        assert "<!-- [Content_Types].xml -->" in content
+
+    def test_extract_content_contains_document_xml(self) -> None:
+        """Test that extract_content includes document.xml content."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+        simple_docx = FIXTURES_DIR / "simple.docx"
+
+        if not simple_docx.exists():
+            pytest.skip("simple.docx fixture not found")
+
+        content = pipeline.extract_content(simple_docx)
+
+        # Should contain the main document XML
+        assert "<!-- word/document.xml -->" in content
+
+    def test_apply_edit_is_noop(self) -> None:
+        """Test that apply_edit is a no-op (returns content unchanged)."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+        original = "Original XML content."
+        edit = "Some edit instruction."
+
+        result = pipeline.apply_edit(original, edit)
+
+        assert result == original
+
+    def test_rebuild_document_returns_none_output_path(self) -> None:
+        """Test that rebuild_document returns PipelineResult with None output_path."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+        from benchmarks.pipelines.base import PipelineResult
+
+        pipeline = OoxmlPipeline()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.docx"
+
+            result = pipeline.rebuild_document(
+                "content", Path("/fake/original.docx"), output_path
+            )
+
+            assert isinstance(result, PipelineResult)
+            assert result.output_path is None
+            assert result.error is not None
+
+    def test_full_pipeline_workflow(self) -> None:
+        """Test the complete workflow (extract only, since edit/rebuild are no-ops)."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+        simple_docx = FIXTURES_DIR / "simple.docx"
+
+        if not simple_docx.exists():
+            pytest.skip("simple.docx fixture not found")
+
+        # Extract
+        content = pipeline.extract_content(simple_docx)
+        assert len(content) > 0
+        assert "<!--" in content  # XML comments present
+
+        # Apply edit (should be no-op)
+        edited = pipeline.apply_edit(content, "edit instruction")
+        assert edited == content
+
+        # Rebuild (should return None output)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.docx"
+            result = pipeline.rebuild_document(content, simple_docx, output_path)
+            assert result.output_path is None
+            assert result.error is not None
