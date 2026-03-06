@@ -12,7 +12,7 @@ import click
 
 
 # Available pipelines
-PIPELINES = ["sidedoc", "pandoc", "raw_docx", "docint"]
+PIPELINES = ["sidedoc", "pandoc", "raw_docx", "ooxml", "docint"]
 
 # Available tasks
 TASKS = ["summarize", "edit_single", "edit_multiturn"]

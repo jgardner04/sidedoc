@@ -277,6 +277,7 @@ def get_pipeline_description(pipeline: str) -> str:
         "sidedoc": "AI-native format that separates content from formatting",
         "pandoc": "Universal document converter (docx to markdown)",
         "raw_docx": "Raw DOCX paragraph extraction (baseline)",
+        "ooxml": "Full OOXML extraction from .docx archive (all XML files)",
         "docint": "Azure Document Intelligence API",
     }
     return descriptions.get(pipeline, "Unknown pipeline")

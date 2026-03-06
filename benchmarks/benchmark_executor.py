@@ -38,6 +38,10 @@ def get_pipeline(pipeline_name: str) -> Any:
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         return RawDocxPipeline()
+    elif pipeline_name == "ooxml":
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        return OoxmlPipeline()
     elif pipeline_name == "docint":
         from benchmarks.pipelines.docint_pipeline import DocIntelPipeline
 
