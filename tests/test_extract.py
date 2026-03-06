@@ -1048,7 +1048,83 @@ def test_format_hyperlink_md_encodes_url():
 
 
 # ============================================================================
-# Fix 4: extract_paragraph_accept_all bugs
+# Unified extract_paragraph_content tests
+# ============================================================================
+
+
+def test_extract_paragraph_content_normal_mode():
+    """Test the unified extract_paragraph_content in normal mode."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_content
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:t>bold text</w:t>
+        </w:r>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, inline_fmt, track_changes = extract_paragraph_content(para_elem, mode="normal")
+
+    assert "**bold text**" in content
+    assert track_changes is None
+
+
+def test_extract_paragraph_content_accept_all_mode():
+    """Test the unified function in accept_all mode skips deletions."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_content
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r><w:t>kept </w:t></w:r>
+        <w:ins w:id="1" w:author="Author" w:date="2024-01-01T00:00:00Z">
+            <w:r><w:t>inserted</w:t></w:r>
+        </w:ins>
+        <w:del w:id="2" w:author="Author" w:date="2024-01-01T00:00:00Z">
+            <w:r><w:delText>deleted</w:delText></w:r>
+        </w:del>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, _, track_changes = extract_paragraph_content(para_elem, mode="accept_all")
+
+    assert "kept" in content
+    assert "inserted" in content
+    assert "deleted" not in content
+    assert track_changes is None
+
+
+def test_extract_paragraph_content_track_changes_mode():
+    """Test the unified function in track_changes mode produces CriticMarkup."""
+    from lxml import etree
+    from sidedoc.extract import extract_paragraph_content
+    from sidedoc.constants import WORDPROCESSINGML_NS as NS
+
+    xml = f"""
+    <w:p xmlns:w="{NS}">
+        <w:r><w:t>base </w:t></w:r>
+        <w:ins w:id="1" w:author="Alice" w:date="2024-01-01T00:00:00Z">
+            <w:r><w:t>added</w:t></w:r>
+        </w:ins>
+    </w:p>
+    """
+    para_elem = etree.fromstring(xml)
+    content, _, track_changes = extract_paragraph_content(para_elem, mode="track_changes")
+
+    assert "{++added++}" in content
+    assert track_changes is not None
+    assert len(track_changes) == 1
+    assert track_changes[0].type == "insertion"
+    assert track_changes[0].author == "Alice"
+
+
+# ============================================================================
+# Fix 4: extract_paragraph_accept_all bugs (now using unified function)
 # ============================================================================
 
 

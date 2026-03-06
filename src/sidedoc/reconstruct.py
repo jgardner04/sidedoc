@@ -1,5 +1,6 @@
 """Reconstruct Word documents from sidedoc format."""
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -26,6 +27,7 @@ from sidedoc.constants import (
     WORDPROCESSINGML_NS,
     XML_SPACE_NS,
     VALID_BORDER_STYLES,
+    VALID_PATTERN_FILLS,
     HEX_COLOR_PATTERN,
     MAX_BORDER_WIDTH,
 )
@@ -145,6 +147,11 @@ def _process_tokens(
 # - OR a backslash followed by any character (which handles \[ and \])
 HYPERLINK_PATTERN = re.compile(r'\[((?:[^\]\\]|\\.)*)\]\(([^)]+)\)')
 
+# Pre-compiled CriticMarkup patterns
+_INS_RE = re.compile(INSERTION_PATTERN)
+_DEL_RE = re.compile(DELETION_PATTERN)
+_SUB_RE = re.compile(SUBSTITUTION_PATTERN)
+
 # Standard hyperlink color (blue)
 HYPERLINK_COLOR = "0563C1"
 
@@ -164,21 +171,16 @@ def parse_criticmarkup(text: str) -> list[tuple[str, str]]:
     segments: list[tuple[str, str]] = []
     last_end = 0
 
-    # Compile patterns
-    ins_pattern = re.compile(INSERTION_PATTERN)
-    del_pattern = re.compile(DELETION_PATTERN)
-    sub_pattern = re.compile(SUBSTITUTION_PATTERN)
-
     # Find all matches with their positions
     all_matches: list[tuple[int, int, str, str, Optional[str]]] = []
 
-    for match in ins_pattern.finditer(text):
+    for match in _INS_RE.finditer(text):
         all_matches.append((match.start(), match.end(), "insertion", match.group(1), None))
 
-    for match in del_pattern.finditer(text):
+    for match in _DEL_RE.finditer(text):
         all_matches.append((match.start(), match.end(), "deletion", match.group(1), None))
 
-    for match in sub_pattern.finditer(text):
+    for match in _SUB_RE.finditer(text):
         # Substitution has two parts: old text and new text
         all_matches.append((match.start(), match.end(), "substitution", match.group(1), match.group(2)))
 
@@ -381,9 +383,9 @@ def has_criticmarkup(content: str) -> bool:
         True if CriticMarkup is present
     """
     return bool(
-        re.search(INSERTION_PATTERN, content)
-        or re.search(DELETION_PATTERN, content)
-        or re.search(SUBSTITUTION_PATTERN, content)
+        _INS_RE.search(content)
+        or _DEL_RE.search(content)
+        or _SUB_RE.search(content)
     )
 
 
@@ -715,7 +717,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                     docx_paragraph_index=-1,
                     content_start=content_position,
                     content_end=content_position + len(table_content),
-                    content_hash="",
+                    content_hash=hashlib.sha256(table_content.encode()).hexdigest(),
                     table_metadata={
                         "rows": num_rows,
                         "cols": num_cols,
@@ -745,7 +747,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 docx_paragraph_index=block_id,
                 content_start=content_position,
                 content_end=content_position + len(stripped_line),
-                content_hash="",
+                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
                 image_path=image_path,
             )
         elif stripped_line.startswith("#"):
@@ -760,7 +762,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 docx_paragraph_index=block_id,
                 content_start=content_position,
                 content_end=content_position + len(stripped_line),
-                content_hash="",
+                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
                 level=level,
             )
         else:
@@ -771,7 +773,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 docx_paragraph_index=block_id,
                 content_start=content_position,
                 content_end=content_position + len(stripped_line),
-                content_hash="",
+                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
             )
 
         blocks.append(block)
@@ -878,12 +880,13 @@ def parse_gfm_table(table_content: str) -> tuple[list[list[str]], list[str]]:
     return rows, alignments
 
 
-def apply_cell_shading(cell: Any, color: str) -> None:
+def apply_cell_shading(cell: Any, color: str, pattern: str | None = None) -> None:
     """Apply background shading to a table cell.
 
     Args:
         cell: python-docx table cell object
         color: Hex color string like 'D9E2F3'
+        pattern: Optional pattern fill name like 'diagStripe'
     """
     if not re.match(HEX_COLOR_PATTERN, color):
         return
@@ -893,7 +896,10 @@ def apply_cell_shading(cell: Any, color: str) -> None:
     if existing_shd is not None:
         tcPr.remove(existing_shd)
     shd = OxmlElement('w:shd')
-    shd.set(qn('w:val'), 'clear')
+    if pattern and pattern in VALID_PATTERN_FILLS:
+        shd.set(qn('w:val'), pattern)
+    else:
+        shd.set(qn('w:val'), 'clear')
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), color)
     tcPr.append(shd)
@@ -955,7 +961,8 @@ def _apply_cell_styles(table: Any, cell_styles: dict[str, dict[str, Any]]) -> No
             continue
         cell = table.cell(row_idx, col_idx)
         if 'background_color' in style_data:
-            apply_cell_shading(cell, style_data['background_color'])
+            apply_cell_shading(cell, style_data['background_color'],
+                               pattern=style_data.get('pattern_fill'))
         if 'borders' in style_data:
             apply_cell_borders(cell, style_data['borders'])
 
@@ -1130,13 +1137,23 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
-def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_dir: Optional[Path] = None) -> DocumentType:
+def create_docx_from_blocks(
+    blocks: list[Block],
+    styles: dict[str, Any],
+    assets_dir: Optional[Path] = None,
+    style_id_remap: Optional[dict[str, str]] = None,
+    default_tc_author: Optional[str] = None,
+    default_tc_date: Optional[str] = None,
+) -> DocumentType:
     """Create a Word document from Block objects.
 
     Args:
         blocks: List of Block objects
         styles: Style information dictionary
         assets_dir: Optional path to assets directory for image files
+        style_id_remap: Optional mapping from new block IDs to old block IDs for style lookup
+        default_tc_author: Optional default author for CriticMarkup track changes (sync use case)
+        default_tc_date: Optional default date for CriticMarkup track changes (sync use case)
 
     Returns:
         Document object
@@ -1146,67 +1163,62 @@ def create_docx_from_blocks(blocks: list[Block], styles: dict[str, Any], assets_
 
     for block in blocks:
         if block.type == "heading" and block.level:
-            # Add heading with appropriate style
             style_name = f"Heading {block.level}"
-            # Remove markdown markers
             text = block.content.lstrip("#").strip()
 
-            # Check for CriticMarkup first
             if has_criticmarkup(text):
                 para = doc.add_paragraph(style=style_name)
-                add_text_with_track_changes(para, text, block.track_changes)
+                if default_tc_author is not None:
+                    add_text_with_track_changes(para, text, default_author=default_tc_author, default_date=default_tc_date or "")
+                else:
+                    add_text_with_track_changes(para, text, block.track_changes)
             elif has_hyperlinks(text):
                 para = doc.add_paragraph(style=style_name)
                 add_text_with_hyperlinks(para, text)
             else:
                 para = doc.add_paragraph(text, style=style_name)
         elif block.type == "table":
-            # Handle table blocks
-            create_table_from_gfm(doc, block.content, styles, block.id, block.table_metadata)
-            para = None  # Tables don't have paragraph styling
+            # For tables, use remapped ID for style lookup if available
+            table_style_id = block.id
+            if style_id_remap and block.id in style_id_remap:
+                table_style_id = style_id_remap[block.id]
+            create_table_from_gfm(doc, block.content, styles, table_style_id, block.table_metadata)
+            para = None
         elif block.type == "image":
-            # Handle image blocks
             if block.image_path and assets_dir:
-                # Extract filename from image_path (e.g., "assets/image1.png" -> "image1.png")
                 image_filename = block.image_path.split("/")[-1]
                 image_file_path = assets_dir / image_filename
 
                 if image_file_path.exists():
-                    # Add image to document
                     para = doc.add_paragraph()
                     run = para.add_run()
                     run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                 else:
-                    # Image file missing - add placeholder text
                     para = doc.add_paragraph(f"[Missing image: {block.image_path}]")
             else:
-                # No assets directory or image_path - add placeholder
                 para = doc.add_paragraph("[Image]")
-        elif block.type == "paragraph":
-            # Check for CriticMarkup first
-            if has_criticmarkup(block.content):
-                para = doc.add_paragraph()
-                add_text_with_track_changes(para, block.content, block.track_changes)
-            elif has_hyperlinks(block.content):
-                para = doc.add_paragraph()
-                add_text_with_hyperlinks(para, block.content)
-            else:
-                para = doc.add_paragraph(block.content)
         else:
-            # Default to paragraph for unknown types
-            # Check for CriticMarkup first
-            if has_criticmarkup(block.content):
+            # Paragraph and all other block types
+            content = block.content
+            if has_criticmarkup(content):
                 para = doc.add_paragraph()
-                add_text_with_track_changes(para, block.content, block.track_changes)
-            elif has_hyperlinks(block.content):
+                if default_tc_author is not None:
+                    add_text_with_track_changes(para, content, default_author=default_tc_author, default_date=default_tc_date or "")
+                else:
+                    add_text_with_track_changes(para, content, block.track_changes)
+            elif has_hyperlinks(content):
                 para = doc.add_paragraph()
-                add_text_with_hyperlinks(para, block.content)
+                add_text_with_hyperlinks(para, content)
             else:
-                para = doc.add_paragraph(block.content)
+                para = doc.add_paragraph(content)
 
-        # Apply styling if available (only for paragraph-based blocks)
+        # Apply styling - use remapped ID if available
         if para is not None:
-            block_style = styles.get("block_styles", {}).get(block.id, {})
+            if style_id_remap and block.id in style_id_remap:
+                lookup_id = style_id_remap[block.id]
+            else:
+                lookup_id = block.id
+            block_style = styles.get("block_styles", {}).get(lookup_id, {})
             _apply_block_formatting(para, block_style)
 
     return doc

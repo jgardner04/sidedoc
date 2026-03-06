@@ -1,6 +1,5 @@
 """CLI interface for sidedoc."""
 
-import hashlib
 import json
 import shutil
 import sys
@@ -99,24 +98,22 @@ def _read_sidedoc_files(input_path: str) -> tuple[str, dict, dict]:
 
 def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     """Convert structure.json dict to list of Block objects."""
-    old_blocks = []
-    for block_data in old_structure.get("blocks", []):
-        old_blocks.append(
-            Block(
-                id=block_data["id"],
-                type=block_data["type"],
-                content="",
-                docx_paragraph_index=block_data["docx_paragraph_index"],
-                content_start=block_data["content_start"],
-                content_end=block_data["content_end"],
-                content_hash=block_data["content_hash"],
-                level=block_data.get("level"),
-                image_path=block_data.get("image_path"),
-                inline_formatting=block_data.get("inline_formatting"),
-                table_metadata=block_data.get("table_metadata"),
-            )
+    return [
+        Block(
+            id=block_data["id"],
+            type=block_data["type"],
+            content="",
+            docx_paragraph_index=block_data["docx_paragraph_index"],
+            content_start=block_data["content_start"],
+            content_end=block_data["content_end"],
+            content_hash=block_data["content_hash"],
+            level=block_data.get("level"),
+            image_path=block_data.get("image_path"),
+            inline_formatting=block_data.get("inline_formatting"),
+            table_metadata=block_data.get("table_metadata"),
         )
-    return old_blocks
+        for block_data in old_structure.get("blocks", [])
+    ]
 
 
 def _build_output_docx(new_blocks: list[Block], old_structure: dict, styles_data: dict, output: str) -> None:
@@ -248,10 +245,6 @@ def sync(input_file: str, output: str | None, author: str) -> None:
         content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
         new_blocks = parse_markdown_to_blocks(content_md)
 
-        # Compute content hashes for new blocks
-        for block in new_blocks:
-            block.content_hash = hashlib.sha256(block.content.encode()).hexdigest()
-
         # Match blocks for style remapping
         old_blocks = _convert_structure_to_blocks(old_structure)
         matches = match_blocks(old_blocks, new_blocks)
@@ -329,16 +322,18 @@ def _validate_track_changes(structure: dict, content: str) -> list[str]:
     return warnings
 
 
-def _validate_tables(structure: dict, content: str) -> list[str]:
+def _validate_tables(structure: dict, content: str, styles: dict | None = None) -> list[str]:
     """Validate table blocks in structure.json against content.md.
 
     Checks:
     - Table metadata rows/cols match content dimensions
     - Merged cell regions are within bounds
+    - styles.json has entries for table blocks (when styles provided)
 
     Args:
         structure: Parsed structure.json data
         content: Content from content.md
+        styles: Optional parsed styles.json data
 
     Returns:
         List of warning messages (empty if no issues)
@@ -398,6 +393,22 @@ def _validate_tables(structure: dict, content: str) -> list[str]:
                     f"(end_col={end_col}, cols={expected_cols})"
                 )
 
+    # Check styles.json for missing table formatting entries
+    if styles is not None:
+        block_styles = styles.get("block_styles", {})
+        for block in structure.get("blocks", []):
+            if block.get("type") != "table":
+                continue
+            block_id = block.get("id", "unknown")
+            if block_id not in block_styles:
+                warnings.append(
+                    f"Table {block_id}: no style entry in styles.json"
+                )
+            elif "table_formatting" not in block_styles[block_id]:
+                warnings.append(
+                    f"Table {block_id}: missing table_formatting in style entry"
+                )
+
     return warnings
 
 
@@ -451,9 +462,10 @@ def validate(input_file: str) -> None:
             if store.has_file("structure.json") and store.has_file("content.md"):
                 content = store.read_text("content.md")
                 structure = store.read_json("structure.json")
+                styles_data = store.read_json("styles.json") if store.has_file("styles.json") else None
 
                 tc_warnings = _validate_track_changes(structure, content)
-                table_warnings = _validate_tables(structure, content)
+                table_warnings = _validate_tables(structure, content, styles_data)
                 all_warnings = tc_warnings + table_warnings
 
                 if all_warnings:
@@ -648,10 +660,6 @@ def diff(input_file: str) -> None:
                 sys.exit(EXIT_INVALID_FORMAT)
 
             new_blocks = parse_markdown_to_blocks(content_md)
-
-            # Compute content hashes for new blocks
-            for block in new_blocks:
-                block.content_hash = hashlib.sha256(block.content.encode()).hexdigest()
 
             old_blocks = _convert_structure_to_blocks(old_structure)
 

@@ -82,7 +82,7 @@ For any new feature or bug fix:
 
 - [Product Requirements Document](docs/slidedoc-prd.md) — Full PRD with format specification, CLI interface, sync algorithm
 - [Track Changes PRD](docs/prd-track-changes.md) — CriticMarkup-based track changes support
-- [Tables PRD](docs/tables-prd.md) — Phase 2 table support requirements
+- [Tables PRD](docs/tables-prd.md) — Complete table support (all phases implemented)
 - [PRD Status](docs/prd.json) — Current feature tracking
 
 ## Architecture
@@ -133,7 +133,7 @@ Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
 - **Alignment:** `---` (default left), `:---` (explicit left), `:---:` (center), `---:` (right)
 - **Escaping:** Pipe characters in content escaped as `\|`
 - **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
-- **Styling:** `table_formatting` in Style stores column_widths, table_alignment, table_style, cell_styles
+- **Styling:** `table_formatting` in Style stores column_widths, table_alignment, table_style, cell_styles (including background colors and pattern fills like `diagStripe`, `horzStripe`)
 
 ## Sidedoc Format
 
@@ -171,7 +171,7 @@ sidedoc build document.sidedoc                   # Build docx (accepts dir or ZI
 sidedoc sync document.sidedoc                    # Sync edited content.md (directory only)
 sidedoc sync document.sidedoc -o out.docx        # Sync and build updated docx
 sidedoc sync document.sidedoc --author "AI"      # Sync with custom author for track changes
-sidedoc validate document.sidedoc                # Validate (accepts dir or ZIP)
+sidedoc validate document.sidedoc                # Validate structure, table dimensions, merged cells, styles completeness
 sidedoc info document.sidedoc                    # Show metadata (accepts dir or ZIP)
 sidedoc diff document.sidedoc                    # Show changes (directory only)
 sidedoc pack document.sidedoc/                   # Pack directory → .sdoc ZIP
