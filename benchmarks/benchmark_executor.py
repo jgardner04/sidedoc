@@ -194,7 +194,7 @@ class BenchmarkExecutor:
 
             metrics["prompt_tokens"] = task_result.prompt_tokens
             metrics["completion_tokens"] = task_result.completion_tokens
-            metrics["error"] = task_result.error
+            metrics["error"] = task_result.error[:150] if task_result.error else None
 
         except Exception as e:
             metrics["error"] = f"{type(e).__name__}: {str(e)[:150]}"
