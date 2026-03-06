@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import tempfile
+import zipfile
 
 import pytest
 
@@ -125,3 +126,55 @@ class TestOoxmlPipeline:
             result = pipeline.rebuild_document(content, simple_docx, output_path)
             assert result.output_path is None
             assert result.error is not None
+
+    def test_extract_skips_path_traversal_members(self) -> None:
+        """Test that extract_content skips zip members with path traversal."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a zip with a path-traversal member and a safe member
+            zip_path = Path(tmpdir) / "malicious.docx"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("../../malicious.xml", "<evil/>")
+                zf.writestr("word/document.xml", "<doc>safe</doc>")
+
+            content = pipeline.extract_content(zip_path)
+
+            assert "malicious" not in content
+            assert "<!-- word/document.xml -->" in content
+            assert "<doc>safe</doc>" in content
+
+    def test_extract_skips_absolute_path_members(self) -> None:
+        """Test that extract_content skips zip members with absolute paths."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "absolute.docx"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("/etc/passwd.xml", "<evil/>")
+                zf.writestr("word/document.xml", "<doc>safe</doc>")
+
+            content = pipeline.extract_content(zip_path)
+
+            assert "passwd" not in content
+            assert "<doc>safe</doc>" in content
+
+    def test_extract_sanitizes_comment_injection(self) -> None:
+        """Test that member names with --> are sanitized in HTML comments."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "injection.docx"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("word/evil-->.xml", "<injected/>")
+
+            content = pipeline.extract_content(zip_path)
+
+            # The --> should be stripped from the comment
+            assert "-->" not in content.split("\n")[0] or "<!-- word/evil.xml -->" in content
