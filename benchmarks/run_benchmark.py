@@ -12,7 +12,7 @@ import click
 
 
 # Available pipelines
-PIPELINES = ["sidedoc", "pandoc", "raw_docx", "docint"]
+PIPELINES = ["sidedoc", "pandoc", "raw_docx", "ooxml", "docint"]
 
 # Available tasks
 TASKS = ["summarize", "edit_single", "edit_multiturn"]
@@ -64,7 +64,7 @@ def cli(
     Compares document processing pipelines across multiple tasks and documents.
     Results are saved to JSON for later analysis and report generation.
 
-    Available pipelines: sidedoc, pandoc, raw_docx, docint
+    Available pipelines: sidedoc, pandoc, raw_docx, ooxml, docint
 
     Available tasks: summarize, edit_single, edit_multiturn
 
@@ -109,6 +109,7 @@ def cli(
     # Save results
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
+        f.write('\n')
 
     click.echo()
     click.echo(f"Results saved to: {output_path}")

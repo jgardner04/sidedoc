@@ -96,7 +96,6 @@ def generate_executive_summary(results: dict[str, Any]) -> str:
 
     if pipeline_tokens:
         # Find best pipeline (lowest tokens)
-        best_pipeline = min(pipeline_tokens, key=lambda p: pipeline_tokens[p]["total"])
         baseline = pipeline_tokens.get("raw_docx", pipeline_tokens.get("pandoc", {}))
 
         lines.append("### Key Findings\n")
@@ -277,6 +276,7 @@ def get_pipeline_description(pipeline: str) -> str:
         "sidedoc": "AI-native format that separates content from formatting",
         "pandoc": "Universal document converter (docx to markdown)",
         "raw_docx": "Raw DOCX paragraph extraction (baseline)",
+        "ooxml": "Full OOXML extraction from .docx archive (all XML files)",
         "docint": "Azure Document Intelligence API",
     }
     return descriptions.get(pipeline, "Unknown pipeline")

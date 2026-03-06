@@ -38,3 +38,8 @@ htmlcov/
 
 # MkDocs build output
 website/site/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example

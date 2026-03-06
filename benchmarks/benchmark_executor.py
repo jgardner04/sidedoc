@@ -4,10 +4,9 @@ This module provides the BenchmarkExecutor which runs benchmarks
 across pipelines, tasks, and documents.
 """
 
-import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
 
@@ -38,6 +37,10 @@ def get_pipeline(pipeline_name: str) -> Any:
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         return RawDocxPipeline()
+    elif pipeline_name == "ooxml":
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        return OoxmlPipeline()
     elif pipeline_name == "docint":
         from benchmarks.pipelines.docint_pipeline import DocIntelPipeline
 
@@ -75,6 +78,14 @@ def get_task(task_name: str) -> Any:
         )
     else:
         raise ValueError(f"Unknown task: {task_name}")
+
+
+def _make_relative_path(doc_path: Path) -> str:
+    """Convert absolute document path to relative (from repo root)."""
+    try:
+        return str(doc_path.relative_to(BENCHMARKS_DIR.parent))
+    except ValueError:
+        return str(doc_path)
 
 
 def get_documents(corpus: str) -> list[Path]:
@@ -162,7 +173,7 @@ class BenchmarkExecutor:
                 "tasks": self.tasks,
                 "corpus": self.corpus,
                 "model": self.model,
-                "documents": [str(d) for d in documents],
+                "documents": [_make_relative_path(d) for d in documents],
             },
             "results": results,
         }
@@ -202,12 +213,12 @@ class BenchmarkExecutor:
             metrics["completion_tokens"] = task_result.completion_tokens
             metrics["error"] = task_result.error
 
-        except Exception:
-            metrics["error"] = traceback.format_exc()
+        except Exception as e:
+            metrics["error"] = f"{type(e).__name__}: {str(e)[:150]}"
 
         return {
             "pipeline": pipeline_name,
             "task": task_name,
-            "document": str(doc_path),
+            "document": _make_relative_path(doc_path),
             "metrics": metrics,
         }
