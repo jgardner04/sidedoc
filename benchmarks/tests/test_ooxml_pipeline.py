@@ -158,5 +158,26 @@ class TestOoxmlPipeline:
 
             content = pipeline.extract_content(zip_path)
 
-            # The --> should be stripped from the comment
-            assert "-->" not in content.split("\n")[0] or "<!-- word/evil.xml -->" in content
+            # Every comment-header line should contain exactly one --> (closing delimiter)
+            lines = content.split("\n")
+            comment_lines = [l for l in lines if l.startswith("<!-- ")]
+            assert comment_lines, "Expected at least one comment line"
+            for cl in comment_lines:
+                assert cl.count("-->") == 1, f"Injected --> in comment: {cl}"
+
+    def test_extract_skips_backslash_path_traversal(self) -> None:
+        """Test that backslash-style path traversal is rejected."""
+        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
+
+        pipeline = OoxmlPipeline()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            zip_path = Path(tmpdir) / "backslash.docx"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("..\\..\\malicious.xml", "<evil/>")
+                zf.writestr("word/document.xml", "<doc>safe</doc>")
+
+            content = pipeline.extract_content(zip_path)
+
+            assert "malicious" not in content
+            assert "<doc>safe</doc>" in content

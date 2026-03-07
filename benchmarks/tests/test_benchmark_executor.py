@@ -221,9 +221,9 @@ class TestBenchmarkExecutor:
                 )
                 results = executor.run()
 
-                if results["results"]:
-                    error = results["results"][0]["metrics"]["error"]
-                    assert len(error) == 150
+                assert results["results"], "Expected non-empty results"
+                error = results["results"][0]["metrics"]["error"]
+                assert len(error) == 150
 
 
 class TestResultsJsonOutput:
