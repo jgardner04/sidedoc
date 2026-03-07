@@ -1,0 +1,484 @@
+{
+  "metadata": {
+    "timestamp": "2026-03-06T00:49:46.791204",
+    "pipelines": [
+      "ooxml"
+    ],
+    "tasks": [
+      "summarize",
+      "edit_single",
+      "edit_multiturn"
+    ],
+    "corpus": "synthetic",
+    "model": "gemini/gemini-2.5-flash",
+    "documents": [
+      "benchmarks/corpus/synthetic/complex.docx",
+      "benchmarks/corpus/synthetic/formatted.docx",
+      "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "benchmarks/corpus/synthetic/images.docx",
+      "benchmarks/corpus/synthetic/lists.docx",
+      "benchmarks/corpus/synthetic/simple.docx",
+      "benchmarks/corpus/synthetic/tables_complex.docx",
+      "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "benchmarks/corpus/synthetic/tables_merged.docx",
+      "benchmarks/corpus/synthetic/tables_simple.docx",
+      "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "benchmarks/corpus/synthetic/track_changes_simple.docx"
+    ]
+  },
+  "results": [
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 359995,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 360003,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 361841,
+        "completion_tokens": 7206,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 359284,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 359292,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 359292,
+        "completion_tokens": 4092,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 5.13734149s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"model\": \"gemini-2.5-flash\",\n              \"location\": \"global\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"5s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 4.589434772s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"model\": \"gemini-2.5-flash\",\n              \"location\": \"global\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"4s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 361619,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 367427,
+        "completion_tokens": 12276,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 359822,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 359830,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 360271,
+        "completion_tokens": 7801,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 359126,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 359134,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 5.207514798s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"5s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 4.257241968s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"4s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 359024,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 364121,
+        "completion_tokens": 10800,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 361406,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 361414,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 367667,
+        "completion_tokens": 11250,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 361642,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 361650,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 365396,
+        "completion_tokens": 10418,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 359636,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 359644,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 360113,
+        "completion_tokens": 6895,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 359523,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 359531,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 366312,
+        "completion_tokens": 12276,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 358944,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 358952,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 364803,
+        "completion_tokens": 12276,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 359086,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 359094,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 365643,
+        "completion_tokens": 12276,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 359047,
+        "completion_tokens": 1020,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 359055,
+        "completion_tokens": 4092,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 359471,
+        "completion_tokens": 6540,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 358961,
+        "completion_tokens": 1019,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 16.369245687s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"16s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 15.512004303s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"15s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 14.747285308s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"14s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 14.204297664s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"14s\"\n      }\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "pipeline": "ooxml",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 13.284418433s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"13s\"\n      }\n    ]\n  }\n}\n"
+      }
+    }
+  ]
+}

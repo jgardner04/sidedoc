@@ -96,7 +96,7 @@ Raw text extraction uses fewer tokens but **cannot reconstruct the document** â€
 |------------|:-------:|:------:|:--------:|:---------:|
 | Extract content | Yes | Yes | Yes | Yes |
 | Preserve formatting metadata | Yes | No | No | Yes |
-| Rebuild document | Yes | Partial | No | Theoretically |
+| Rebuild document | Yes | Partial | No | No* |
 | Lossless round-trip | Yes | No | No | No |
 | Token efficient | Yes | Yes | Best | Worst |
 | Reliable (0 errors) | Yes | Yes | Yes | No (20% failure rate) |
@@ -119,6 +119,8 @@ Raw text extraction uses fewer tokens but **cannot reconstruct the document** â€
 | **Raw Text** | Baseline â€” extracts paragraph text via python-docx, no formatting, no rebuild capability |
 | **Raw OOXML** | Full XML content from the .docx archive (document.xml + styles.xml + numbering.xml + theme + rels) â€” what an LLM would need for format-preserving round-trip without an intermediate format |
 
+\*OOXML theoretically supports reconstruction, but this pipeline is a baseline comparison tool only.
+
 ### Tasks
 
 | Task | Description | LLM Calls |
@@ -140,6 +142,8 @@ March 2026. Full results in `benchmarks/results/benchmark-latest.json`.
 ---
 
 ## Run It Yourself
+
+For full setup instructions and troubleshooting, see [`benchmarks/README.md`](https://github.com/jgardner04/sidedoc/blob/main/benchmarks/README.md).
 
 ### Prerequisites
 

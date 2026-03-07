@@ -15,28 +15,28 @@
     "corpus": "synthetic",
     "model": "gemini/gemini-2.5-flash",
     "documents": [
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
-      "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx"
+      "benchmarks/corpus/synthetic/complex.docx",
+      "benchmarks/corpus/synthetic/formatted.docx",
+      "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "benchmarks/corpus/synthetic/images.docx",
+      "benchmarks/corpus/synthetic/lists.docx",
+      "benchmarks/corpus/synthetic/simple.docx",
+      "benchmarks/corpus/synthetic/tables_complex.docx",
+      "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "benchmarks/corpus/synthetic/tables_merged.docx",
+      "benchmarks/corpus/synthetic/tables_simple.docx",
+      "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "benchmarks/corpus/synthetic/track_changes_simple.docx"
     ]
   },
   "results": [
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 140,
         "completion_tokens": 303,
@@ -46,7 +46,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 149,
         "completion_tokens": 931,
@@ -56,7 +56,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 454,
         "completion_tokens": 2495,
@@ -66,7 +66,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 83,
         "completion_tokens": 1020,
@@ -76,7 +76,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 92,
         "completion_tokens": 1161,
@@ -86,7 +86,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 257,
         "completion_tokens": 2394,
@@ -96,7 +96,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 404,
         "completion_tokens": 1020,
@@ -106,7 +106,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 413,
         "completion_tokens": 2224,
@@ -116,7 +116,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 1219,
         "completion_tokens": 4442,
@@ -126,7 +126,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 82,
         "completion_tokens": 295,
@@ -136,7 +136,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 91,
         "completion_tokens": 386,
@@ -146,7 +146,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 274,
         "completion_tokens": 1120,
@@ -156,7 +156,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 78,
         "completion_tokens": 743,
@@ -166,7 +166,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 87,
         "completion_tokens": 641,
@@ -176,7 +176,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 266,
         "completion_tokens": 1719,
@@ -186,7 +186,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 92,
         "completion_tokens": 1020,
@@ -196,7 +196,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 101,
         "completion_tokens": 404,
@@ -206,7 +206,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 322,
         "completion_tokens": 780,
@@ -216,7 +216,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 136,
         "completion_tokens": 1020,
@@ -226,7 +226,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 145,
         "completion_tokens": 1373,
@@ -236,7 +236,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 454,
         "completion_tokens": 3555,
@@ -246,7 +246,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 145,
         "completion_tokens": 556,
@@ -256,7 +256,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 154,
         "completion_tokens": 1768,
@@ -266,7 +266,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 478,
         "completion_tokens": 2482,
@@ -276,7 +276,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 104,
         "completion_tokens": 492,
@@ -286,7 +286,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 113,
         "completion_tokens": 587,
@@ -296,7 +296,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 358,
         "completion_tokens": 1300,
@@ -306,7 +306,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 94,
         "completion_tokens": 929,
@@ -316,7 +316,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 103,
         "completion_tokens": 449,
@@ -326,7 +326,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 350,
         "completion_tokens": 1150,
@@ -336,7 +336,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 42,
         "completion_tokens": 789,
@@ -346,7 +346,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 51,
         "completion_tokens": 1035,
@@ -356,7 +356,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 130,
         "completion_tokens": 428,
@@ -366,7 +366,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 51,
         "completion_tokens": 1020,
@@ -376,7 +376,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 60,
         "completion_tokens": 3547,
@@ -386,7 +386,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 208,
         "completion_tokens": 2652,
@@ -396,7 +396,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 53,
         "completion_tokens": 1020,
@@ -406,7 +406,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 62,
         "completion_tokens": 3139,
@@ -416,7 +416,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 161,
         "completion_tokens": 3118,
@@ -426,7 +426,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 42,
         "completion_tokens": 1020,
@@ -436,7 +436,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 51,
         "completion_tokens": 262,
@@ -446,7 +446,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 129,
         "completion_tokens": 2518,
@@ -456,7 +456,7 @@
     {
       "pipeline": "sidedoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 44,
         "completion_tokens": 953,
@@ -466,7 +466,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 53,
         "completion_tokens": 1099,
@@ -476,7 +476,7 @@
     {
       "pipeline": "sidedoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 156,
         "completion_tokens": 3869,
@@ -486,7 +486,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 161,
         "completion_tokens": 518,
@@ -496,7 +496,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 169,
         "completion_tokens": 921,
@@ -506,7 +506,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 506,
         "completion_tokens": 1243,
@@ -516,7 +516,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 97,
         "completion_tokens": 334,
@@ -526,7 +526,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 105,
         "completion_tokens": 932,
@@ -536,7 +536,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 287,
         "completion_tokens": 837,
@@ -546,7 +546,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 484,
         "completion_tokens": 847,
@@ -556,7 +556,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 492,
         "completion_tokens": 3865,
@@ -566,7 +566,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 1407,
         "completion_tokens": 5151,
@@ -576,7 +576,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 113,
         "completion_tokens": 1019,
@@ -586,7 +586,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 121,
         "completion_tokens": 691,
@@ -596,7 +596,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 379,
         "completion_tokens": 1757,
@@ -606,7 +606,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 82,
         "completion_tokens": 503,
@@ -616,7 +616,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 90,
         "completion_tokens": 1219,
@@ -626,7 +626,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 280,
         "completion_tokens": 1312,
@@ -636,7 +636,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 93,
         "completion_tokens": 345,
@@ -646,7 +646,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 101,
         "completion_tokens": 465,
@@ -656,7 +656,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 329,
         "completion_tokens": 2156,
@@ -666,7 +666,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 208,
         "completion_tokens": 1020,
@@ -676,7 +676,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 216,
         "completion_tokens": 1519,
@@ -686,7 +686,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 705,
         "completion_tokens": 4709,
@@ -696,7 +696,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 158,
         "completion_tokens": 971,
@@ -706,7 +706,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 166,
         "completion_tokens": 1116,
@@ -716,7 +716,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 519,
         "completion_tokens": 2568,
@@ -726,7 +726,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 153,
         "completion_tokens": 1020,
@@ -736,7 +736,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 161,
         "completion_tokens": 1123,
@@ -746,7 +746,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 507,
         "completion_tokens": 2159,
@@ -756,7 +756,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 106,
         "completion_tokens": 991,
@@ -766,7 +766,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 114,
         "completion_tokens": 666,
@@ -776,7 +776,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 352,
         "completion_tokens": 1352,
@@ -786,7 +786,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 34,
         "completion_tokens": 551,
@@ -796,7 +796,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 42,
         "completion_tokens": 219,
@@ -806,7 +806,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 130,
         "completion_tokens": 521,
@@ -816,7 +816,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 39,
         "completion_tokens": 743,
@@ -826,7 +826,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 47,
         "completion_tokens": 263,
@@ -836,7 +836,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 146,
         "completion_tokens": 667,
@@ -846,7 +846,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 34,
         "completion_tokens": 1019,
@@ -856,7 +856,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 42,
         "completion_tokens": 582,
@@ -866,7 +866,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 136,
         "completion_tokens": 2749,
@@ -876,7 +876,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 30,
         "completion_tokens": 952,
@@ -886,7 +886,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 38,
         "completion_tokens": 1059,
@@ -896,7 +896,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 119,
         "completion_tokens": 1270,
@@ -906,7 +906,7 @@
     {
       "pipeline": "pandoc",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 36,
         "completion_tokens": 1020,
@@ -916,7 +916,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 44,
         "completion_tokens": 1855,
@@ -926,7 +926,7 @@
     {
       "pipeline": "pandoc",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 148,
         "completion_tokens": 1728,
@@ -936,7 +936,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 103,
         "completion_tokens": 301,
@@ -946,7 +946,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 112,
         "completion_tokens": 1211,
@@ -956,7 +956,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 373,
         "completion_tokens": 2557,
@@ -966,7 +966,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 74,
         "completion_tokens": 164,
@@ -976,7 +976,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 83,
         "completion_tokens": 250,
@@ -986,7 +986,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 226,
         "completion_tokens": 925,
@@ -996,7 +996,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 167,
         "completion_tokens": 876,
@@ -1006,7 +1006,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 176,
         "completion_tokens": 1692,
@@ -1016,7 +1016,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 509,
         "completion_tokens": 2277,
@@ -1026,7 +1026,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 42,
         "completion_tokens": 641,
@@ -1036,7 +1036,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 51,
         "completion_tokens": 958,
@@ -1046,7 +1046,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 158,
         "completion_tokens": 1512,
@@ -1056,7 +1056,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 65,
         "completion_tokens": 275,
@@ -1066,7 +1066,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 74,
         "completion_tokens": 798,
@@ -1076,7 +1076,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 242,
         "completion_tokens": 1799,
@@ -1086,7 +1086,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 88,
         "completion_tokens": 390,
@@ -1096,7 +1096,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 97,
         "completion_tokens": 578,
@@ -1106,7 +1106,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 308,
         "completion_tokens": 1986,
@@ -1116,7 +1116,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 44,
         "completion_tokens": 744,
@@ -1126,7 +1126,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 53,
         "completion_tokens": 430,
@@ -1136,7 +1136,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 169,
         "completion_tokens": 1487,
@@ -1146,7 +1146,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 45,
         "completion_tokens": 674,
@@ -1156,7 +1156,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 54,
         "completion_tokens": 1348,
@@ -1166,7 +1166,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 183,
         "completion_tokens": 1915,
@@ -1176,7 +1176,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 43,
         "completion_tokens": 694,
@@ -1186,7 +1186,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 52,
         "completion_tokens": 725,
@@ -1196,7 +1196,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 169,
         "completion_tokens": 2805,
@@ -1206,7 +1206,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 40,
         "completion_tokens": 1019,
@@ -1216,7 +1216,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 49,
         "completion_tokens": 773,
@@ -1226,7 +1226,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 155,
         "completion_tokens": 952,
@@ -1236,7 +1236,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 31,
         "completion_tokens": 483,
@@ -1246,7 +1246,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 40,
         "completion_tokens": 86,
@@ -1256,7 +1256,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 120,
         "completion_tokens": 258,
@@ -1266,7 +1266,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 34,
         "completion_tokens": 1020,
@@ -1276,7 +1276,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 43,
         "completion_tokens": 3109,
@@ -1286,7 +1286,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 119,
         "completion_tokens": 1059,
@@ -1296,7 +1296,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 31,
         "completion_tokens": 785,
@@ -1306,7 +1306,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 40,
         "completion_tokens": 1286,
@@ -1316,7 +1316,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 125,
         "completion_tokens": 1614,
@@ -1326,7 +1326,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 30,
         "completion_tokens": 143,
@@ -1336,7 +1336,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 39,
         "completion_tokens": 375,
@@ -1346,7 +1346,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 116,
         "completion_tokens": 498,
@@ -1356,7 +1356,7 @@
     {
       "pipeline": "raw_docx",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 35,
         "completion_tokens": 868,
@@ -1366,7 +1366,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 44,
         "completion_tokens": 484,
@@ -1376,7 +1376,7 @@
     {
       "pipeline": "raw_docx",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 143,
         "completion_tokens": 1370,
@@ -1386,7 +1386,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 359995,
         "completion_tokens": 1020,
@@ -1396,7 +1396,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 360003,
         "completion_tokens": 4092,
@@ -1406,7 +1406,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/complex.docx",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
       "metrics": {
         "prompt_tokens": 361841,
         "completion_tokens": 7206,
@@ -1416,7 +1416,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 359284,
         "completion_tokens": 1020,
@@ -1426,7 +1426,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 359292,
         "completion_tokens": 4092,
@@ -1436,27 +1436,27 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/formatted.docx",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
       "metrics": {
         "prompt_tokens": 359292,
         "completion_tokens": 4092,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 5.13734149s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"model\": \"gemini-2.5-flash\",\n              \"location\": \"global\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"5s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 4.589434772s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"model\": \"gemini-2.5-flash\",\n              \"location\": \"global\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"4s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 361619,
         "completion_tokens": 4092,
@@ -1466,7 +1466,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/hyperlinks.docx",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
       "metrics": {
         "prompt_tokens": 367427,
         "completion_tokens": 12276,
@@ -1476,7 +1476,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 359822,
         "completion_tokens": 1020,
@@ -1486,7 +1486,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 359830,
         "completion_tokens": 4092,
@@ -1496,7 +1496,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/images.docx",
+      "document": "benchmarks/corpus/synthetic/images.docx",
       "metrics": {
         "prompt_tokens": 360271,
         "completion_tokens": 7801,
@@ -1506,7 +1506,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 359126,
         "completion_tokens": 1020,
@@ -1516,7 +1516,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 359134,
         "completion_tokens": 4092,
@@ -1526,27 +1526,27 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/lists.docx",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 5.207514798s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"5s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 4.257241968s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"4s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 359024,
         "completion_tokens": 4092,
@@ -1556,7 +1556,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/simple.docx",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
       "metrics": {
         "prompt_tokens": 364121,
         "completion_tokens": 10800,
@@ -1566,7 +1566,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 361406,
         "completion_tokens": 1020,
@@ -1576,7 +1576,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 361414,
         "completion_tokens": 4092,
@@ -1586,7 +1586,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_complex.docx",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
       "metrics": {
         "prompt_tokens": 367667,
         "completion_tokens": 11250,
@@ -1596,7 +1596,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 361642,
         "completion_tokens": 1020,
@@ -1606,7 +1606,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 361650,
         "completion_tokens": 4092,
@@ -1616,7 +1616,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_formatted.docx",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
       "metrics": {
         "prompt_tokens": 365396,
         "completion_tokens": 10418,
@@ -1626,7 +1626,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 359636,
         "completion_tokens": 1020,
@@ -1636,7 +1636,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 359644,
         "completion_tokens": 4092,
@@ -1646,7 +1646,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_merged.docx",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
       "metrics": {
         "prompt_tokens": 360113,
         "completion_tokens": 6895,
@@ -1656,7 +1656,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 359523,
         "completion_tokens": 1020,
@@ -1666,7 +1666,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 359531,
         "completion_tokens": 4092,
@@ -1676,7 +1676,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/tables_simple.docx",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
       "metrics": {
         "prompt_tokens": 366312,
         "completion_tokens": 12276,
@@ -1686,7 +1686,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 358944,
         "completion_tokens": 1020,
@@ -1696,7 +1696,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 358952,
         "completion_tokens": 4092,
@@ -1706,7 +1706,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
       "metrics": {
         "prompt_tokens": 364803,
         "completion_tokens": 12276,
@@ -1716,7 +1716,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 359086,
         "completion_tokens": 1020,
@@ -1726,7 +1726,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 359094,
         "completion_tokens": 4092,
@@ -1736,7 +1736,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
       "metrics": {
         "prompt_tokens": 365643,
         "completion_tokens": 12276,
@@ -1746,7 +1746,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 359047,
         "completion_tokens": 1020,
@@ -1756,7 +1756,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 359055,
         "completion_tokens": 4092,
@@ -1766,7 +1766,7 @@
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
       "metrics": {
         "prompt_tokens": 359471,
         "completion_tokens": 6540,
@@ -1776,7 +1776,7 @@
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 358961,
         "completion_tokens": 1019,
@@ -1786,51 +1786,51 @@
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 16.369245687s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"16s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 15.512004303s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"15s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "summarize",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 14.747285308s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"14s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "edit_single",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 14.204297664s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"14s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     },
     {
       "pipeline": "ooxml",
       "task": "edit_multiturn",
-      "document": "/Users/jogardn/git/sidedoc/benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
       "metrics": {
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count, limit: 1000000, model: gemini-2.5-flash\\nPlease retry in 13.284418433s.\",\n    \"status\": \"RESOURCE_EXHAUSTED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.Help\",\n        \"links\": [\n          {\n            \"description\": \"Learn more about Gemini API quotas\",\n            \"url\": \"https://ai.google.dev/gemini-api/docs/rate-limits\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.QuotaFailure\",\n        \"violations\": [\n          {\n            \"quotaMetric\": \"generativelanguage.googleapis.com/generate_content_paid_tier_input_token_count\",\n            \"quotaId\": \"GenerateContentPaidTierInputTokensPerModelPerMinute\",\n            \"quotaDimensions\": {\n              \"location\": \"global\",\n              \"model\": \"gemini-2.5-flash\"\n            },\n            \"quotaValue\": \"1000000\"\n          }\n        ]\n      },\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.RetryInfo\",\n        \"retryDelay\": \"13s\"\n      }\n    ]\n  }\n}\n"
+        "error": "litellm.RateLimitError: litellm.RateLimitError: geminiException - {\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota, please check your plan and "
       }
     }
   ]

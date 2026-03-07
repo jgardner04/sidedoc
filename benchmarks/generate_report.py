@@ -7,9 +7,11 @@ from benchmark results.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import click
+
+from benchmarks.metrics.cost_calculator import CostCalculator
 
 
 @click.command()
@@ -20,7 +22,7 @@ import click
     default=None,
     help="Output path for report (default: results/report-{timestamp}.md)",
 )
-def cli(input_file: str, output: Optional[str]) -> None:
+def cli(input_file: str, output: str | None) -> None:
     """Generate a report from benchmark results.
 
     INPUT_FILE is the path to the benchmark results JSON file.
@@ -58,41 +60,32 @@ def generate_report(results: dict[str, Any]) -> str:
     Returns:
         Markdown formatted report string.
     """
-    sections = []
+    pipeline_tokens = calculate_pipeline_tokens(results)
 
-    # Title
-    sections.append("# Sidedoc Benchmark Report\n")
-    sections.append(f"Generated: {datetime.now().isoformat()}\n")
-
-    # Executive Summary
-    sections.append(generate_executive_summary(results))
-
-    # Methodology
-    sections.append(generate_methodology(results))
-
-    # Results
-    sections.append(generate_results_section(results))
-
-    # Conclusions
-    sections.append(generate_conclusions(results))
+    sections = [
+        "# Sidedoc Benchmark Report\n",
+        f"Generated: {datetime.now().isoformat()}\n",
+        generate_executive_summary(results, pipeline_tokens),
+        generate_methodology(results),
+        generate_results_section(results, pipeline_tokens),
+        generate_conclusions(pipeline_tokens),
+    ]
 
     return "\n".join(sections)
 
 
-def generate_executive_summary(results: dict[str, Any]) -> str:
+def generate_executive_summary(results: dict[str, Any], pipeline_tokens: dict[str, dict[str, float]]) -> str:
     """Generate the executive summary section.
 
     Args:
         results: Benchmark results dict.
+        pipeline_tokens: Pre-computed pipeline token averages.
 
     Returns:
         Markdown formatted executive summary.
     """
     lines = []
     lines.append("## Executive Summary\n")
-
-    # Calculate token statistics
-    pipeline_tokens = calculate_pipeline_tokens(results)
 
     if pipeline_tokens:
         # Find best pipeline (lowest tokens)
@@ -155,11 +148,12 @@ def generate_methodology(results: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def generate_results_section(results: dict[str, Any]) -> str:
+def generate_results_section(results: dict[str, Any], pipeline_tokens: dict[str, dict[str, float]]) -> str:
     """Generate the results section with tables.
 
     Args:
         results: Benchmark results dict.
+        pipeline_tokens: Pre-computed pipeline token averages.
 
     Returns:
         Markdown formatted results with tables.
@@ -169,7 +163,6 @@ def generate_results_section(results: dict[str, Any]) -> str:
 
     # Token efficiency table
     lines.append("### Token Efficiency\n")
-    pipeline_tokens = calculate_pipeline_tokens(results)
 
     if pipeline_tokens:
         lines.append("| Pipeline | Prompt Tokens | Completion Tokens | Total Tokens |\n")
@@ -190,27 +183,25 @@ def generate_results_section(results: dict[str, Any]) -> str:
     lines.append("| Pipeline | Est. Cost (per doc) |\n")
     lines.append("|----------|---------------------|\n")
 
+    calculator = CostCalculator()
     for pipeline, tokens in pipeline_tokens.items():
-        # Estimate cost: $0.003/1K input, $0.015/1K output
-        cost = (tokens["prompt"] / 1000 * 0.003) + (tokens["completion"] / 1000 * 0.015)
+        cost = calculator.calculate_llm_cost(int(tokens["prompt"]), int(tokens["completion"]))["total"]
         lines.append(f"| {pipeline} | ${cost:.4f} |\n")
 
     return "\n".join(lines)
 
 
-def generate_conclusions(results: dict[str, Any]) -> str:
+def generate_conclusions(pipeline_tokens: dict[str, dict[str, float]]) -> str:
     """Generate the conclusions section.
 
     Args:
-        results: Benchmark results dict.
+        pipeline_tokens: Pre-computed pipeline token averages.
 
     Returns:
         Markdown formatted conclusions.
     """
     lines = []
     lines.append("## Conclusions\n")
-
-    pipeline_tokens = calculate_pipeline_tokens(results)
 
     if pipeline_tokens:
         # Find best pipeline

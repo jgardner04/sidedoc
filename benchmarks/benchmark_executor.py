@@ -4,6 +4,7 @@ This module provides the BenchmarkExecutor which runs benchmarks
 across pipelines, tasks, and documents.
 """
 
+import importlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,38 +16,38 @@ BENCHMARKS_DIR = Path(__file__).parent
 SYNTHETIC_DIR = BENCHMARKS_DIR / "corpus" / "synthetic"
 REAL_DIR = BENCHMARKS_DIR / "corpus" / "real"
 
+_PIPELINE_REGISTRY: dict[str, tuple[str, str]] = {
+    "sidedoc": ("benchmarks.pipelines.sidedoc_pipeline", "SidedocPipeline"),
+    "pandoc": ("benchmarks.pipelines.pandoc_pipeline", "PandocPipeline"),
+    "raw_docx": ("benchmarks.pipelines.raw_docx_pipeline", "RawDocxPipeline"),
+    "ooxml": ("benchmarks.pipelines.ooxml_pipeline", "OoxmlPipeline"),
+    "docint": ("benchmarks.pipelines.docint_pipeline", "DocIntelPipeline"),
+}
+
+_TASK_REGISTRY: dict[str, tuple[str, str, dict[str, Any]]] = {
+    "summarize": ("benchmarks.tasks.summarize", "SummarizeTask", {}),
+    "edit_single": ("benchmarks.tasks.edit_single", "SingleEditTask", {"edit_instruction": "Make the text more concise"}),
+    "edit_multiturn": ("benchmarks.tasks.edit_multiturn", "MultiTurnEditTask", {"edit_instructions": ["Make the text more concise", "Add a summary at the end", "Fix any grammar issues"]}),
+}
+
 
 def get_pipeline(pipeline_name: str) -> Any:
     """Get a pipeline instance by name.
 
     Args:
-        pipeline_name: Name of the pipeline (sidedoc, pandoc, raw_docx, docint).
+        pipeline_name: Name of the pipeline (sidedoc, pandoc, raw_docx, ooxml, docint).
 
     Returns:
         Pipeline instance.
     """
-    if pipeline_name == "sidedoc":
-        from benchmarks.pipelines.sidedoc_pipeline import SidedocPipeline
-
-        return SidedocPipeline()
-    elif pipeline_name == "pandoc":
-        from benchmarks.pipelines.pandoc_pipeline import PandocPipeline
-
-        return PandocPipeline()
-    elif pipeline_name == "raw_docx":
-        from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
-
-        return RawDocxPipeline()
-    elif pipeline_name == "ooxml":
-        from benchmarks.pipelines.ooxml_pipeline import OoxmlPipeline
-
-        return OoxmlPipeline()
-    elif pipeline_name == "docint":
-        from benchmarks.pipelines.docint_pipeline import DocIntelPipeline
-
-        return DocIntelPipeline()
-    else:
+    if pipeline_name not in _PIPELINE_REGISTRY:
         raise ValueError(f"Unknown pipeline: {pipeline_name}")
+    module_path, class_name = _PIPELINE_REGISTRY[pipeline_name]
+    module = importlib.import_module(module_path)
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        raise ValueError(f"Class {class_name} not found in {module_path}")
+    return cls()
 
 
 def get_task(task_name: str) -> Any:
@@ -58,26 +59,14 @@ def get_task(task_name: str) -> Any:
     Returns:
         Task instance.
     """
-    if task_name == "summarize":
-        from benchmarks.tasks.summarize import SummarizeTask
-
-        return SummarizeTask()
-    elif task_name == "edit_single":
-        from benchmarks.tasks.edit_single import SingleEditTask
-
-        return SingleEditTask(edit_instruction="Make the text more concise")
-    elif task_name == "edit_multiturn":
-        from benchmarks.tasks.edit_multiturn import MultiTurnEditTask
-
-        return MultiTurnEditTask(
-            edit_instructions=[
-                "Make the text more concise",
-                "Add a summary at the end",
-                "Fix any grammar issues",
-            ]
-        )
-    else:
+    if task_name not in _TASK_REGISTRY:
         raise ValueError(f"Unknown task: {task_name}")
+    module_path, class_name, kwargs = _TASK_REGISTRY[task_name]
+    module = importlib.import_module(module_path)
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        raise ValueError(f"Class {class_name} not found in {module_path}")
+    return cls(**kwargs)
 
 
 def _make_relative_path(doc_path: Path) -> str:
@@ -211,7 +200,7 @@ class BenchmarkExecutor:
 
             metrics["prompt_tokens"] = task_result.prompt_tokens
             metrics["completion_tokens"] = task_result.completion_tokens
-            metrics["error"] = task_result.error
+            metrics["error"] = task_result.error[:150] if task_result.error else None
 
         except Exception as e:
             metrics["error"] = f"{type(e).__name__}: {str(e)[:150]}"

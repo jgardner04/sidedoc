@@ -6,16 +6,12 @@ import tempfile
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
-
-
 class TestRawDocxPipeline:
     """Test that the Raw DOCX pipeline works correctly."""
 
-    def test_pipeline_module_exists(self) -> None:
+    def test_pipeline_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that raw_docx_pipeline.py exists."""
-        pipeline_path = BENCHMARKS_DIR / "pipelines" / "raw_docx_pipeline.py"
+        pipeline_path = benchmarks_dir / "pipelines" / "raw_docx_pipeline.py"
         assert pipeline_path.exists(), "benchmarks/pipelines/raw_docx_pipeline.py does not exist"
 
     def test_pipeline_is_importable(self) -> None:
@@ -38,28 +34,23 @@ class TestRawDocxPipeline:
         pipeline = RawDocxPipeline()
         assert pipeline is not None
 
-    def test_extract_content_uses_python_docx(self) -> None:
+    def test_extract_content_uses_python_docx(self, simple_docx: Path) -> None:
         """Test that extract_content extracts paragraph text from docx."""
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         pipeline = RawDocxPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         # Should return non-empty string
         assert isinstance(content, str)
         assert len(content) > 0
 
-    def test_extract_content_extracts_all_paragraphs(self) -> None:
+    def test_extract_content_extracts_all_paragraphs(self, fixtures_dir: Path) -> None:
         """Test that extract_content extracts all paragraph text."""
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         pipeline = RawDocxPipeline()
-        lists_docx = FIXTURES_DIR / "lists.docx"
+        lists_docx = fixtures_dir / "lists.docx"
 
         if not lists_docx.exists():
             pytest.skip("lists.docx fixture not found")
@@ -103,16 +94,11 @@ class TestRawDocxPipeline:
             # Should have an informative "error" message explaining why
             assert result.error is not None
 
-    def test_token_counting_works(self) -> None:
+    def test_token_counting_works(self, simple_docx: Path) -> None:
         """Test that token counting works for the extracted content."""
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         pipeline = RawDocxPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
-
         content = pipeline.extract_content(simple_docx)
 
         # Token count should be calculable from content
@@ -120,15 +106,11 @@ class TestRawDocxPipeline:
         token_estimate = len(content) // 4
         assert token_estimate >= 0
 
-    def test_full_pipeline_workflow(self) -> None:
+    def test_full_pipeline_workflow(self, simple_docx: Path) -> None:
         """Test the complete workflow (extract only, since edit/rebuild are no-ops)."""
         from benchmarks.pipelines.raw_docx_pipeline import RawDocxPipeline
 
         pipeline = RawDocxPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
 
         # Extract
         content = pipeline.extract_content(simple_docx)

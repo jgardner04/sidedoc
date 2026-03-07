@@ -6,15 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestMultiTurnEditTask:
     """Test the multi-turn edit task (US-020)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that edit_multiturn.py exists in tasks directory."""
-        module_path = BENCHMARKS_DIR / "tasks" / "edit_multiturn.py"
+        module_path = benchmarks_dir / "tasks" / "edit_multiturn.py"
         assert module_path.exists(), "benchmarks/tasks/edit_multiturn.py does not exist"
 
     def test_multi_turn_edit_task_is_importable(self) -> None:

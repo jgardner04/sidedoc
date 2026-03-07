@@ -6,15 +6,12 @@ import pytest
 from click.testing import CliRunner
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBenchmarkRunner:
     """Test the benchmark runner CLI (US-021)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that run_benchmark.py exists."""
-        module_path = BENCHMARKS_DIR / "run_benchmark.py"
+        module_path = benchmarks_dir / "run_benchmark.py"
         assert module_path.exists(), "benchmarks/run_benchmark.py does not exist"
 
     def test_cli_is_importable(self) -> None:

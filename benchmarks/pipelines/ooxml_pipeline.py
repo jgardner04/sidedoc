@@ -6,6 +6,8 @@ what you'd need to send to an LLM for a format-preserving round-trip
 without a purpose-built intermediate format like Sidedoc.
 """
 
+import os
+import re
 import zipfile
 from pathlib import Path
 
@@ -39,9 +41,14 @@ class OoxmlPipeline(BasePipeline):
 
         with zipfile.ZipFile(document_path) as z:
             for name in sorted(z.namelist()):
+                # Reject path traversal attempts (forward and backslash)
+                normalized = name.replace("\\", "/")
+                if os.path.isabs(normalized) or ".." in normalized.split("/"):
+                    continue
                 if name.endswith(".xml") or name.endswith(".rels"):
                     content = z.read(name).decode("utf-8", errors="ignore")
-                    parts.append(f"<!-- {name} -->\n{content}")
+                    safe_name = re.sub(r"[^a-zA-Z0-9/._\[\]-]", "_", name)
+                    parts.append(f"<!-- {safe_name} -->\n{content}")
 
         self._current_content = "\n\n".join(parts)
         return self._current_content

@@ -7,16 +7,12 @@ import tempfile
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-FIXTURES_DIR = BENCHMARKS_DIR.parent / "tests" / "fixtures"
-
-
 class TestPandocPipeline:
     """Test that the Pandoc pipeline works correctly."""
 
-    def test_pipeline_module_exists(self) -> None:
+    def test_pipeline_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that pandoc_pipeline.py exists."""
-        pipeline_path = BENCHMARKS_DIR / "pipelines" / "pandoc_pipeline.py"
+        pipeline_path = benchmarks_dir / "pipelines" / "pandoc_pipeline.py"
         assert pipeline_path.exists(), "benchmarks/pipelines/pandoc_pipeline.py does not exist"
 
     def test_pipeline_is_importable(self) -> None:
@@ -104,15 +100,11 @@ class TestPandocPipeline:
             assert isinstance(result, PipelineResult)
             mock_pypandoc.convert_text.assert_called_once()
 
-    def test_extract_content_with_real_fixture(self) -> None:
+    def test_extract_content_with_real_fixture(self, simple_docx: Path) -> None:
         """Test extract_content with a real docx file (if pandoc is installed)."""
         from benchmarks.pipelines.pandoc_pipeline import PandocPipeline, PandocNotFoundError
 
         pipeline = PandocPipeline()
-        simple_docx = FIXTURES_DIR / "simple.docx"
-
-        if not simple_docx.exists():
-            pytest.skip("simple.docx fixture not found")
 
         try:
             content = pipeline.extract_content(simple_docx)

@@ -9,15 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBenchmarkExecutor:
     """Test the benchmark executor (US-022)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that benchmark_executor.py exists."""
-        module_path = BENCHMARKS_DIR / "benchmark_executor.py"
+        module_path = benchmarks_dir / "benchmark_executor.py"
         assert module_path.exists(), "benchmarks/benchmark_executor.py does not exist"
 
     def test_executor_is_importable(self) -> None:
@@ -195,6 +192,38 @@ class TestBenchmarkExecutor:
                 # Should not raise, even with pipeline errors
                 results = executor.run()
                 assert isinstance(results, dict)
+
+    def test_task_error_truncated_to_150_chars(self) -> None:
+        """Test that task_result.error is truncated to 150 characters."""
+        from benchmarks.benchmark_executor import BenchmarkExecutor
+
+        long_error = "x" * 300
+
+        with patch("benchmarks.benchmark_executor.get_pipeline") as mock_pipeline:
+            with patch("benchmarks.benchmark_executor.get_task") as mock_task:
+                mock_pipe = MagicMock()
+                mock_pipe.extract_content.return_value = "content"
+                mock_pipeline.return_value = mock_pipe
+
+                mock_t = MagicMock()
+                mock_t.execute.return_value = MagicMock(
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    result_text="result",
+                    error=long_error,
+                )
+                mock_task.return_value = mock_t
+
+                executor = BenchmarkExecutor(
+                    pipelines=["sidedoc"],
+                    tasks=["summarize"],
+                    corpus="synthetic",
+                )
+                results = executor.run()
+
+                assert results["results"], "Expected non-empty results"
+                error = results["results"][0]["metrics"]["error"]
+                assert len(error) == 150
 
 
 class TestResultsJsonOutput:

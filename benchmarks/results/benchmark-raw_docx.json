@@ -1,0 +1,484 @@
+{
+  "metadata": {
+    "timestamp": "2026-03-05T23:26:35.322254",
+    "pipelines": [
+      "raw_docx"
+    ],
+    "tasks": [
+      "summarize",
+      "edit_single",
+      "edit_multiturn"
+    ],
+    "corpus": "synthetic",
+    "model": "claude-sonnet-4-20250514",
+    "documents": [
+      "benchmarks/corpus/synthetic/complex.docx",
+      "benchmarks/corpus/synthetic/formatted.docx",
+      "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "benchmarks/corpus/synthetic/images.docx",
+      "benchmarks/corpus/synthetic/lists.docx",
+      "benchmarks/corpus/synthetic/simple.docx",
+      "benchmarks/corpus/synthetic/tables_complex.docx",
+      "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "benchmarks/corpus/synthetic/tables_merged.docx",
+      "benchmarks/corpus/synthetic/tables_simple.docx",
+      "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "benchmarks/corpus/synthetic/track_changes_simple.docx"
+    ]
+  },
+  "results": [
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 116,
+        "completion_tokens": 155,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 124,
+        "completion_tokens": 88,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/complex.docx",
+      "metrics": {
+        "prompt_tokens": 418,
+        "completion_tokens": 360,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 85,
+        "completion_tokens": 91,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 93,
+        "completion_tokens": 71,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/formatted.docx",
+      "metrics": {
+        "prompt_tokens": 382,
+        "completion_tokens": 368,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 182,
+        "completion_tokens": 159,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 190,
+        "completion_tokens": 124,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/hyperlinks.docx",
+      "metrics": {
+        "prompt_tokens": 600,
+        "completion_tokens": 556,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 50,
+        "completion_tokens": 123,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 58,
+        "completion_tokens": 21,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/images.docx",
+      "metrics": {
+        "prompt_tokens": 198,
+        "completion_tokens": 120,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 75,
+        "completion_tokens": 91,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 83,
+        "completion_tokens": 47,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/lists.docx",
+      "metrics": {
+        "prompt_tokens": 288,
+        "completion_tokens": 223,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 102,
+        "completion_tokens": 168,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 110,
+        "completion_tokens": 64,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/simple.docx",
+      "metrics": {
+        "prompt_tokens": 337,
+        "completion_tokens": 251,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 52,
+        "completion_tokens": 155,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 60,
+        "completion_tokens": 22,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_complex.docx",
+      "metrics": {
+        "prompt_tokens": 199,
+        "completion_tokens": 116,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 54,
+        "completion_tokens": 145,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 62,
+        "completion_tokens": 21,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_formatted.docx",
+      "metrics": {
+        "prompt_tokens": 206,
+        "completion_tokens": 125,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 53,
+        "completion_tokens": 139,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 61,
+        "completion_tokens": 23,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_merged.docx",
+      "metrics": {
+        "prompt_tokens": 202,
+        "completion_tokens": 123,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 48,
+        "completion_tokens": 84,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 56,
+        "completion_tokens": 17,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/tables_simple.docx",
+      "metrics": {
+        "prompt_tokens": 183,
+        "completion_tokens": 98,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 40,
+        "completion_tokens": 75,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 48,
+        "completion_tokens": 10,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_headings.docx",
+      "metrics": {
+        "prompt_tokens": 152,
+        "completion_tokens": 58,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 43,
+        "completion_tokens": 86,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 51,
+        "completion_tokens": 12,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_lists.docx",
+      "metrics": {
+        "prompt_tokens": 157,
+        "completion_tokens": 59,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 40,
+        "completion_tokens": 90,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 48,
+        "completion_tokens": 7,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_multiauthor.docx",
+      "metrics": {
+        "prompt_tokens": 158,
+        "completion_tokens": 50,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 38,
+        "completion_tokens": 90,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 46,
+        "completion_tokens": 7,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_paragraph.docx",
+      "metrics": {
+        "prompt_tokens": 145,
+        "completion_tokens": 52,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "summarize",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 43,
+        "completion_tokens": 96,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_single",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 51,
+        "completion_tokens": 14,
+        "error": null
+      }
+    },
+    {
+      "pipeline": "raw_docx",
+      "task": "edit_multiturn",
+      "document": "benchmarks/corpus/synthetic/track_changes_simple.docx",
+      "metrics": {
+        "prompt_tokens": 170,
+        "completion_tokens": 64,
+        "error": null
+      }
+    }
+  ]
+}

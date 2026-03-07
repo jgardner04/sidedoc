@@ -5,15 +5,12 @@ from pathlib import Path
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBaseTask:
     """Test the base task interface (US-017)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that base.py exists in tasks directory."""
-        module_path = BENCHMARKS_DIR / "tasks" / "base.py"
+        module_path = benchmarks_dir / "tasks" / "base.py"
         assert module_path.exists(), "benchmarks/tasks/base.py does not exist"
 
     def test_base_task_is_importable(self) -> None:

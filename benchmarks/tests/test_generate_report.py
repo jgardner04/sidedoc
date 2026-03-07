@@ -8,9 +8,6 @@ import pytest
 from click.testing import CliRunner
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 # Sample results data for testing
 SAMPLE_RESULTS = {
     "metadata": {
@@ -48,9 +45,9 @@ SAMPLE_RESULTS = {
 class TestReportGenerator:
     """Test the report generator CLI (US-024)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that generate_report.py exists."""
-        module_path = BENCHMARKS_DIR / "generate_report.py"
+        module_path = benchmarks_dir / "generate_report.py"
         assert module_path.exists(), "benchmarks/generate_report.py does not exist"
 
     def test_cli_is_importable(self) -> None:

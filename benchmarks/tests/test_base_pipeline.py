@@ -5,15 +5,12 @@ from abc import ABC
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBasePipeline:
     """Test that the base pipeline interface is properly defined."""
 
-    def test_base_module_exists(self) -> None:
+    def test_base_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that base.py exists in pipelines directory."""
-        base_path = BENCHMARKS_DIR / "pipelines" / "base.py"
+        base_path = benchmarks_dir / "pipelines" / "base.py"
         assert base_path.exists(), "benchmarks/pipelines/base.py does not exist"
 
     def test_base_pipeline_is_importable(self) -> None:

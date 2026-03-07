@@ -7,15 +7,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestSummarizeTask:
     """Test the summarization task (US-018)."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that summarize.py exists in tasks directory."""
-        module_path = BENCHMARKS_DIR / "tasks" / "summarize.py"
+        module_path = benchmarks_dir / "tasks" / "summarize.py"
         assert module_path.exists(), "benchmarks/tasks/summarize.py does not exist"
 
     def test_summarize_task_is_importable(self) -> None:

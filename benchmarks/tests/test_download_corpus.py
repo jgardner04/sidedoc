@@ -7,15 +7,12 @@ import tempfile
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestDownloadCorpusScript:
     """Test that the download corpus script exists and works correctly."""
 
-    def test_script_file_exists(self) -> None:
+    def test_script_file_exists(self, benchmarks_dir: Path) -> None:
         """Test that download_corpus.py exists."""
-        script_path = BENCHMARKS_DIR / "scripts" / "download_corpus.py"
+        script_path = benchmarks_dir / "scripts" / "download_corpus.py"
         assert script_path.exists(), "benchmarks/scripts/download_corpus.py does not exist"
 
     def test_script_is_importable(self) -> None:

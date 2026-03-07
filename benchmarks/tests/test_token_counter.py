@@ -5,15 +5,12 @@ from pathlib import Path
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestTokenCounter:
     """Test that the token counter utility works correctly."""
 
-    def test_module_exists(self) -> None:
+    def test_module_exists(self, benchmarks_dir: Path) -> None:
         """Test that token_counter.py exists."""
-        module_path = BENCHMARKS_DIR / "metrics" / "token_counter.py"
+        module_path = benchmarks_dir / "metrics" / "token_counter.py"
         assert module_path.exists(), "benchmarks/metrics/token_counter.py does not exist"
 
     def test_token_counter_is_importable(self) -> None:

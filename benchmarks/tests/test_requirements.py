@@ -5,20 +5,17 @@ from pathlib import Path
 import pytest
 
 
-BENCHMARKS_DIR = Path(__file__).parent.parent
-
-
 class TestBenchmarkRequirements:
     """Test that benchmark requirements.txt is properly configured."""
 
-    def test_requirements_file_exists(self) -> None:
+    def test_requirements_file_exists(self, benchmarks_dir: Path) -> None:
         """Test that requirements.txt exists in benchmarks directory."""
-        requirements_path = BENCHMARKS_DIR / "requirements.txt"
+        requirements_path = benchmarks_dir / "requirements.txt"
         assert requirements_path.exists(), "benchmarks/requirements.txt does not exist"
 
-    def test_required_packages_listed(self) -> None:
+    def test_required_packages_listed(self, benchmarks_dir: Path) -> None:
         """Test that all required packages are listed."""
-        requirements_path = BENCHMARKS_DIR / "requirements.txt"
+        requirements_path = benchmarks_dir / "requirements.txt"
         content = requirements_path.read_text()
 
         required_packages = [
@@ -40,9 +37,9 @@ class TestBenchmarkRequirements:
             content_lower = content.lower()
             assert package_lower in content_lower, f"Package {package} not found in requirements.txt"
 
-    def test_versions_are_pinned(self) -> None:
+    def test_versions_are_pinned(self, benchmarks_dir: Path) -> None:
         """Test that package versions are pinned for reproducibility."""
-        requirements_path = BENCHMARKS_DIR / "requirements.txt"
+        requirements_path = benchmarks_dir / "requirements.txt"
         lines = requirements_path.read_text().strip().split("\n")
 
         for line in lines:
