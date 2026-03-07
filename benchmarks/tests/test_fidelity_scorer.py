@@ -7,8 +7,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 
-from benchmarks.tests.conftest import BENCHMARKS_DIR
-
+BENCHMARKS_DIR = Path(__file__).parent.parent
 SYNTHETIC_DIR = BENCHMARKS_DIR / "corpus" / "synthetic"
 
 

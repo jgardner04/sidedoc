@@ -17,17 +17,17 @@ SYNTHETIC_DIR = BENCHMARKS_DIR / "corpus" / "synthetic"
 REAL_DIR = BENCHMARKS_DIR / "corpus" / "real"
 
 _PIPELINE_REGISTRY: dict[str, tuple[str, str]] = {
-    "sidedoc":  ("benchmarks.pipelines.sidedoc_pipeline",  "SidedocPipeline"),
-    "pandoc":   ("benchmarks.pipelines.pandoc_pipeline",   "PandocPipeline"),
+    "sidedoc": ("benchmarks.pipelines.sidedoc_pipeline", "SidedocPipeline"),
+    "pandoc": ("benchmarks.pipelines.pandoc_pipeline", "PandocPipeline"),
     "raw_docx": ("benchmarks.pipelines.raw_docx_pipeline", "RawDocxPipeline"),
-    "ooxml":    ("benchmarks.pipelines.ooxml_pipeline",    "OoxmlPipeline"),
-    "docint":   ("benchmarks.pipelines.docint_pipeline",   "DocIntelPipeline"),
+    "ooxml": ("benchmarks.pipelines.ooxml_pipeline", "OoxmlPipeline"),
+    "docint": ("benchmarks.pipelines.docint_pipeline", "DocIntelPipeline"),
 }
 
 _TASK_REGISTRY: dict[str, tuple[str, str, dict[str, Any]]] = {
-    "summarize":      ("benchmarks.tasks.summarize",       "SummarizeTask",     {}),
-    "edit_single":    ("benchmarks.tasks.edit_single",     "SingleEditTask",    {"edit_instruction": "Make the text more concise"}),
-    "edit_multiturn": ("benchmarks.tasks.edit_multiturn",  "MultiTurnEditTask", {"edit_instructions": ["Make the text more concise", "Add a summary at the end", "Fix any grammar issues"]}),
+    "summarize": ("benchmarks.tasks.summarize", "SummarizeTask", {}),
+    "edit_single": ("benchmarks.tasks.edit_single", "SingleEditTask", {"edit_instruction": "Make the text more concise"}),
+    "edit_multiturn": ("benchmarks.tasks.edit_multiturn", "MultiTurnEditTask", {"edit_instructions": ["Make the text more concise", "Add a summary at the end", "Fix any grammar issues"]}),
 }
 
 
@@ -44,7 +44,10 @@ def get_pipeline(pipeline_name: str) -> Any:
         raise ValueError(f"Unknown pipeline: {pipeline_name}")
     module_path, class_name = _PIPELINE_REGISTRY[pipeline_name]
     module = importlib.import_module(module_path)
-    return getattr(module, class_name)()
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        raise ValueError(f"Class {class_name} not found in {module_path}")
+    return cls()
 
 
 def get_task(task_name: str) -> Any:
@@ -60,7 +63,10 @@ def get_task(task_name: str) -> Any:
         raise ValueError(f"Unknown task: {task_name}")
     module_path, class_name, kwargs = _TASK_REGISTRY[task_name]
     module = importlib.import_module(module_path)
-    return getattr(module, class_name)(**kwargs)
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        raise ValueError(f"Class {class_name} not found in {module_path}")
+    return cls(**kwargs)
 
 
 def _make_relative_path(doc_path: Path) -> str:
