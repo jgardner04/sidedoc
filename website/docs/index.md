@@ -2,13 +2,11 @@
 
 **AI-native document format that separates content from formatting.**
 
-Sidedoc enables efficient AI interaction with documents while preserving rich formatting for human consumption. A `.sidedoc` file is a ZIP archive containing markdown content and formatting metadata that can reconstruct the original docx.
+Sidedoc enables efficient AI interaction with documents while preserving rich formatting for human consumption. Sidedoc extracts a `.sidedoc/` directory containing markdown content and formatting metadata that can reconstruct the original docx. A `.sdoc` ZIP archive provides a single-file format for sharing.
 
-!!! info "Project Status: MVP Complete + Hyperlinks"
-    **Current Version:** 0.1.0
-    **Status:** All MVP features implemented with 188 passing tests
-    **What Works:** Extract, sync, diff, build — including inline formatting, lists, images, and hyperlinks
-    **Coming Next:** Tables, nested lists
+!!! info "Project Status: Tables, Track Changes & Hyperlinks"
+    **What Works:** Extract, sync, diff, build — including tables, track changes, inline formatting, lists, images, and hyperlinks
+    **Coming Next:** Nested lists, headers/footers
 
 ## The Problem
 
@@ -16,9 +14,9 @@ Current document workflows force a tradeoff between AI efficiency and human usab
 
 - **Reading documents:** Extracting content for AI is expensive (15,000+ tokens for a 10-page document via XML) and loses formatting connections
 - **Creating documents:** Tools like Pandoc generate docx from markdown, but it's one-way with no formatting preservation
-- **Iterative collaboration:** Repeated extraction and regeneration is lossy and expensive - each cycle costs 10x more than necessary and degrades formatting
+- **Iterative collaboration:** Repeated extraction and regeneration is lossy and expensive - each cycle costs orders of magnitude more than necessary and degrades formatting
 
-**Cost impact:** AI document workflows using traditional extraction methods pay 10x more in API costs than necessary and lose formatting with every iteration.
+**Cost impact:** AI document workflows using traditional extraction methods pay dramatically more in API costs than necessary and lose formatting with every iteration.
 
 ## The Solution
 
@@ -30,11 +28,11 @@ Documents should have two representations that stay in sync:
 Changes to either propagate to the other.
 
 !!! success "Key Benefits"
-    **10x Token Efficiency:** Sidedoc markdown uses ~1,500 tokens vs. 15,000+ tokens for XML-based extraction
+    **Massive Token Savings:** [Measured 1,524x fewer prompt tokens](benchmarks.md) than raw OOXML across 45 LLM task runs
 
-    **Perfect Format Preservation:** Original docx formatting is preserved in metadata and automatically reapplied
+    **Format Preservation:** Original docx formatting is preserved in metadata and automatically reapplied
 
-    **Lossless Iteration:** Edit content infinitely without formatting degradation - each sync maintains perfect fidelity
+    **Iterative Editing:** Edit content repeatedly without formatting degradation — each sync maintains fidelity for supported elements
 
     **Human + AI Friendly:** AI works with clean markdown; humans get familiar Word documents
 
@@ -57,7 +55,13 @@ sidedoc sync quarterly_report.sidedoc
 sidedoc build quarterly_report.sidedoc
 ```
 
-## What's in a .sidedoc file?
+<!-- Keep element lists in sync: index.md, faq.md, format-specification.md -->
+!!! example "What's Supported"
+    **Fully supported:** Headings, paragraphs, bold/italic, lists, images, hyperlinks, tables (including merged cells and cell styling), and track changes (insertions/deletions with author attribution).
+
+    **Not yet supported:** Nested lists (2+ levels), headers/footers, footnotes, comments, text boxes, shapes, charts.
+
+## What's in a .sidedoc directory?
 
 | File | Purpose |
 |------|---------|

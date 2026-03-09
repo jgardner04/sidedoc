@@ -54,24 +54,27 @@ Markdown provides enough structure (headings, lists, emphasis, images) to repres
 
 ---
 
-## Why use a ZIP container instead of a single file?
+## Why two formats (directory and ZIP)?
 
-The ZIP container approach has several advantages:
+Sidedoc uses a `.sidedoc/` directory as its working format and a `.sdoc` ZIP for distribution:
+
+- **`.sidedoc/` directory (default):** Edit files directly, git-friendly, no pack/unpack overhead
+- **`.sdoc` ZIP (with `--pack`):** Single-file sharing, same internal structure
+
+The directory approach has several advantages:
 
 - **Separation of concerns:** Content, structure, styles, and assets live in separate files
-- **Easy debugging:** Unzip and inspect any component with standard tools
-- **Selective access:** Read just `content.md` without parsing everything
+- **Direct access:** Read and edit `content.md` with any text editor
+- **Git-friendly:** Track changes to markdown content with version control
 - **Binary asset handling:** Images stored as-is, not base64-encoded inline
-- **Familiar pattern:** docx, xlsx, and epub all use ZIP containers internally
-
-You can inspect a sidedoc with standard tools:
 
 ```bash
-# View the markdown content
-unzip -p document.sidedoc content.md
+# Working format: direct access
+cat document.sidedoc/content.md
 
-# Extract everything for debugging
-unzip document.sidedoc -d ./unpacked/
+# Distribution: share as single file
+sidedoc pack document.sidedoc/
+# → Creates document.sdoc
 ```
 
 ---
@@ -110,6 +113,7 @@ Cloud collaboration tools solve a different problem:
 
 The MVP focuses on the most common elements. Here's what's supported and what's not:
 
+<!-- Keep element lists in sync: index.md, faq.md, format-specification.md -->
 !!! success "Fully Supported"
     - Headings (H1-H6)
     - Paragraphs
@@ -118,6 +122,8 @@ The MVP focuses on the most common elements. Here's what's supported and what's 
     - Numbered lists (single level)
     - Images
     - Hyperlinks (`[text](url)` syntax)
+    - Tables (GFM pipe syntax, merged cells, cell formatting; nested tables and formulas not supported)
+    - Track changes (insertions/deletions with author/date; formatting revisions and comments deferred)
 
 !!! warning "Preserved but Not Editable"
     These elements are kept intact but editing them in markdown won't work correctly:
@@ -127,13 +133,12 @@ The MVP focuses on the most common elements. Here's what's supported and what's 
     - Custom named styles
     - Font colors and highlighting
 
-!!! danger "Not Supported (MVP)"
+!!! danger "Not Supported"
     These elements are not preserved:
 
-    - Tables
     - Headers and footers
     - Footnotes and endnotes
-    - Track changes and comments
+    - Comments
     - Text boxes and shapes
     - Charts
 
@@ -148,6 +153,6 @@ Sidedoc emerged from a practical frustration: working with AI coding assistants 
 3. Manually recreate the document in Word (tedious, error-prone)
 4. Repeat
 
-**The core insight:** If documents had a stable, AI-friendly representation that maintained a live connection to formatting, this workflow could be 10x more efficient and completely lossless.
+**The core insight:** If documents had a stable, AI-friendly representation that maintained a live connection to formatting, this workflow could be dramatically more efficient and reliable.
 
 Sidedoc is that representation.

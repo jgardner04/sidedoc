@@ -2,10 +2,10 @@
 
 ## Why Use Sidedoc?
 
-Sidedoc makes AI document workflows **10x more efficient** while preserving perfect formatting:
+Sidedoc makes AI document workflows **dramatically more efficient ([benchmarks](benchmarks.md))** while preserving formatting:
 
-- **Lower AI costs:** Read documents using ~1,500 tokens (markdown) instead of 15,000+ tokens (XML)
-- **Lossless iteration:** Edit content repeatedly without formatting degradation
+- **Lower AI costs:** Read documents using orders of magnitude fewer tokens than raw XML ([see benchmarks](benchmarks.md))
+- **Iterative editing:** Edit content repeatedly without formatting degradation
 - **Format preservation:** Original Word styling is maintained automatically through metadata
 - **Best of both worlds:** AI works with clean markdown; humans get familiar Word documents
 
@@ -37,15 +37,15 @@ Convert a Word document to sidedoc format:
 
 ```bash
 sidedoc extract document.docx
-# Creates: document.sidedoc
+# Creates: document.sidedoc/ (directory)
 ```
 
 ### View the Content
 
-The sidedoc contains clean markdown that AI can efficiently read:
+The sidedoc directory contains clean markdown that AI can efficiently read:
 
 ```bash
-unzip -p document.sidedoc content.md
+cat document.sidedoc/content.md
 ```
 
 ### Rebuild the Document
@@ -57,15 +57,16 @@ sidedoc build document.sidedoc
 # Creates: document.docx
 ```
 
-### Unpack for Editing
+### Edit Content
 
-Extract the archive to edit the markdown:
+Edit the markdown directly in the sidedoc directory:
 
 ```bash
-sidedoc unpack document.sidedoc -o unpacked
-# Edit unpacked/content.md
-sidedoc pack unpacked -o document.sidedoc
+# Edit content directly in the sidedoc directory
+vim document.sidedoc/content.md
 ```
+
+Note: `unpack` and `pack` commands are for working with `.sdoc` ZIP archives.
 
 ### Sync After Editing
 
@@ -89,49 +90,37 @@ All commands are implemented:
 
 | Command | Description |
 |---------|-------------|
-| `sidedoc extract <docx>` | Create sidedoc from docx |
-| `sidedoc build <sidedoc>` | Generate docx from sidedoc |
-| `sidedoc sync <sidedoc>` | Sync edited content back to docx |
-| `sidedoc diff <sidedoc>` | Show changes since last sync |
+| `sidedoc extract <docx>` | Create .sidedoc/ directory from docx (or .sdoc ZIP with --pack) |
+| `sidedoc build <sidedoc>` | Generate docx from sidedoc (directory or .sdoc) |
+| `sidedoc sync <sidedoc>` | Sync edited content back to docx (directory only) |
+| `sidedoc diff <sidedoc>` | Show changes since last sync (directory only) |
 | `sidedoc validate <sidedoc>` | Check sidedoc integrity |
 | `sidedoc info <sidedoc>` | Display sidedoc metadata |
-| `sidedoc unpack <sidedoc> -o <dir>` | Extract sidedoc contents to directory |
-| `sidedoc pack <dir> -o <sidedoc>` | Create sidedoc from directory |
+| `sidedoc unpack <sdoc>` | Extract .sdoc ZIP to directory |
+| `sidedoc pack <dir>` | Create .sdoc ZIP from directory |
 
 ## Example Workflow
 
 ```bash
-# 1. Start with a formatted Word document
-ls
-# quarterly_report.docx
-
-# 2. Extract for AI processing
+# 1. Extract for AI processing
 sidedoc extract quarterly_report.docx
-# ✓ Extracted to quarterly_report.sidedoc
+# ✓ Created quarterly_report.sidedoc/
 
-# 3. Unpack to edit the markdown
-sidedoc unpack quarterly_report.sidedoc -o unpacked
-# ✓ Unpacked to unpacked
+# 2. AI/human edits the markdown content directly
+# Edit: quarterly_report.sidedoc/content.md
 
-# 4. AI/human edits the markdown content
-# Edit: unpacked/content.md
-# ... Add sections, modify text ...
+# 3. View changes (optional)
+sidedoc diff quarterly_report.sidedoc/
 
-# 5. Pack back into sidedoc
-sidedoc pack unpacked -o quarterly_report.sidedoc
-# ✓ Packed to quarterly_report.sidedoc
-
-# 6. View changes (optional)
-sidedoc diff quarterly_report.sidedoc
-# Shows what changed since extraction
-
-# 7. Sync the changes
-sidedoc sync quarterly_report.sidedoc
+# 4. Sync the changes
+sidedoc sync quarterly_report.sidedoc/
 # ✓ Synced: 3 blocks modified, 1 block added
 
-# 8. Rebuild for human consumption
-sidedoc build quarterly_report.sidedoc -o quarterly_report_updated.docx
+# 5. Rebuild for human consumption
+sidedoc build quarterly_report.sidedoc/ -o quarterly_report_updated.docx
 # ✓ Built document: quarterly_report_updated.docx
 
-# 9. Open in Word - formatting preserved, content updated
+# 6. (Optional) Package for sharing
+sidedoc pack quarterly_report.sidedoc/
+# ✓ Created quarterly_report.sdoc
 ```
