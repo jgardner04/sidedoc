@@ -150,15 +150,20 @@ A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
 
 ## Benchmarks
 
-Benchmarking suite compares Sidedoc against alternative document processing pipelines across LLM tasks.
+Benchmarking suite compares Sidedoc against alternative document processing pipelines (sidedoc, pandoc, raw_docx, ooxml, docint) across LLM tasks.
 
 ```bash
 # Run benchmarks
 python -m benchmarks.run_benchmark --pipeline sidedoc --corpus synthetic
 
+# Run with format fidelity scoring (round-trip preservation)
+python -m benchmarks.run_benchmark --pipeline sidedoc --pipeline pandoc --fidelity
+
 # Generate report
 python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
 ```
+
+**Format Fidelity**: Measures what each pipeline preserves on extract→rebuild round-trip across 5 dimensions: structure (heading levels, counts), formatting (bold/italic/font per run), tables (structure, merged cells, styles), hyperlinks (text+URL pairs), and track changes (insertions/deletions/authors). Only sidedoc and pandoc support rebuild.
 
 Full documentation: [`benchmarks/README.md`](benchmarks/README.md) | Published results: [`website/docs/benchmarks.md`](website/docs/benchmarks.md)
 

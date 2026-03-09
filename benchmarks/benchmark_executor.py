@@ -5,11 +5,14 @@ across pipelines, tasks, and documents.
 """
 
 import importlib
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import click
+
+from benchmarks.metrics.fidelity_scorer import FidelityScorer
 
 
 BENCHMARKS_DIR = Path(__file__).parent
@@ -24,11 +27,33 @@ _PIPELINE_REGISTRY: dict[str, tuple[str, str]] = {
     "docint": ("benchmarks.pipelines.docint_pipeline", "DocIntelPipeline"),
 }
 
+_REBUILD_PIPELINES = {"sidedoc", "pandoc"}
+
+_FIDELITY_KEYS = ("structure", "formatting", "tables", "hyperlinks", "track_changes", "total")
+
 _TASK_REGISTRY: dict[str, tuple[str, str, dict[str, Any]]] = {
     "summarize": ("benchmarks.tasks.summarize", "SummarizeTask", {}),
     "edit_single": ("benchmarks.tasks.edit_single", "SingleEditTask", {"edit_instruction": "Make the text more concise"}),
     "edit_multiturn": ("benchmarks.tasks.edit_multiturn", "MultiTurnEditTask", {"edit_instructions": ["Make the text more concise", "Add a summary at the end", "Fix any grammar issues"]}),
 }
+
+
+def get_available_pipelines() -> list[str]:
+    """Get the list of available pipeline names.
+
+    Returns:
+        List of pipeline name strings.
+    """
+    return list(_PIPELINE_REGISTRY.keys())
+
+
+def get_available_tasks() -> list[str]:
+    """Get the list of available task names.
+
+    Returns:
+        List of task name strings.
+    """
+    return list(_TASK_REGISTRY.keys())
 
 
 def get_pipeline(pipeline_name: str) -> Any:
@@ -125,8 +150,11 @@ class BenchmarkExecutor:
         self.corpus = corpus
         self.model = model
 
-    def run(self) -> dict[str, Any]:
+    def run(self, include_fidelity: bool = False) -> dict[str, Any]:
         """Run the benchmark suite.
+
+        Args:
+            include_fidelity: If True, run fidelity scoring and include results.
 
         Returns:
             Dict with metadata and results array.
@@ -155,7 +183,7 @@ class BenchmarkExecutor:
                     else:
                         click.echo(" OK")
 
-        return {
+        output: dict[str, Any] = {
             "metadata": {
                 "timestamp": datetime.now().isoformat(),
                 "pipelines": self.pipelines,
@@ -166,6 +194,82 @@ class BenchmarkExecutor:
             },
             "results": results,
         }
+
+        if include_fidelity:
+            output["fidelity_results"] = self.run_fidelity()
+
+        return output
+
+    def run_fidelity(self) -> list[dict[str, Any]]:
+        """Run fidelity scoring for pipelines that support rebuild.
+
+        For each document, for each pipeline that supports rebuild (sidedoc, pandoc):
+        1. Extract content via pipeline.extract_content()
+        2. Rebuild via pipeline.rebuild_document() (identity round-trip, no edits)
+        3. Score rebuilt vs original using FidelityScorer.score_total()
+
+        Returns:
+            List of fidelity result dicts.
+        """
+        documents = get_documents(self.corpus)
+        results: list[dict[str, Any]] = []
+
+        rebuild_pipelines = [p for p in self.pipelines if p in _REBUILD_PIPELINES]
+
+        for doc_path in documents:
+            for pipeline_name in rebuild_pipelines:
+                click.echo(f"  Fidelity: {pipeline_name} / {doc_path.name}...", nl=False)
+                entry = self._run_fidelity_single(pipeline_name, doc_path)
+                results.append(entry)
+                if entry.get("error"):
+                    click.echo(" ERROR")
+                else:
+                    click.echo(" OK")
+
+        return results
+
+    def _run_fidelity_single(self, pipeline_name: str, doc_path: Path) -> dict[str, Any]:
+        """Run fidelity scoring for a single pipeline/document combination.
+
+        Args:
+            pipeline_name: Name of the pipeline.
+            doc_path: Path to the document.
+
+        Returns:
+            Dict with pipeline, document, scores, and error.
+        """
+        try:
+            pipeline = get_pipeline(pipeline_name)
+            content = pipeline.extract_content(doc_path)
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                output_path = Path(tmp_dir) / "rebuilt.docx"
+                pipeline.rebuild_document(content, doc_path, output_path)
+
+                scorer = FidelityScorer()
+                raw_scores = scorer.score_total(doc_path, output_path)
+
+            scores: dict[str, float | None] = {
+                k: raw_scores.get(k) for k in _FIDELITY_KEYS
+            }
+
+            # Cleanup for pipelines that need it
+            if hasattr(pipeline, "cleanup"):
+                pipeline.cleanup()
+
+            return {
+                "pipeline": pipeline_name,
+                "document": _make_relative_path(doc_path),
+                "scores": scores,
+                "error": None,
+            }
+        except Exception as e:
+            return {
+                "pipeline": pipeline_name,
+                "document": _make_relative_path(doc_path),
+                "scores": {k: None for k in _FIDELITY_KEYS},
+                "error": f"{type(e).__name__}: {str(e)[:150]}",
+            }
 
     def _run_single(
         self,

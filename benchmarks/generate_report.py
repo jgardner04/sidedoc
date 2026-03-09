@@ -175,9 +175,8 @@ def generate_results_section(results: dict[str, Any], pipeline_tokens: dict[str,
 
     lines.append("\n")
 
-    # Add placeholder for fidelity and cost tables
-    lines.append("### Format Fidelity\n")
-    lines.append("*Fidelity scores require visual comparison tools (LibreOffice, Poppler)*\n")
+    # Add fidelity section
+    lines.append(generate_fidelity_section(results))
 
     lines.append("\n### Cost Analysis\n")
     lines.append("| Pipeline | Est. Cost (per doc) |\n")
@@ -288,6 +287,90 @@ def get_task_description(task: str) -> str:
         "edit_multiturn": "Apply 3 sequential edits",
     }
     return descriptions.get(task, "Unknown task")
+
+
+def _fmt_score(val: float | None) -> str:
+    """Format a fidelity score for display."""
+    return "N/A" if val is None else f"{val:.1f}"
+
+
+def generate_fidelity_section(results: dict[str, Any]) -> str:
+    """Generate fidelity scoring section from benchmark results.
+
+    If fidelity_results exists in results, render a table:
+    | Pipeline | Structure | Formatting | Tables | Hyperlinks | Track Changes | Total |
+
+    Otherwise, return the existing placeholder text.
+
+    Args:
+        results: Benchmark results dict.
+
+    Returns:
+        Markdown formatted fidelity section.
+    """
+    lines = []
+    lines.append("### Format Fidelity\n")
+
+    if "fidelity_results" not in results or not results["fidelity_results"]:
+        lines.append("*Fidelity scores require visual comparison tools (LibreOffice, Poppler)*\n")
+        return "\n".join(lines)
+
+    pipeline_fidelity = calculate_pipeline_fidelity(results)
+
+    lines.append("| Pipeline | Structure | Formatting | Tables | Hyperlinks | Track Changes | Total |\n")
+    lines.append("|----------|-----------|------------|--------|------------|---------------|-------|\n")
+
+    for pipeline, scores in pipeline_fidelity.items():
+        lines.append(
+            f"| {pipeline} | {_fmt_score(scores.get('structure'))} | {_fmt_score(scores.get('formatting'))} "
+            f"| {_fmt_score(scores.get('tables'))} | {_fmt_score(scores.get('hyperlinks'))} "
+            f"| {_fmt_score(scores.get('track_changes'))} | {_fmt_score(scores.get('total'))} |\n"
+        )
+
+    return "\n".join(lines)
+
+
+def calculate_pipeline_fidelity(results: dict[str, Any]) -> dict[str, dict[str, float | None]]:
+    """Average fidelity scores per pipeline across documents.
+
+    Returns dict mapping pipeline name to avg scores per dimension.
+    For null dimensions, average only non-null values.
+
+    Args:
+        results: Benchmark results dict with fidelity_results.
+
+    Returns:
+        Dict mapping pipeline names to averaged fidelity scores.
+    """
+    dimensions = ["structure", "formatting", "tables", "hyperlinks", "track_changes", "total"]
+    pipeline_accum: dict[str, dict[str, list[float]]] = {}
+
+    for entry in results.get("fidelity_results", []):
+        if entry.get("error"):
+            continue
+
+        pipeline = entry["pipeline"]
+        scores = entry.get("scores", {})
+
+        if pipeline not in pipeline_accum:
+            pipeline_accum[pipeline] = {d: [] for d in dimensions}
+
+        for dim in dimensions:
+            val = scores.get(dim)
+            if val is not None:
+                pipeline_accum[pipeline][dim].append(val)
+
+    result: dict[str, dict[str, float | None]] = {}
+    for pipeline, dim_lists in pipeline_accum.items():
+        result[pipeline] = {}
+        for dim in dimensions:
+            vals = dim_lists[dim]
+            if vals:
+                result[pipeline][dim] = sum(vals) / len(vals)
+            else:
+                result[pipeline][dim] = None
+
+    return result
 
 
 if __name__ == "__main__":

@@ -9,7 +9,12 @@
       "Skill(claude-md-reviewer)",
       "Bash(pytest:*)",
       "Bash(grep:*)",
-      "mcp__plugin_github_github__pull_request_read"
+      "mcp__plugin_github_github__pull_request_read",
+      "Skill(tech-debt-review)",
+      "Skill(simplify-review)",
+      "mcp__plugin_github_github__update_pull_request",
+      "mcp__claude_ai_Linear__get_issue",
+      "Bash(ls:*)"
     ]
   }
 }
