@@ -15,7 +15,7 @@ We benchmarked four pipelines across 15 documents and 3 LLM tasks using Gemini 2
 
 ### Why This Matters
 
-Every document processing pipeline faces a fundamental tradeoff: token efficiency vs format preservation. Raw text extraction is cheapest but loses all formatting. Raw OOXML preserves everything but is absurdly expensive in tokens. Sidedoc resolves this tradeoff — clean markdown for the LLM, formatting metadata stored separately, and lossless round-trip reconstruction.
+Every document processing pipeline faces a fundamental tradeoff: token efficiency vs format preservation. Raw text extraction is cheapest but loses all formatting. Raw OOXML preserves everything but is absurdly expensive in tokens. Sidedoc resolves this tradeoff — clean markdown for the LLM, formatting metadata stored separately, and high-fidelity round-trip reconstruction.
 
 ## LLM Task Token Usage
 
@@ -123,7 +123,7 @@ python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
 | Extract content | Yes | Yes | Yes | Yes |
 | Preserve formatting metadata | Yes | No | No | Yes |
 | Rebuild document | Yes | Partial | No | No* |
-| Lossless round-trip | Yes | No | No | No |
+| High-fidelity round-trip | Yes | No | No | No |
 | Token efficient | Yes | Yes | Best | Worst |
 | Reliable (0 errors) | Yes | Yes | Yes | No (20% failure rate) |
 | Tables preserved | Yes | Partial | No | Yes |
@@ -140,7 +140,7 @@ python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
 
 | Pipeline | Description |
 |----------|-------------|
-| **Sidedoc** | AI-native format — extracts to clean markdown + formatting metadata, enables lossless round-trip |
+| **Sidedoc** | AI-native format — extracts to clean markdown + formatting metadata, enables high-fidelity round-trip |
 | **Pandoc** | Universal converter — `docx -> markdown` via pypandoc, loses most formatting on round-trip |
 | **Raw Text** | Baseline — extracts paragraph text via python-docx, no formatting, no rebuild capability |
 | **Raw OOXML** | Full XML content from the .docx archive (document.xml + styles.xml + numbering.xml + theme + rels) — what an LLM would need for format-preserving round-trip without an intermediate format |
@@ -221,5 +221,6 @@ python -m benchmarks.run_benchmark --model claude-sonnet-4-20250514
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | For Claude | API key for Anthropic models |
 | `GEMINI_API_KEY` | For Gemini | API key for Google Gemini models |
+| `OPENAI_API_KEY` | For OpenAI | API key for OpenAI models |
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | No | Azure DI endpoint (for docint pipeline) |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | No | Azure DI API key |

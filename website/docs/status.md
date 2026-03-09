@@ -4,10 +4,8 @@
 
 Sidedoc MVP is **complete** with all core features implemented and tested.
 
-- **Version:** 0.1.0
-- **Tests:** 188 passing
-- **Coverage:** 84%
-- **Completion:** MVP complete with hyperlink support
+- **Completion:** MVP complete with table and track changes support
+- **Tests:** Run `pytest --cov=sidedoc` to verify
 
 ## ✅ Implemented Features
 
@@ -18,8 +16,8 @@ Sidedoc MVP is **complete** with all core features implemented and tested.
 - ✅ Full test suite with pytest
 
 ### Commands
-- ✅ `sidedoc extract` - Extract docx to sidedoc archive
-- ✅ `sidedoc build` - Build docx from sidedoc archive
+- ✅ `sidedoc extract` - Extract docx to .sidedoc/ directory
+- ✅ `sidedoc build` - Build docx from sidedoc
 - ✅ `sidedoc sync` - Sync edited markdown back to docx
 - ✅ `sidedoc diff` - Show changes since last sync
 - ✅ `sidedoc unpack` - Extract archive contents to directory
@@ -34,12 +32,14 @@ Sidedoc MVP is **complete** with all core features implemented and tested.
 - ✅ Bulleted and numbered lists → markdown
 - ✅ Images extracted to assets directory
 - ✅ Hyperlinks → markdown `[text](url)` syntax
+- ✅ Tables → GFM pipe syntax (merged cells, cell formatting)
+- ✅ Track changes → CriticMarkup (insertions/deletions with author/date)
 - ✅ Basic paragraph formatting preserved
 - ✅ Block-level structure maintained
 - ✅ Round-trip testing (extract → build → validate)
 
 ### Archive Format
-- ✅ ZIP-based .sidedoc container
+- ✅ .sidedoc/ directory and .sdoc ZIP formats
 - ✅ `content.md` - Clean markdown content
 - ✅ `structure.json` - Block mappings
 - ✅ `styles.json` - Formatting data
@@ -58,38 +58,29 @@ See [Benchmark Suite](benchmarks.md) for usage instructions.
 ## 🚧 Post-MVP Roadmap
 
 ### Next Priority (v0.2.0)
-- ⏳ Table support
 - ⏳ Nested lists (2+ levels)
 - ⏳ Enhanced style preservation
 
 ### Future Enhancements (v0.3.0+)
 - ⏳ Multi-column layouts
 - ⏳ Headers and footers
-- ⏳ Comments and track changes
+- ⏳ Comments
 - ⏳ Footnotes and endnotes
 - ⏳ Advanced document features
 
+### Version 1.0.0
+- Full feature parity with spec
+- Production ready
+- PyPI package
+
 ## Test Coverage
 
-```
-188 tests passing with 84% coverage across:
-- Extract functionality (docx → sidedoc)
-- Build/reconstruct functionality (sidedoc → docx)
-- Sync functionality (content changes → docx update)
-- Inline formatting (bold, italic, underline)
-- List handling (bulleted and numbered)
-- Image extraction and embedding
-- Archive management (pack/unpack)
-- CLI commands (all 8 implemented)
-- Round-trip validation workflows
-```
+Tests cover extract, build, sync, inline formatting, lists, images, tables, track changes, hyperlinks, archive management, CLI commands, and round-trip validation. Run `pytest --cov=sidedoc` to see current counts and coverage.
 
 ## Known Limitations
 
-1. **Tables:** Not yet supported
-2. **Nested Lists:** Only single-level lists supported
-3. **Complex Formatting:** Multi-column layouts, headers/footers not yet supported
-4. **Track Changes:** Comments and revision history not preserved
+1. **Nested Lists:** Only single-level lists supported
+2. **Complex Formatting:** Multi-column layouts, headers/footers not yet supported
 
 ## Current Workflow
 
@@ -98,56 +89,24 @@ The MVP supports the full extract → edit → sync → build workflow:
 ```bash
 # Extract Word document
 sidedoc extract document.docx
-# → Creates document.sidedoc
+# → Creates document.sidedoc/
 
-# Unpack to edit
-sidedoc unpack document.sidedoc -o work
-# → Extracts to work/ directory
-
-# Edit the markdown
-vim work/content.md
-
-# Pack changes
-sidedoc pack work -o document.sidedoc
-# → Updates document.sidedoc
+# Edit the markdown directly
+vim document.sidedoc/content.md
 
 # View changes (optional)
-sidedoc diff document.sidedoc
+sidedoc diff document.sidedoc/
 # → Shows what changed since extraction
 
 # Sync content changes
-sidedoc sync document.sidedoc
+sidedoc sync document.sidedoc/
 # → Updates internal structure
 
 # Rebuild Word document
-sidedoc build document.sidedoc
+sidedoc build document.sidedoc/
 # → Creates document.docx with formatting preserved
 ```
-
-## Roadmap
-
-### Version 0.2.0 (Next)
-- Table support
-- Nested lists (2+ levels)
-- Enhanced style preservation
-
-### Version 0.3.0
-- Headers and footers
-- Footnotes and endnotes
-- Better error handling
-- Performance improvements
-
-### Version 1.0.0
-- Full feature parity with spec
-- Production ready
-- Comprehensive documentation
-- PyPI package
 
 ## Contributing
 
 The project is actively developed and welcoming contributions! See [CONTRIBUTING.md](https://github.com/jgardner04/sidedoc/blob/main/CONTRIBUTING.md) for guidelines.
-
-### High-Impact Areas
-- Table support implementation
-- Nested list handling
-- Performance optimization
