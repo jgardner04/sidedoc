@@ -6,16 +6,16 @@ This module provides the CLI entry point for running benchmarks.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import click
 
+from benchmarks.benchmark_executor import get_available_pipelines, get_available_tasks
 
 # Available pipelines
-PIPELINES = ["sidedoc", "pandoc", "raw_docx", "ooxml", "docint"]
+PIPELINES = get_available_pipelines()
 
 # Available tasks
-TASKS = ["summarize", "edit_single", "edit_multiturn"]
+TASKS = get_available_tasks()
 
 # Corpus options
 CORPUS_OPTIONS = ["synthetic", "real", "all"]
@@ -52,12 +52,18 @@ CORPUS_OPTIONS = ["synthetic", "real", "all"]
     default="claude-sonnet-4-20250514",
     help="LLM model identifier (default: claude-sonnet-4-20250514). Supports any LiteLLM-compatible model.",
 )
+@click.option(
+    "--fidelity/--no-fidelity",
+    default=False,
+    help="Run format fidelity scoring (requires rebuild-capable pipelines)",
+)
 def cli(
-    pipeline: Optional[str],
-    task: Optional[str],
+    pipeline: str | None,
+    task: str | None,
     corpus: str,
-    output: Optional[str],
+    output: str | None,
     model: str,
+    fidelity: bool,
 ) -> None:
     """Run the Sidedoc benchmark suite.
 
@@ -104,7 +110,7 @@ def cli(
         model=model,
     )
 
-    results = executor.run()
+    results = executor.run(include_fidelity=fidelity)
 
     # Save results
     with open(output_path, "w") as f:

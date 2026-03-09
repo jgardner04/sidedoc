@@ -88,3 +88,10 @@ class TestBenchmarkRunner:
 
         # Help should mention corpus
         assert "corpus" in result.output.lower()
+
+    def test_cli_has_fidelity_option(self) -> None:
+        """Test that CLI has --fidelity option."""
+        from benchmarks.run_benchmark import cli
+
+        param_names = [p.name for p in cli.params]
+        assert "fidelity" in param_names

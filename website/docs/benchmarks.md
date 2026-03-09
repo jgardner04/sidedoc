@@ -90,6 +90,32 @@ Raw text extraction uses fewer tokens but **cannot reconstruct the document** â€
 | Raw Text | $0.71 | $0.05 | 0.7x |
 | Raw OOXML | $41.63 | $2.78 | 41x |
 
+## Format Fidelity
+
+Format fidelity measures what each pipeline preserves on a round-trip: extract content, rebuild the document, and compare the result against the original at the XML level. Only **Sidedoc** and **Pandoc** support document rebuild; Raw Text and Raw OOXML cannot reconstruct documents from their extracted content.
+
+### Scoring Dimensions
+
+| Dimension | What It Measures |
+|-----------|-----------------|
+| **Structure** | Heading levels at positions, paragraph/list/table counts |
+| **Formatting** | Bold, italic, underline, font name, font size per run across all paragraphs |
+| **Tables** | Row/col counts, merged cells, cell backgrounds, table styles |
+| **Hyperlinks** | Link text + URL pair preservation |
+| **Track Changes** | Insertion/deletion counts and author preservation |
+
+Scores are 0â€“100 per dimension. Dimensions not present in the original document (e.g., no tables) are excluded from the total. The total score is the mean of applicable dimensions.
+
+### How to Run
+
+```bash
+# Run fidelity scoring
+python -m benchmarks.run_benchmark --pipeline sidedoc --pipeline pandoc --corpus synthetic --fidelity
+
+# Generate report with fidelity table
+python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
+```
+
 ## Pipeline Comparison
 
 | Capability | Sidedoc | Pandoc | Raw Text | Raw OOXML |

@@ -232,3 +232,86 @@ class TestReportConclusions:
 
         # Should have recommendation
         assert "recommend" in report.lower() or "use case" in report.lower()
+
+
+SAMPLE_RESULTS_WITH_FIDELITY = {
+    "metadata": {
+        "timestamp": "2024-01-15T10:30:00",
+        "pipelines": ["sidedoc", "pandoc"],
+        "tasks": ["summarize"],
+        "corpus": "synthetic",
+        "documents": ["doc1.docx", "doc2.docx"],
+    },
+    "results": [
+        {
+            "pipeline": "sidedoc",
+            "task": "summarize",
+            "document": "doc1.docx",
+            "metrics": {"prompt_tokens": 1000, "completion_tokens": 200, "error": None},
+        },
+        {
+            "pipeline": "pandoc",
+            "task": "summarize",
+            "document": "doc1.docx",
+            "metrics": {"prompt_tokens": 2000, "completion_tokens": 200, "error": None},
+        },
+    ],
+    "fidelity_results": [
+        {
+            "pipeline": "sidedoc",
+            "document": "doc1.docx",
+            "scores": {"structure": 100.0, "formatting": 100.0, "tables": None, "hyperlinks": None, "track_changes": None, "total": 100.0},
+            "error": None,
+        },
+        {
+            "pipeline": "pandoc",
+            "document": "doc1.docx",
+            "scores": {"structure": 85.0, "formatting": 20.0, "tables": None, "hyperlinks": None, "track_changes": None, "total": 52.5},
+            "error": None,
+        },
+    ],
+}
+
+
+class TestReportFidelitySection:
+    """Test fidelity section in report generation."""
+
+    def test_fidelity_section_with_data(self) -> None:
+        """Test fidelity section renders table when data is present."""
+        from benchmarks.generate_report import generate_fidelity_section
+
+        section = generate_fidelity_section(SAMPLE_RESULTS_WITH_FIDELITY)
+        assert "Structure" in section
+        assert "Formatting" in section
+        assert "sidedoc" in section.lower()
+
+    def test_fidelity_section_without_data(self) -> None:
+        """Test fidelity section shows placeholder when no data."""
+        from benchmarks.generate_report import generate_fidelity_section
+
+        section = generate_fidelity_section(SAMPLE_RESULTS)  # no fidelity_results
+        assert "fidelity" in section.lower() or "Fidelity" in section
+
+    def test_calculate_pipeline_fidelity(self) -> None:
+        """Test averaging fidelity scores per pipeline."""
+        from benchmarks.generate_report import calculate_pipeline_fidelity
+
+        fidelity = calculate_pipeline_fidelity(SAMPLE_RESULTS_WITH_FIDELITY)
+        assert "sidedoc" in fidelity
+        assert "pandoc" in fidelity
+        assert fidelity["sidedoc"]["total"] == 100.0
+
+    def test_fidelity_null_shown_as_na(self) -> None:
+        """Test that None scores are shown as N/A in the table."""
+        from benchmarks.generate_report import generate_fidelity_section
+
+        section = generate_fidelity_section(SAMPLE_RESULTS_WITH_FIDELITY)
+        assert "N/A" in section
+
+    def test_report_includes_fidelity_when_present(self) -> None:
+        """Test that full report includes fidelity data when present."""
+        from benchmarks.generate_report import generate_report
+
+        report = generate_report(SAMPLE_RESULTS_WITH_FIDELITY)
+        assert "Structure" in report
+        assert "Formatting" in report
