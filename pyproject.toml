@@ -12,6 +12,12 @@ requires-python = ">=3.11"
 authors = [
     {name = "Sidedoc Contributors"}
 ]
+urls = {
+    Homepage = "https://sidedoc.io",
+    Repository = "https://github.com/jgardner04/sidedoc",
+    Documentation = "https://sidedoc.io",
+    Issues = "https://github.com/jgardner04/sidedoc/issues"
+}
 keywords = ["document", "ai", "markdown", "docx"]
 classifiers = [
     "Development Status :: 3 - Alpha",

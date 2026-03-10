@@ -1,5 +1,7 @@
 # Sidedoc
 
+[![PyPI version](https://img.shields.io/pypi/v/sidedoc.svg)](https://pypi.org/project/sidedoc/)
+
 An AI-native document format that separates content from formatting, enabling efficient AI interaction with documents while preserving rich formatting for human consumption.
 
 **Status:** ✅ MVP Complete with Table, Hyperlink, and Track Changes support
@@ -300,15 +302,13 @@ sidedoc sync document.sidedoc -o output.docx --author "Claude AI"
 pip install sidedoc
 ```
 
-*Coming soon — package not yet published.*
-
 ---
 
 ## Development
 
 ```bash
 # Clone the repository
-git clone https://github.com/jogardn/sidedoc.git
+git clone https://github.com/jgardner04/sidedoc.git
 cd sidedoc
 
 # Install in development mode (once pyproject.toml exists)
@@ -322,6 +322,6 @@ pytest
 
 ## Links
 
-- [GitHub](https://github.com/jogardn/sidedoc)
+- [GitHub](https://github.com/jgardner04/sidedoc)
 - [Product Requirements Document](docs/slidedoc-prd.md)
 - [Author: Jonathan Gardner](https://jonathangardner.io)
