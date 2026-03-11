@@ -56,6 +56,7 @@ cd sidedoc
 2. Install dependencies:
 ```bash
 pip install -r benchmarks/requirements.txt
+# Or for just the core benchmark deps: pip install -e ".[benchmarks]"
 ```
 
 3. Set up environment variables (see Environment Variables section below)

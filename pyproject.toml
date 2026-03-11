@@ -24,11 +24,8 @@ classifiers = [
 dependencies = [
     "python-docx>=1.1.0",
     "mistune>=3.0.0",
-    "PyYAML>=6.0",
     "click>=8.1.0",
     "Pillow>=10.0.0",
-    "pypandoc>=1.16.2",
-    "tiktoken>=0.12.0",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +34,16 @@ dev = [
     "pytest-cov>=6.0.0",
     "mypy>=1.11.0",
 ]
+benchmarks = [
+    "pypandoc>=1.16.2",
+    "tiktoken>=0.12.0",
+]
+
+[project.urls]
+Homepage = "https://sidedoc.io"
+Repository = "https://github.com/jgardner04/sidedoc"
+Documentation = "https://sidedoc.io"
+Issues = "https://github.com/jgardner04/sidedoc/issues"
 
 [project.scripts]
 sidedoc = "sidedoc.cli:main"
@@ -68,9 +75,3 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-
-[dependency-groups]
-dev = [
-    "pytest-cov>=7.0.0",
-    "types-requests>=2.32.4.20260107",
-]

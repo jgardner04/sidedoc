@@ -11,7 +11,6 @@ from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import click
-import mistune
 from sidedoc.models import Block, Style, TrackChange
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
@@ -32,6 +31,8 @@ from sidedoc.constants import (
     MAX_BORDER_WIDTH,
 )
 from sidedoc.store import SidedocStore
+
+import mistune
 
 # Cache the mistune parser at module level to avoid recreating per paragraph
 _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
@@ -65,14 +66,8 @@ def apply_inline_formatting(paragraph: Any, content: str) -> None:
 def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
     """Parse inline markdown formatting using mistune.
 
-    Returns a list of (text, is_bold, is_italic) tuples representing
-    the text runs with their formatting.
-
-    Args:
-        content: Markdown text to parse
-
-    Returns:
-        List of tuples: (text, bold, italic)
+    Handles nested formatting, escaped markers, and malformed markdown.
+    Returns plain text on parse error.
     """
     try:
         tokens, _ = _MARKDOWN_PARSER.parse(content)

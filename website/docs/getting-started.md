@@ -15,7 +15,13 @@ Perfect for teams building AI document automation, content generation pipelines,
 
 ## Installation
 
-Currently, install from source (PyPI package coming soon):
+Install from PyPI:
+
+```bash
+pip install sidedoc
+```
+
+For development from source:
 
 ```bash
 git clone https://github.com/jgardner04/sidedoc.git
