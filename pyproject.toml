@@ -12,12 +12,6 @@ requires-python = ">=3.11"
 authors = [
     {name = "Sidedoc Contributors"}
 ]
-urls = {
-    Homepage = "https://sidedoc.io",
-    Repository = "https://github.com/jgardner04/sidedoc",
-    Documentation = "https://sidedoc.io",
-    Issues = "https://github.com/jgardner04/sidedoc/issues"
-}
 keywords = ["document", "ai", "markdown", "docx"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -43,6 +37,12 @@ dev = [
     "pytest-cov>=6.0.0",
     "mypy>=1.11.0",
 ]
+
+[project.urls]
+Homepage = "https://sidedoc.io"
+Repository = "https://github.com/jgardner04/sidedoc"
+Documentation = "https://sidedoc.io"
+Issues = "https://github.com/jgardner04/sidedoc/issues"
 
 [project.scripts]
 sidedoc = "sidedoc.cli:main"
