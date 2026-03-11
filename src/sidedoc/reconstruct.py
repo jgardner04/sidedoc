@@ -32,13 +32,10 @@ from sidedoc.constants import (
 )
 from sidedoc.store import SidedocStore
 
-try:
-    import mistune
-except ImportError:  # pragma: no cover - exercised in minimal/offline environments
-    mistune = None
+import mistune
 
 # Cache the mistune parser at module level to avoid recreating per paragraph
-_MARKDOWN_PARSER = mistune.create_markdown(renderer=None) if mistune is not None else None
+_MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
 
 
 def apply_inline_formatting(paragraph: Any, content: str) -> None:
@@ -67,18 +64,15 @@ def apply_inline_formatting(paragraph: Any, content: str) -> None:
 
 
 def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
-    """Parse inline markdown formatting.
+    """Parse inline markdown formatting using mistune.
 
-    Prefer mistune when available; otherwise use a lightweight fallback parser
-    that handles escaped markers and nested bold/italic segments.
+    Handles nested formatting, escaped markers, and malformed markdown.
+    Returns plain text on parse error.
     """
-    if _MARKDOWN_PARSER is None:
-        return _parse_inline_markdown_fallback(content)
-
     try:
         tokens, _ = _MARKDOWN_PARSER.parse(content)
     except Exception:
-        return _parse_inline_markdown_fallback(content)
+        return [(content, False, False)]
 
     runs: list[tuple[str, bool, bool]] = []
     token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
@@ -91,60 +85,6 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
             if raw:
                 runs.append((raw, False, False))
 
-    return runs if runs else _parse_inline_markdown_fallback(content)
-
-
-def _parse_inline_markdown_fallback(content: str) -> list[tuple[str, bool, bool]]:
-    """Fallback inline markdown parser used when mistune is unavailable."""
-    runs: list[tuple[str, bool, bool]] = []
-    buf: list[str] = []
-    bold = False
-    italic = False
-    i = 0
-
-    def flush() -> None:
-        if buf:
-            runs.append(("".join(buf), bold, italic))
-            buf.clear()
-
-    while i < len(content):
-        # Preserve escaped characters literally
-        if content[i] == "\\" and i + 1 < len(content):
-            buf.append(content[i + 1])
-            i += 2
-            continue
-
-        # Handle bold+italic marker first
-        if content.startswith("***", i) or content.startswith("___", i):
-            flush()
-            bold = not bold
-            italic = not italic
-            i += 3
-            continue
-
-        # Handle bold
-        if content.startswith("**", i) or content.startswith("__", i):
-            flush()
-            bold = not bold
-            i += 2
-            continue
-
-        # Handle italic
-        if content[i] in ("*", "_"):
-            flush()
-            italic = not italic
-            i += 1
-            continue
-
-        if content[i] in ("\n", "\r"):
-            buf.append(" ")
-            i += 1
-            continue
-
-        buf.append(content[i])
-        i += 1
-
-    flush()
     return runs if runs else [(content, False, False)]
 
 
