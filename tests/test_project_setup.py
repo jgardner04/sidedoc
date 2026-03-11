@@ -23,9 +23,8 @@ def test_required_dependencies_installed():
     required_packages = [
         "docx",  # python-docx
         "mistune",
-        "yaml",  # PyYAML
         "click",
-        "pytest",
+        "PIL",  # Pillow
     ]
 
     for package in required_packages:
