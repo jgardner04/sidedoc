@@ -574,3 +574,120 @@ class TestFootnoteNoRegression:
         blocks, _ = extract_blocks(str(FIXTURES_DIR / "hyperlinks.docx"))
         md = blocks_to_markdown(blocks)
         assert "[" in md  # hyperlinks present
+
+
+# ============================================================================
+# Bug Regression Tests
+# ============================================================================
+
+
+class TestFootnoteBugFixes:
+    """Tests targeting specific bugs found in code review."""
+
+    def test_multiple_footnotes_all_present_in_xml(self, tmp_path):
+        """All footnotes survive when multiple are added to a new part (bug #2).
+
+        Previously, _add_footnote_to_part re-parsed part.blob each call,
+        so only the last footnote's content appeared in the serialized XML.
+        """
+        content_md = (
+            "First claim[^1]. Second claim[^2]. Third claim[^3].\n\n"
+            "[^1]: First source.\n"
+            "[^2]: Second source.\n"
+            "[^3]: Third source.\n"
+        )
+        blocks = parse_markdown_to_blocks(content_md)
+        styles = {"block_styles": {}, "document_defaults": {"font_name": "Calibri", "font_size": 11}}
+        doc = create_docx_from_blocks(blocks, styles, content_md=content_md)
+        output = str(tmp_path / "output.docx")
+        doc.save(output)
+
+        import zipfile
+        with zipfile.ZipFile(output) as z:
+            fn_xml = z.read("word/footnotes.xml").decode()
+            assert "First source." in fn_xml
+            assert "Second source." in fn_xml
+            assert "Third source." in fn_xml
+
+    def test_endnote_type_preserved_on_roundtrip(self, tmp_path):
+        """Endnotes retain note_type='endnote' after extract -> build (bug #4).
+
+        Previously, structure.json had no top-level 'footnotes' key, so
+        endnotes defaulted to footnotes on round-trip.
+        """
+        blocks, images = extract_blocks(
+            str(FIXTURES_DIR / "footnotes_endnotes_mixed.docx")
+        )
+        md = blocks_to_markdown(blocks)
+        from sidedoc.extract import extract_styles
+        styles = extract_styles(
+            str(FIXTURES_DIR / "footnotes_endnotes_mixed.docx"), blocks
+        )
+
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), md, blocks, styles,
+            str(FIXTURES_DIR / "footnotes_endnotes_mixed.docx"),
+        )
+
+        # Verify structure.json has top-level footnotes key with endnote types
+        structure = json.loads(
+            (sidedoc_dir / "structure.json").read_text(encoding="utf-8")
+        )
+        assert "footnotes" in structure
+        endnote_types = [
+            v["note_type"] for v in structure["footnotes"].values()
+        ]
+        assert "endnote" in endnote_types
+
+        # Build and verify endnotes.xml is present (not just footnotes.xml)
+        output = str(tmp_path / "output.docx")
+        build_docx_from_sidedoc(str(sidedoc_dir), output)
+
+        import zipfile
+        with zipfile.ZipFile(output) as z:
+            assert "word/endnotes.xml" in z.namelist()
+
+    def test_continuation_separator_present_in_footnotes_xml(self, tmp_path):
+        """Built footnotes.xml has w:continuationSeparator element (bug #3)."""
+        content_md = (
+            "Text[^1].\n\n"
+            "[^1]: A footnote.\n"
+        )
+        blocks = parse_markdown_to_blocks(content_md)
+        styles = {"block_styles": {}, "document_defaults": {"font_name": "Calibri", "font_size": 11}}
+        doc = create_docx_from_blocks(blocks, styles, content_md=content_md)
+        output = str(tmp_path / "output.docx")
+        doc.save(output)
+
+        import zipfile
+        with zipfile.ZipFile(output) as z:
+            fn_xml = z.read("word/footnotes.xml").decode()
+            assert "continuationSeparator" in fn_xml
+
+    def test_multiblock_footnotes_correct_paragraph_assignment(self):
+        """Footnotes across blocks are assigned to the correct paragraphs (#10)."""
+        blocks, _ = extract_blocks(
+            str(FIXTURES_DIR / "footnotes_multiblock.docx")
+        )
+        # Collect which blocks own which footnote IDs
+        block_footnote_map: dict[int, set[int]] = {}
+        for i, block in enumerate(blocks):
+            if block.footnote_references:
+                block_footnote_map[i] = {r["note_id"] for r in block.footnote_references}
+
+        # There should be at least 2 different blocks with footnotes
+        assert len(block_footnote_map) >= 2, (
+            f"Expected footnotes spread across blocks, got: {block_footnote_map}"
+        )
+
+        # All three footnotes should be present across blocks
+        all_ids = set()
+        for ids in block_footnote_map.values():
+            all_ids |= ids
+        assert {1, 2, 3} == all_ids
+
+        # [^1] and [^2]/[^3] should be in different blocks
+        block_with_1 = [i for i, ids in block_footnote_map.items() if 1 in ids][0]
+        blocks_with_2_or_3 = [i for i, ids in block_footnote_map.items() if ids & {2, 3}]
+        assert all(b != block_with_1 for b in blocks_with_2_or_3)

@@ -1067,7 +1067,7 @@ def test_extract_paragraph_content_normal_mode():
     </w:p>
     """
     para_elem = etree.fromstring(xml)
-    content, inline_fmt, track_changes, _fn_refs = extract_paragraph_content(para_elem, mode="normal")
+    content, inline_fmt, track_changes, _fn_refs, _counter = extract_paragraph_content(para_elem, mode="normal")
 
     assert "**bold text**" in content
     assert track_changes is None
@@ -1091,7 +1091,7 @@ def test_extract_paragraph_content_accept_all_mode():
     </w:p>
     """
     para_elem = etree.fromstring(xml)
-    content, _, track_changes, _fn_refs = extract_paragraph_content(para_elem, mode="accept_all")
+    content, _, track_changes, _fn_refs, _counter = extract_paragraph_content(para_elem, mode="accept_all")
 
     assert "kept" in content
     assert "inserted" in content
@@ -1114,7 +1114,7 @@ def test_extract_paragraph_content_track_changes_mode():
     </w:p>
     """
     para_elem = etree.fromstring(xml)
-    content, _, track_changes, _fn_refs = extract_paragraph_content(para_elem, mode="track_changes")
+    content, _, track_changes, _fn_refs, _counter = extract_paragraph_content(para_elem, mode="track_changes")
 
     assert "{++added++}" in content
     assert track_changes is not None

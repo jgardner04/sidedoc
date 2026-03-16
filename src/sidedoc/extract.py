@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
+from lxml import etree
 from PIL import Image
 from sidedoc.models import Block, Style, TrackChange
 from sidedoc.constants import (
@@ -416,7 +417,7 @@ def extract_paragraph_content(
     doc_part: Any = None,
     mode: Literal["normal", "accept_all", "track_changes"] = "normal",
     footnote_counter: int = 0,
-) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None, list[dict[str, Any]]]:
+) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None, list[dict[str, Any]], int]:
     """Extract content from a paragraph XML element.
 
     Unified function that handles all three extraction modes:
@@ -585,6 +586,7 @@ def extract_paragraph_content(
         inline_formatting if inline_formatting else None,
         track_changes if track_changes else None,
         footnote_refs,
+        footnote_counter,
     )
 
 
@@ -593,7 +595,7 @@ def extract_paragraph_accept_all(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, accepting all track changes."""
-    content, fmt, tc, _fn = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
     return content, fmt, tc
 
 
@@ -601,13 +603,13 @@ def extract_paragraph_with_track_changes(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, including track changes as CriticMarkup."""
-    content, fmt, tc, _fn = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
     return content, fmt, tc
 
 
 def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
     """Extract inline formatting from paragraph runs, including hyperlinks."""
-    content, inline_fmt, _, _fn = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
+    content, inline_fmt, _, _fn, _counter = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
     return content, inline_fmt
 
 
@@ -988,10 +990,9 @@ def _process_paragraph(
         else:
             mode = "normal"
 
-        text_content, inline_formatting, block_track_changes, footnote_refs = extract_paragraph_content(
+        text_content, inline_formatting, block_track_changes, footnote_refs, footnote_counter = extract_paragraph_content(
             paragraph._element, doc_part, mode=mode, footnote_counter=footnote_counter,
         )
-        footnote_counter = footnote_counter + len(footnote_refs)
 
         if style_name.startswith("Heading"):
             try:
@@ -1185,7 +1186,6 @@ def _extract_footnote_definitions(doc: Any, blocks: list[Block]) -> list[str]:
     Returns:
         List of definition strings like '[^1]: Footnote text.'
     """
-    from lxml import etree
 
     # Build map: (note_type, original_id) -> marker number
     ref_map: dict[tuple[str, str], int] = {}
@@ -1224,7 +1224,6 @@ def _extract_notes_from_part(
     ns: dict[str, str],
 ) -> None:
     """Extract note text from a footnotes or endnotes XML part."""
-    from lxml import etree
 
     # python-docx loads footnotes as generic Part (with .blob) not XmlPart (with ._element)
     if hasattr(part, '_element'):

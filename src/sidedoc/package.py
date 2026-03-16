@@ -1,11 +1,14 @@
 """Package and unpackage sidedoc archives."""
 
 import json
+import re
 import zipfile
 from pathlib import Path
 from sidedoc.models import Block, Style, Manifest
 from sidedoc.utils import compute_file_hash, get_iso_timestamp
 from sidedoc import __version__
+
+_FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^(\d+)\]:\s*(.+)$', re.MULTILINE)
 
 
 def block_to_structure_dict(block: Block) -> dict:
@@ -44,6 +47,43 @@ def block_to_structure_dict(block: Block) -> dict:
     }
 
 
+def _collect_footnotes_metadata(
+    content_md: str, blocks: list[Block]
+) -> dict[str, dict]:
+    """Collect footnote/endnote metadata from blocks and content for structure.json.
+
+    Returns:
+        Dict mapping note_id string to {content, note_type, original_id}.
+    """
+    # Build note_type mapping from block references
+    ref_info: dict[int, dict] = {}
+    for block in blocks:
+        if block.footnote_references:
+            for ref in block.footnote_references:
+                note_id = ref["note_id"]
+                ref_info[note_id] = {
+                    "note_type": ref.get("note_type", "footnote"),
+                    "original_id": ref.get("original_id", str(note_id)),
+                }
+
+    if not ref_info:
+        return {}
+
+    # Parse definitions from content
+    defs: dict[int, str] = {}
+    for m in _FOOTNOTE_DEF_PATTERN.finditer(content_md):
+        defs[int(m.group(1))] = m.group(2)
+
+    result: dict[str, dict] = {}
+    for note_id, info in ref_info.items():
+        result[str(note_id)] = {
+            "content": defs.get(note_id, ""),
+            "note_type": info["note_type"],
+            "original_id": info["original_id"],
+        }
+    return result
+
+
 def _build_metadata(
     content_md: str,
     blocks: list[Block],
@@ -58,6 +98,11 @@ def _build_metadata(
     structure_data = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
+
+    # Build top-level footnotes metadata from blocks and content
+    footnotes_meta = _collect_footnotes_metadata(content_md, blocks)
+    if footnotes_meta:
+        structure_data["footnotes"] = footnotes_meta
 
     styles_data = {
         "block_styles": {

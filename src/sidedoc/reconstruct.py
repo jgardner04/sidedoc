@@ -31,6 +31,7 @@ from sidedoc.constants import (
     MAX_BORDER_WIDTH,
 )
 from sidedoc.store import SidedocStore
+from lxml import etree
 
 import mistune
 
@@ -1175,7 +1176,6 @@ def _has_footnote_refs(text: str) -> bool:
 
 def _get_or_create_footnotes_part(doc):
     """Get or create the footnotes.xml part in the document."""
-    from lxml import etree
     from docx.opc.part import Part
     from docx.opc.packuri import PackURI
 
@@ -1195,18 +1195,21 @@ def _get_or_create_footnotes_part(doc):
         p = etree.SubElement(fn, qn("w:p"))
         r = etree.SubElement(p, qn("w:r"))
         if sep_type == "separator":
-            sep = etree.SubElement(r, qn("w:separator"))
+            etree.SubElement(r, qn("w:separator"))
+        else:
+            etree.SubElement(r, qn("w:continuationSeparator"))
 
     xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
     part_name = PackURI("/word/footnotes.xml")
     footnotes_part = Part(part_name, FOOTNOTES_CT, xml_bytes, doc.part.package)
+    # Store parsed element so _add_footnote_to_part can accumulate mutations
+    footnotes_part._element = root
     doc.part.relate_to(footnotes_part, FOOTNOTES_RT)
     return footnotes_part
 
 
 def _get_or_create_endnotes_part(doc):
     """Get or create the endnotes.xml part in the document."""
-    from lxml import etree
     from docx.opc.part import Part
     from docx.opc.packuri import PackURI
 
@@ -1224,23 +1227,26 @@ def _get_or_create_endnotes_part(doc):
         p = etree.SubElement(en, qn("w:p"))
         r = etree.SubElement(p, qn("w:r"))
         if sep_type == "separator":
-            sep = etree.SubElement(r, qn("w:separator"))
+            etree.SubElement(r, qn("w:separator"))
+        else:
+            etree.SubElement(r, qn("w:continuationSeparator"))
 
     xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
     part_name = PackURI("/word/endnotes.xml")
     endnotes_part = Part(part_name, ENDNOTES_CT, xml_bytes, doc.part.package)
+    # Store parsed element so _add_endnote_to_part can accumulate mutations
+    endnotes_part._element = root
     doc.part.relate_to(endnotes_part, ENDNOTES_RT)
     return endnotes_part
 
 
 def _add_footnote_to_part(part, note_id, text):
     """Add a footnote element to the footnotes part."""
-    from lxml import etree
-
     if hasattr(part, '_element'):
         root = part._element
     else:
         root = etree.fromstring(part.blob)
+        part._element = root
 
     fn = etree.SubElement(root, qn("w:footnote"))
     fn.set(qn("w:id"), str(note_id))
@@ -1257,20 +1263,18 @@ def _add_footnote_to_part(part, note_id, text):
     t.set(qn("xml:space"), "preserve")
     t.text = f" {text}"
 
-    # Update the blob
-    if not hasattr(part, '_element'):
-        part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    # Always update the blob so Part serializes correctly
+    part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
     return note_id
 
 
 def _add_endnote_to_part(part, note_id, text):
     """Add an endnote element to the endnotes part."""
-    from lxml import etree
-
     if hasattr(part, '_element'):
         root = part._element
     else:
         root = etree.fromstring(part.blob)
+        part._element = root
 
     en = etree.SubElement(root, qn("w:endnote"))
     en.set(qn("w:id"), str(note_id))
@@ -1285,8 +1289,8 @@ def _add_endnote_to_part(part, note_id, text):
     t.set(qn("xml:space"), "preserve")
     t.text = f" {text}"
 
-    if not hasattr(part, '_element'):
-        part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    # Always update the blob so Part serializes correctly
+    part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
     return note_id
 
 
