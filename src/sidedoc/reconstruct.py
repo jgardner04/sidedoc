@@ -34,6 +34,22 @@ from sidedoc.store import SidedocStore
 
 import mistune
 
+FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^(\d+)\]:\s*(.+)$')
+FOOTNOTE_REF_PATTERN = re.compile(r'\[\^(\d+)\]')
+
+FOOTNOTES_RT = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+)
+ENDNOTES_RT = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+)
+FOOTNOTES_CT = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
+)
+ENDNOTES_CT = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"
+)
+
 # Cache the mistune parser at module level to avoid recreating per paragraph
 _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
 
@@ -677,6 +693,11 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             i += 1
             continue
 
+        # Skip footnote/endnote definition lines (they don't become blocks)
+        if FOOTNOTE_DEF_PATTERN.match(stripped_line):
+            i += 1
+            continue
+
         # Check if this is the start of a GFM table
         # A table starts with a row that starts/ends with pipes
         # and is followed by a separator line
@@ -1132,6 +1153,203 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
+
+def _parse_footnote_definitions(content_md: str) -> dict[int, str]:
+    """Parse [^N]: text definitions from markdown content.
+
+    Returns:
+        Dict mapping marker number to definition text.
+    """
+    defs = {}
+    for line in content_md.split("\n"):
+        m = FOOTNOTE_DEF_PATTERN.match(line.strip())
+        if m:
+            defs[int(m.group(1))] = m.group(2)
+    return defs
+
+
+def _has_footnote_refs(text: str) -> bool:
+    """Check if text contains [^N] footnote references."""
+    return bool(FOOTNOTE_REF_PATTERN.search(text))
+
+
+def _get_or_create_footnotes_part(doc):
+    """Get or create the footnotes.xml part in the document."""
+    from lxml import etree
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+
+    # Check existing rels first
+    for rel in doc.part.rels.values():
+        if rel.reltype == FOOTNOTES_RT:
+            return rel.target_part
+
+    # Create new footnotes.xml
+    nsmap = {"w": WORDPROCESSINGML_NS, "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+    root = etree.Element(qn("w:footnotes"), nsmap=nsmap)
+    # Add separator footnotes (required)
+    for sep_id, sep_type in [("-1", "separator"), ("0", "continuationSeparator")]:
+        fn = etree.SubElement(root, qn("w:footnote"))
+        fn.set(qn("w:type"), sep_type)
+        fn.set(qn("w:id"), sep_id)
+        p = etree.SubElement(fn, qn("w:p"))
+        r = etree.SubElement(p, qn("w:r"))
+        if sep_type == "separator":
+            sep = etree.SubElement(r, qn("w:separator"))
+
+    xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    part_name = PackURI("/word/footnotes.xml")
+    footnotes_part = Part(part_name, FOOTNOTES_CT, xml_bytes, doc.part.package)
+    doc.part.relate_to(footnotes_part, FOOTNOTES_RT)
+    return footnotes_part
+
+
+def _get_or_create_endnotes_part(doc):
+    """Get or create the endnotes.xml part in the document."""
+    from lxml import etree
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+
+    # Check existing rels first
+    for rel in doc.part.rels.values():
+        if rel.reltype == ENDNOTES_RT:
+            return rel.target_part
+
+    nsmap = {"w": WORDPROCESSINGML_NS, "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
+    root = etree.Element(qn("w:endnotes"), nsmap=nsmap)
+    for sep_id, sep_type in [("-1", "separator"), ("0", "continuationSeparator")]:
+        en = etree.SubElement(root, qn("w:endnote"))
+        en.set(qn("w:type"), sep_type)
+        en.set(qn("w:id"), sep_id)
+        p = etree.SubElement(en, qn("w:p"))
+        r = etree.SubElement(p, qn("w:r"))
+        if sep_type == "separator":
+            sep = etree.SubElement(r, qn("w:separator"))
+
+    xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    part_name = PackURI("/word/endnotes.xml")
+    endnotes_part = Part(part_name, ENDNOTES_CT, xml_bytes, doc.part.package)
+    doc.part.relate_to(endnotes_part, ENDNOTES_RT)
+    return endnotes_part
+
+
+def _add_footnote_to_part(part, note_id, text):
+    """Add a footnote element to the footnotes part."""
+    from lxml import etree
+
+    if hasattr(part, '_element'):
+        root = part._element
+    else:
+        root = etree.fromstring(part.blob)
+
+    fn = etree.SubElement(root, qn("w:footnote"))
+    fn.set(qn("w:id"), str(note_id))
+    p = etree.SubElement(fn, qn("w:p"))
+    # Add footnoteRef run
+    ref_run = etree.SubElement(p, qn("w:r"))
+    rPr = etree.SubElement(ref_run, qn("w:rPr"))
+    style = etree.SubElement(rPr, qn("w:rStyle"))
+    style.set(qn("w:val"), "FootnoteReference")
+    etree.SubElement(ref_run, qn("w:footnoteRef"))
+    # Add text run
+    text_run = etree.SubElement(p, qn("w:r"))
+    t = etree.SubElement(text_run, qn("w:t"))
+    t.set(qn("xml:space"), "preserve")
+    t.text = f" {text}"
+
+    # Update the blob
+    if not hasattr(part, '_element'):
+        part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    return note_id
+
+
+def _add_endnote_to_part(part, note_id, text):
+    """Add an endnote element to the endnotes part."""
+    from lxml import etree
+
+    if hasattr(part, '_element'):
+        root = part._element
+    else:
+        root = etree.fromstring(part.blob)
+
+    en = etree.SubElement(root, qn("w:endnote"))
+    en.set(qn("w:id"), str(note_id))
+    p = etree.SubElement(en, qn("w:p"))
+    ref_run = etree.SubElement(p, qn("w:r"))
+    rPr = etree.SubElement(ref_run, qn("w:rPr"))
+    style = etree.SubElement(rPr, qn("w:rStyle"))
+    style.set(qn("w:val"), "EndnoteReference")
+    etree.SubElement(ref_run, qn("w:endnoteRef"))
+    text_run = etree.SubElement(p, qn("w:r"))
+    t = etree.SubElement(text_run, qn("w:t"))
+    t.set(qn("xml:space"), "preserve")
+    t.text = f" {text}"
+
+    if not hasattr(part, '_element'):
+        part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    return note_id
+
+
+def _insert_footnote_reference(run, note_id):
+    """Insert a w:footnoteReference element into a run."""
+    rPr = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "FootnoteReference")
+    rPr.append(style)
+    run._element.insert(0, rPr)
+    ref = OxmlElement("w:footnoteReference")
+    ref.set(qn("w:id"), str(note_id))
+    run._element.append(ref)
+
+
+def _insert_endnote_reference(run, note_id):
+    """Insert a w:endnoteReference element into a run."""
+    rPr = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "EndnoteReference")
+    rPr.append(style)
+    run._element.insert(0, rPr)
+    ref = OxmlElement("w:endnoteReference")
+    ref.set(qn("w:id"), str(note_id))
+    run._element.append(ref)
+
+
+def _add_text_with_footnotes(paragraph, text, doc, footnote_defs, footnote_meta):
+    """Add text to a paragraph, replacing [^N] with proper footnote references.
+
+    Args:
+        paragraph: python-docx Paragraph object
+        text: Text content potentially containing [^N] markers
+        doc: Document object for creating footnote parts
+        footnote_defs: Dict mapping marker number to definition text
+        footnote_meta: Dict mapping marker number to note type info
+    """
+    parts = FOOTNOTE_REF_PATTERN.split(text)
+    # parts alternates: text, number, text, number, ...
+    for idx, part in enumerate(parts):
+        if idx % 2 == 0:
+            # Regular text
+            if part:
+                paragraph.add_run(part)
+        else:
+            # Footnote reference number
+            marker_num = int(part)
+            def_text = footnote_defs.get(marker_num, "")
+            note_info = footnote_meta.get(marker_num, {})
+            note_type = note_info.get("note_type", "footnote")
+
+            if note_type == "endnote":
+                en_part = _get_or_create_endnotes_part(doc)
+                note_id = _add_endnote_to_part(en_part, marker_num, def_text)
+                run = paragraph.add_run()
+                _insert_endnote_reference(run, note_id)
+            else:
+                fn_part = _get_or_create_footnotes_part(doc)
+                note_id = _add_footnote_to_part(fn_part, marker_num, def_text)
+                run = paragraph.add_run()
+                _insert_footnote_reference(run, note_id)
+
+
 def create_docx_from_blocks(
     blocks: list[Block],
     styles: dict[str, Any],
@@ -1139,6 +1357,9 @@ def create_docx_from_blocks(
     style_id_remap: Optional[dict[str, str]] = None,
     default_tc_author: Optional[str] = None,
     default_tc_date: Optional[str] = None,
+    footnote_defs: Optional[dict[int, str]] = None,
+    footnote_meta: Optional[dict[int, dict]] = None,
+    content_md: Optional[str] = None,
 ) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -1156,6 +1377,22 @@ def create_docx_from_blocks(
     doc = Document()
     para = None  # Track current paragraph for styling
 
+    # Auto-parse footnote definitions if not provided
+    if footnote_defs is None:
+        footnote_defs = {}
+        # Parse from original markdown if available (definitions are skipped by parse_markdown_to_blocks)
+        if content_md:
+            footnote_defs = _parse_footnote_definitions(content_md)
+        else:
+            # Fallback: scan block content (won't find defs filtered out during parsing)
+            for block in blocks:
+                for line in block.content.split("\n"):
+                    m = FOOTNOTE_DEF_PATTERN.match(line.strip())
+                    if m:
+                        footnote_defs[int(m.group(1))] = m.group(2)
+    if footnote_meta is None:
+        footnote_meta = {}
+
     for block in blocks:
         if block.type == "heading" and block.level:
             style_name = f"Heading {block.level}"
@@ -1167,6 +1404,9 @@ def create_docx_from_blocks(
                     add_text_with_track_changes(para, text, default_author=default_tc_author, default_date=default_tc_date or "")
                 else:
                     add_text_with_track_changes(para, text, block.track_changes)
+            elif _has_footnote_refs(text) and footnote_defs:
+                para = doc.add_paragraph(style=style_name)
+                _add_text_with_footnotes(para, text, doc, footnote_defs, footnote_meta)
             elif has_hyperlinks(text):
                 para = doc.add_paragraph(style=style_name)
                 add_text_with_hyperlinks(para, text)
@@ -1201,6 +1441,9 @@ def create_docx_from_blocks(
                     add_text_with_track_changes(para, content, default_author=default_tc_author, default_date=default_tc_date or "")
                 else:
                     add_text_with_track_changes(para, content, block.track_changes)
+            elif _has_footnote_refs(content) and footnote_defs:
+                para = doc.add_paragraph()
+                _add_text_with_footnotes(para, content, doc, footnote_defs, footnote_meta)
             elif has_hyperlinks(content):
                 para = doc.add_paragraph()
                 add_text_with_hyperlinks(para, content)
@@ -1217,6 +1460,76 @@ def create_docx_from_blocks(
             _apply_block_formatting(para, block_style)
 
     return doc
+
+
+def _populate_header_footer(header_footer, paragraphs, assets_dir=None):
+    """Populate a header or footer with paragraph content."""
+    if not paragraphs:
+        return
+    header_footer.is_linked_to_previous = False
+    for i, para_dict in enumerate(paragraphs):
+        if i == 0:
+            para = header_footer.paragraphs[0]
+        else:
+            para = header_footer.add_paragraph()
+        if para_dict.get("type") == "image" and para_dict.get("image_path"):
+            image_filename = para_dict["image_path"].split("/")[-1]
+            if assets_dir:
+                image_file_path = assets_dir / image_filename
+                if image_file_path.exists():
+                    run = para.add_run()
+                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
+                    continue
+            para.text = f"[Image: {para_dict.get('content', '')}]"
+        else:
+            para.text = para_dict.get("content", "")
+
+
+def apply_sections_to_document(doc, sections_data, assets_dir=None):
+    """Apply section metadata (headers, footers, page setup) to a document."""
+    from docx.enum.section import WD_ORIENT
+
+    if not sections_data:
+        return
+    for section_idx, section_meta in enumerate(sections_data):
+        if section_idx < len(doc.sections):
+            section = doc.sections[section_idx]
+        else:
+            section = doc.add_section()
+        page_setup = section_meta.get("page_setup", {})
+        if page_setup:
+            orientation = page_setup.get("orientation", "portrait")
+            if orientation == "landscape":
+                section.orientation = WD_ORIENT.LANDSCAPE
+            else:
+                section.orientation = WD_ORIENT.PORTRAIT
+            for attr in ("top_margin", "bottom_margin", "left_margin", "right_margin",
+                         "page_width", "page_height", "header_distance", "footer_distance"):
+                value = page_setup.get(attr)
+                if value is not None:
+                    setattr(section, attr, value)
+            if page_setup.get("different_first_page", False):
+                section.different_first_page_header_footer = True
+        header_default = section_meta.get("header_default", [])
+        if header_default:
+            _populate_header_footer(section.header, header_default, assets_dir)
+        header_first = section_meta.get("header_first", [])
+        if header_first:
+            section.different_first_page_header_footer = True
+            _populate_header_footer(section.first_page_header, header_first, assets_dir)
+        header_even = section_meta.get("header_even", [])
+        if header_even:
+            _populate_header_footer(section.even_page_header, header_even, assets_dir)
+        footer_default = section_meta.get("footer_default", [])
+        if footer_default:
+            _populate_header_footer(section.footer, footer_default, assets_dir)
+        footer_first = section_meta.get("footer_first", [])
+        if footer_first:
+            section.different_first_page_header_footer = True
+            _populate_header_footer(section.first_page_footer, footer_first, assets_dir)
+        footer_even = section_meta.get("footer_even", [])
+        if footer_even:
+            _populate_header_footer(section.even_page_footer, footer_even, assets_dir)
 
 
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
@@ -1237,10 +1550,30 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         blocks = parse_markdown_to_blocks(content_md)
 
-        # Enrich blocks with track changes data from structure.json
+        sections_data = []
+        footnote_defs = _parse_footnote_definitions(content_md)
+        footnote_meta: dict[int, dict] = {}
+
+        # Enrich blocks with track changes, footnotes, and section data from structure.json
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
             structure_blocks = structure_data.get("blocks", [])
+            sections_data = structure_data.get("sections", [])
+
+            # Build footnote metadata from structure.json
+            footnotes_data = structure_data.get("footnotes", {})
+            for fn_id_str, fn_info in footnotes_data.items():
+                footnote_meta[int(fn_id_str)] = fn_info
+
+            # Also extract from block footnote_references
+            for struct_block in structure_blocks:
+                refs = struct_block.get("footnote_references")
+                if refs:
+                    for ref in refs:
+                        mid = ref.get("note_id")
+                        if mid and mid not in footnote_meta:
+                            footnote_meta[mid] = {"note_type": ref.get("note_type", "footnote")}
+
             for block, struct_block in zip(blocks, structure_blocks):
                 # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
@@ -1257,5 +1590,9 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         for tc in struct_block["track_changes"]
                     ]
 
-        doc = create_docx_from_blocks(blocks, styles_data, assets_dir)
+        doc = create_docx_from_blocks(blocks, styles_data, assets_dir, footnote_defs=footnote_defs, footnote_meta=footnote_meta, content_md=content_md)
+
+        if sections_data:
+            apply_sections_to_document(doc, sections_data, assets_dir)
+
         doc.save(output_path)
