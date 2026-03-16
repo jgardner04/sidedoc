@@ -73,6 +73,32 @@ class Style:
 
 
 @dataclass
+class ColumnDefinition:
+    """Represents an individual column definition for unequal-width layouts.
+
+    Used when w:equalWidth="0" in OOXML to specify per-column widths.
+    """
+
+    width: int  # Column width in twips (1/1440 inch)
+    space: Optional[int] = None  # Space after this column in twips
+
+
+@dataclass
+class SectionProperties:
+    """Represents section-level properties from OOXML w:sectPr.
+
+    Stores column layout configuration. Extensible for headers/footers later.
+    """
+
+    column_count: int = 1
+    column_spacing: Optional[int] = None  # Default spacing between columns in twips
+    equal_width: bool = True
+    columns: Optional[list[ColumnDefinition]] = None  # Per-column definitions (unequal widths)
+    start_block_index: Optional[int] = None  # First block index in this section
+    end_block_index: Optional[int] = None  # Last block index in this section (inclusive)
+
+
+@dataclass
 class Manifest:
     """Represents metadata for a sidedoc document.
 
