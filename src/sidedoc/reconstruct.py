@@ -1219,6 +1219,76 @@ def create_docx_from_blocks(
     return doc
 
 
+def _populate_header_footer(header_footer, paragraphs, assets_dir=None):
+    """Populate a header or footer with paragraph content."""
+    if not paragraphs:
+        return
+    header_footer.is_linked_to_previous = False
+    for i, para_dict in enumerate(paragraphs):
+        if i == 0:
+            para = header_footer.paragraphs[0]
+        else:
+            para = header_footer.add_paragraph()
+        if para_dict.get("type") == "image" and para_dict.get("image_path"):
+            image_filename = para_dict["image_path"].split("/")[-1]
+            if assets_dir:
+                image_file_path = assets_dir / image_filename
+                if image_file_path.exists():
+                    run = para.add_run()
+                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
+                    continue
+            para.text = f"[Image: {para_dict.get('content', '')}]"
+        else:
+            para.text = para_dict.get("content", "")
+
+
+def apply_sections_to_document(doc, sections_data, assets_dir=None):
+    """Apply section metadata (headers, footers, page setup) to a document."""
+    from docx.enum.section import WD_ORIENT
+
+    if not sections_data:
+        return
+    for section_idx, section_meta in enumerate(sections_data):
+        if section_idx < len(doc.sections):
+            section = doc.sections[section_idx]
+        else:
+            section = doc.add_section()
+        page_setup = section_meta.get("page_setup", {})
+        if page_setup:
+            orientation = page_setup.get("orientation", "portrait")
+            if orientation == "landscape":
+                section.orientation = WD_ORIENT.LANDSCAPE
+            else:
+                section.orientation = WD_ORIENT.PORTRAIT
+            for attr in ("top_margin", "bottom_margin", "left_margin", "right_margin",
+                         "page_width", "page_height", "header_distance", "footer_distance"):
+                value = page_setup.get(attr)
+                if value is not None:
+                    setattr(section, attr, value)
+            if page_setup.get("different_first_page", False):
+                section.different_first_page_header_footer = True
+        header_default = section_meta.get("header_default", [])
+        if header_default:
+            _populate_header_footer(section.header, header_default, assets_dir)
+        header_first = section_meta.get("header_first", [])
+        if header_first:
+            section.different_first_page_header_footer = True
+            _populate_header_footer(section.first_page_header, header_first, assets_dir)
+        header_even = section_meta.get("header_even", [])
+        if header_even:
+            _populate_header_footer(section.even_page_header, header_even, assets_dir)
+        footer_default = section_meta.get("footer_default", [])
+        if footer_default:
+            _populate_header_footer(section.footer, footer_default, assets_dir)
+        footer_first = section_meta.get("footer_first", [])
+        if footer_first:
+            section.different_first_page_header_footer = True
+            _populate_header_footer(section.first_page_footer, footer_first, assets_dir)
+        footer_even = section_meta.get("footer_even", [])
+        if footer_even:
+            _populate_header_footer(section.even_page_footer, footer_even, assets_dir)
+
+
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
     """Build a Word document from a sidedoc archive or directory.
 
@@ -1237,10 +1307,13 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         blocks = parse_markdown_to_blocks(content_md)
 
-        # Enrich blocks with track changes data from structure.json
+        sections_data = []
+
+        # Enrich blocks with track changes and section data from structure.json
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
             structure_blocks = structure_data.get("blocks", [])
+            sections_data = structure_data.get("sections", [])
             for block, struct_block in zip(blocks, structure_blocks):
                 # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
@@ -1258,4 +1331,8 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                     ]
 
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir)
+
+        if sections_data:
+            apply_sections_to_document(doc, sections_data, assets_dir)
+
         doc.save(output_path)

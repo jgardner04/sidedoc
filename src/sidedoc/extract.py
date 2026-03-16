@@ -1350,6 +1350,106 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
     return styles
 
 
+def _extract_header_footer_paragraphs(
+    header_footer, doc_part, image_data, image_counter,
+):
+    """Extract paragraphs from a header or footer element."""
+    paragraphs = []
+    if header_footer.is_linked_to_previous:
+        return paragraphs, image_data, image_counter
+    for para in header_footer.paragraphs:
+        text = para.text.strip()
+        image_info = extract_image_from_paragraph(
+            para, header_footer.part, image_counter
+        )
+        if image_info:
+            filename, alt_text, img_bytes, extension = image_info
+            image_data[filename] = img_bytes
+            paragraphs.append({
+                "type": "image",
+                "content": alt_text or "",
+                "image_path": f"assets/{filename}",
+            })
+            image_counter += 1
+            continue
+        if not text:
+            continue
+        paragraphs.append({"type": "paragraph", "content": text})
+    return paragraphs, image_data, image_counter
+
+
+def extract_sections(docx_path):
+    """Extract section metadata (headers, footers, page setup) from a Word document."""
+    doc = Document(docx_path)
+    sections_data = []
+    image_data = {}
+    image_counter = 1000
+    for section in doc.sections:
+        section_dict = {}
+        variants = [
+            ("header_default", section.header),
+            ("footer_default", section.footer),
+        ]
+        if section.different_first_page_header_footer:
+            variants.extend([
+                ("header_first", section.first_page_header),
+                ("footer_first", section.first_page_footer),
+            ])
+        even_header = section.even_page_header
+        if not even_header.is_linked_to_previous:
+            variants.append(("header_even", even_header))
+        even_footer = section.even_page_footer
+        if not even_footer.is_linked_to_previous:
+            variants.append(("footer_even", even_footer))
+        for key, hf in variants:
+            paras, image_data, image_counter = _extract_header_footer_paragraphs(
+                hf, doc.part, image_data, image_counter
+            )
+            section_dict[key] = paras
+        for key in ("header_default", "footer_default",
+                     "header_first", "footer_first",
+                     "header_even", "footer_even"):
+            section_dict.setdefault(key, [])
+        orientation_val = section.orientation
+        orientation_str = "landscape" if orientation_val == 1 else "portrait"
+        section_dict["page_setup"] = {
+            "orientation": orientation_str,
+            "top_margin": section.top_margin,
+            "bottom_margin": section.bottom_margin,
+            "left_margin": section.left_margin,
+            "right_margin": section.right_margin,
+            "page_width": section.page_width,
+            "page_height": section.page_height,
+            "header_distance": section.header_distance,
+            "footer_distance": section.footer_distance,
+            "different_first_page": section.different_first_page_header_footer,
+        }
+        sections_data.append(section_dict)
+    return sections_data
+
+
+def extract_section_image_data(docx_path):
+    """Extract image data from headers/footers."""
+    doc = Document(docx_path)
+    image_data = {}
+    image_counter = 1000
+    for section in doc.sections:
+        hf_objects = [section.header, section.footer]
+        if section.different_first_page_header_footer:
+            hf_objects.extend([section.first_page_header, section.first_page_footer])
+        even_header = section.even_page_header
+        if not even_header.is_linked_to_previous:
+            hf_objects.append(even_header)
+        even_footer = section.even_page_footer
+        if not even_footer.is_linked_to_previous:
+            hf_objects.append(even_footer)
+        for hf in hf_objects:
+            _, image_data, image_counter = _extract_header_footer_paragraphs(
+                hf, doc.part, image_data, image_counter
+            )
+    return image_data
+
+
 def blocks_to_markdown(blocks: list[Block]) -> str:
     """Convert blocks to markdown content.
 

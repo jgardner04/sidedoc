@@ -48,15 +48,18 @@ def _build_metadata(
     blocks: list[Block],
     styles: list[Style],
     source_file: str,
+    sections: list[dict] | None = None,
 ) -> tuple[dict, dict, dict]:
     """Build structure, styles, and manifest dicts from extraction data.
 
     Returns:
         Tuple of (structure_data, styles_data, manifest_data)
     """
-    structure_data = {
+    structure_data: dict = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
+    if sections:
+        structure_data["sections"] = sections
 
     styles_data = {
         "block_styles": {
@@ -111,6 +114,7 @@ def create_sidedoc_archive(
     styles: list[Style],
     source_file: str,
     image_data: dict[str, bytes] | None = None,
+    sections: list[dict] | None = None,
 ) -> None:
     """Create a .sidedoc/.sdoc ZIP archive.
 
@@ -121,9 +125,10 @@ def create_sidedoc_archive(
         styles: List of Style objects
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
+        sections: Optional list of section metadata dicts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file
+        content_md, blocks, styles, source_file, sections
     )
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -144,6 +149,7 @@ def create_sidedoc_directory(
     styles: list[Style],
     source_file: str,
     image_data: dict[str, bytes] | None = None,
+    sections: list[dict] | None = None,
 ) -> None:
     """Create a .sidedoc directory.
 
@@ -154,9 +160,10 @@ def create_sidedoc_directory(
         styles: List of Style objects
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
+        sections: Optional list of section metadata dicts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file
+        content_md, blocks, styles, source_file, sections
     )
 
     out = Path(output_path)
