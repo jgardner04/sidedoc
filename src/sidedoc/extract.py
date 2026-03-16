@@ -22,6 +22,9 @@ from sidedoc.constants import (
 
 # XML namespaces used in Office Open XML documents
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -208,6 +211,111 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
                     return (image_filename, extension, image_bytes, error_message)
 
     return None
+
+
+def extract_textbox_from_paragraph(paragraph: Any) -> Optional[list[dict[str, Any]]]:
+    """Check if paragraph contains text boxes or shapes with text and extract them.
+
+    Looks for wps:txbxContent elements within drawing elements. These can be
+    either text boxes (txBox="1") or shapes with text content.
+
+    Args:
+        paragraph: python-docx paragraph object
+
+    Returns:
+        List of text box info dicts with keys: texts, anchor_type, width, height,
+        position_h, position_v, fill_color, border_color, drawing_xml.
+        Returns None if no text boxes found.
+    """
+    from lxml import etree  # type: ignore[import-untyped]
+
+    results = []
+
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall(f'{{{WORDPROCESSINGML_NS}}}drawing')
+        for drawing in drawing_elems:
+            txbx_contents = drawing.findall(f'.//{{{WPS_NS}}}txbxContent')
+            if not txbx_contents:
+                continue
+
+            # Skip images (drawings with blip elements)
+            blips = drawing.findall(f'.//{{{DRAWINGML_NS}}}blip')
+            if blips:
+                continue
+
+            anchor = drawing.find(f'{{{WP_DRAWING_NS}}}anchor')
+            inline = drawing.find(f'{{{WP_DRAWING_NS}}}inline')
+            anchor_type = "anchor" if anchor is not None else "inline"
+            wrapper = anchor if anchor is not None else inline
+
+            if wrapper is None:
+                continue
+
+            extent = wrapper.find(f'{{{WP_DRAWING_NS}}}extent')
+            width = int(extent.get('cx', '0')) if extent is not None else 0
+            height = int(extent.get('cy', '0')) if extent is not None else 0
+
+            position_h = None
+            position_v = None
+            if anchor_type == "anchor":
+                pos_h_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionH')
+                pos_v_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionV')
+                if pos_h_elem is not None:
+                    offset_h = pos_h_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_h is not None and offset_h.text:
+                        position_h = int(offset_h.text)
+                if pos_v_elem is not None:
+                    offset_v = pos_v_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_v is not None and offset_v.text:
+                        position_v = int(offset_v.text)
+
+            fill_color = None
+            border_color = None
+            wsp = drawing.find(f'.//{{{WPS_NS}}}wsp')
+            if wsp is not None:
+                spPr = wsp.find(f'{{{WPS_NS}}}spPr')
+                if spPr is not None:
+                    solid_fill = spPr.find(f'{{{DRAWINGML_NS}}}solidFill')
+                    if solid_fill is not None:
+                        srgb = solid_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                        if srgb is not None:
+                            fill_color = srgb.get('val')
+
+                    ln = spPr.find(f'{{{DRAWINGML_NS}}}ln')
+                    if ln is not None:
+                        ln_fill = ln.find(f'{{{DRAWINGML_NS}}}solidFill')
+                        if ln_fill is not None:
+                            ln_srgb = ln_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                            if ln_srgb is not None:
+                                border_color = ln_srgb.get('val')
+
+            for txbx in txbx_contents:
+                texts = []
+                for a_p in txbx.findall(f'{{{DRAWINGML_NS}}}p'):
+                    parts = []
+                    for a_r in a_p.findall(f'{{{DRAWINGML_NS}}}r'):
+                        for a_t in a_r.findall(f'{{{DRAWINGML_NS}}}t'):
+                            if a_t.text:
+                                parts.append(a_t.text)
+                    if parts:
+                        texts.append("".join(parts))
+
+                if texts:
+                    drawing_xml = etree.tostring(drawing, encoding='unicode')
+
+                    results.append({
+                        "texts": texts,
+                        "anchor_type": anchor_type,
+                        "width": width,
+                        "height": height,
+                        "position_h": position_h,
+                        "position_v": position_v,
+                        "fill_color": fill_color,
+                        "border_color": border_color,
+                        "drawing_xml": drawing_xml,
+                    })
+
+    return results if results else None
 
 
 def encode_url_for_markdown(url: str) -> str:
@@ -1060,29 +1168,73 @@ def extract_blocks(
             # Create a Paragraph object from the XML element
             paragraph = Paragraph(child, doc)
 
-            block, image_counter, list_number_counter, previous_list_type, image_data = _process_paragraph(
-                paragraph=paragraph,
-                doc_part=doc.part,
-                block_index=block_index,
-                para_index=para_index,
-                content_position=content_position,
-                image_counter=image_counter,
-                list_number_counter=list_number_counter,
-                previous_list_type=previous_list_type,
-                image_data=image_data,
-                extract_track_changes=extract_track_changes,
-                track_changes_explicit=track_changes,
-            )
+            # Check for text boxes/shapes with text before other content
+            textbox_infos = extract_textbox_from_paragraph(paragraph)
+            if textbox_infos:
+                for tb_info in textbox_infos:
+                    inner_lines = "\n".join(tb_info["texts"])
+                    markdown_content = f"<!-- textbox -->\n{inner_lines}\n<!-- /textbox -->"
 
-            blocks.append(block)
-            content_position = block.content_end + 1
-            block_index += 1
-            para_index += 1
+                    content_start = content_position
+                    content_end = content_position + len(markdown_content)
 
-            # Reset list counters for non-list content
-            if block.type != "list":
+                    tb_metadata: dict[str, Any] = {
+                        "anchor_type": tb_info["anchor_type"],
+                        "width": tb_info["width"],
+                        "height": tb_info["height"],
+                        "drawing_xml": tb_info["drawing_xml"],
+                    }
+                    if tb_info["position_h"] is not None:
+                        tb_metadata["position_h"] = tb_info["position_h"]
+                    if tb_info["position_v"] is not None:
+                        tb_metadata["position_v"] = tb_info["position_v"]
+                    if tb_info["fill_color"] is not None:
+                        tb_metadata["fill_color"] = tb_info["fill_color"]
+                    if tb_info["border_color"] is not None:
+                        tb_metadata["border_color"] = tb_info["border_color"]
+
+                    block = Block(
+                        id=generate_block_id(block_index),
+                        type="textbox",
+                        content=markdown_content,
+                        docx_paragraph_index=para_index,
+                        content_start=content_start,
+                        content_end=content_end,
+                        content_hash=compute_content_hash(markdown_content),
+                        text_box_metadata=tb_metadata,
+                    )
+
+                    blocks.append(block)
+                    content_position = content_end + 1
+                    block_index += 1
+
+                para_index += 1
                 list_number_counter = 0
                 previous_list_type = None
+            else:
+                block, image_counter, list_number_counter, previous_list_type, image_data = _process_paragraph(
+                    paragraph=paragraph,
+                    doc_part=doc.part,
+                    block_index=block_index,
+                    para_index=para_index,
+                    content_position=content_position,
+                    image_counter=image_counter,
+                    list_number_counter=list_number_counter,
+                    previous_list_type=previous_list_type,
+                    image_data=image_data,
+                    extract_track_changes=extract_track_changes,
+                    track_changes_explicit=track_changes,
+                )
+
+                blocks.append(block)
+                content_position = block.content_end + 1
+                block_index += 1
+                para_index += 1
+
+                # Reset list counters for non-list content
+                if block.type != "list":
+                    list_number_counter = 0
+                    previous_list_type = None
 
         elif tag == 'tbl':
             # Create a Table object from the XML element
@@ -1464,6 +1616,20 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
 
         if tag == 'p':
             paragraph = Paragraph(child, doc)
+
+            # Check if this paragraph produced text box blocks
+            if block.type == "textbox":
+                while block_index < len(blocks) and blocks[block_index].type == "textbox":
+                    style = Style(
+                        block_id=blocks[block_index].id,
+                        docx_style="TextBox",
+                        font_name="Calibri",
+                        font_size=11,
+                        alignment="left",
+                    )
+                    styles.append(style)
+                    block_index += 1
+                continue
 
             # Get font properties
             font_name = "Calibri"

@@ -40,6 +40,7 @@ def block_to_structure_dict(block: Block) -> dict:
             }
             for tc in block.track_changes
         ] if block.track_changes else None,
+        "text_box_metadata": block.text_box_metadata,
     }
 
 
