@@ -1224,7 +1224,7 @@ class TestCriticMarkupSync:
         """Verify new track changes use current timestamp."""
         import tempfile
         import zipfile
-        from datetime import datetime
+        from datetime import datetime, timezone
         from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
         from sidedoc.package import create_sidedoc_archive
         from sidedoc.sync import sync_sidedoc_to_docx
@@ -1255,9 +1255,9 @@ class TestCriticMarkupSync:
                 z.writestr("styles.json", styles_json)
                 z.writestr("manifest.json", manifest_json)
 
-            before_sync = datetime.utcnow()
+            before_sync = datetime.now(timezone.utc)
             sync_sidedoc_to_docx(sidedoc_path, output_path)
-            after_sync = datetime.utcnow()
+            after_sync = datetime.now(timezone.utc)
 
             doc = Document(output_path)
             ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -1268,11 +1268,10 @@ class TestCriticMarkupSync:
                     if date_str:
                         # Parse ISO date and verify it's recent
                         sync_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                        sync_date_naive = sync_date.replace(tzinfo=None)
                         # Date should be between before and after sync (with 1 minute buffer)
                         from datetime import timedelta
-                        assert sync_date_naive >= before_sync - timedelta(minutes=1), "Date should be recent"
-                        assert sync_date_naive <= after_sync + timedelta(minutes=1), "Date should not be in future"
+                        assert sync_date >= before_sync - timedelta(minutes=1), "Date should be recent"
+                        assert sync_date <= after_sync + timedelta(minutes=1), "Date should not be in future"
                         return
 
             pytest.fail("No date attribute found on w:ins elements")
@@ -1489,7 +1488,7 @@ class TestAIEditsAsTrackedChanges:
         """Verify AI edits use current timestamp."""
         import tempfile
         import zipfile
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
         from sidedoc.package import create_sidedoc_archive
         from sidedoc.sync import sync_sidedoc_to_docx
@@ -1520,9 +1519,9 @@ class TestAIEditsAsTrackedChanges:
                 z.writestr("styles.json", styles_json)
                 z.writestr("manifest.json", manifest_json)
 
-            before_sync = datetime.utcnow()
+            before_sync = datetime.now(timezone.utc)
             sync_sidedoc_to_docx(sidedoc_path, output_path, author="AI Assistant")
-            after_sync = datetime.utcnow()
+            after_sync = datetime.now(timezone.utc)
 
             doc = Document(output_path)
             ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -1534,10 +1533,9 @@ class TestAIEditsAsTrackedChanges:
                         date_str = ins.get(f"{{{ns}}}date")
                         if date_str:
                             sync_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                            sync_date_naive = sync_date.replace(tzinfo=None)
                             # Timestamp should be within the sync window
-                            assert sync_date_naive >= before_sync - timedelta(minutes=1)
-                            assert sync_date_naive <= after_sync + timedelta(minutes=1)
+                            assert sync_date >= before_sync - timedelta(minutes=1)
+                            assert sync_date <= after_sync + timedelta(minutes=1)
                             return
 
             pytest.fail("AI insertion with current timestamp not found")
