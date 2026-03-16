@@ -449,3 +449,217 @@ class TestSectionSerialization:
             assert sections[0]["columns"][0]["space"] == 720
             assert sections[0]["columns"][1]["width"] == 3600
             assert sections[0]["columns"][1].get("space") is None
+
+    def test_single_column_default_omitted_from_structure(self):
+        """Single-column default section should not appear in structure.json."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            import json
+
+            doc = Document()
+            doc.add_paragraph("Simple paragraph")
+            doc.save("test.docx")
+
+            result = runner.invoke(main, ["extract", "test.docx"])
+            assert result.exit_code == 0
+
+            structure = json.loads(Path("test.sidedoc/structure.json").read_text())
+            assert "sections" not in structure
+
+    def test_columns_null_omitted(self):
+        """Equal-width sections should not serialize a 'columns' key."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            import json
+
+            doc = Document()
+            doc.add_paragraph("Two column content")
+            _set_body_columns(doc, col_count=2, col_space=720, equal_width=True)
+            doc.save("test.docx")
+
+            result = runner.invoke(main, ["extract", "test.docx"])
+            assert result.exit_code == 0
+
+            structure = json.loads(Path("test.sidedoc/structure.json").read_text())
+            section = structure["sections"][0]
+            assert "columns" not in section
+
+
+# =============================================================================
+# Sync Tests
+# =============================================================================
+
+
+class TestColumnSync:
+    """Tests for column layout preservation through sync path."""
+
+    def test_sync_preserves_column_layout(self):
+        """Sync should preserve column properties when building docx."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            doc.add_paragraph("Two column text")
+            doc.add_paragraph("More content")
+            _set_body_columns(doc, col_count=2, col_space=720, equal_width=True)
+            doc.save("original.docx")
+
+            # Extract
+            result = runner.invoke(main, ["extract", "original.docx"])
+            assert result.exit_code == 0
+
+            # Sync with output docx
+            result = runner.invoke(main, ["sync", "original.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0
+
+            # Verify column properties survived sync
+            rebuilt = Document("synced.docx")
+            body = rebuilt.element.body
+            sectPr = body.find(qn('w:sectPr'))
+            assert sectPr is not None
+            cols = sectPr.find(qn('w:cols'))
+            assert cols is not None
+            assert cols.get(qn('w:num')) == '2'
+            assert cols.get(qn('w:space')) == '720'
+
+    def test_sync_preserves_column_break_marker(self):
+        """Column break markers should survive the sync round-trip."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            p = doc.add_paragraph("Before break")
+            _add_column_break(p)
+            doc.add_paragraph("After break")
+            _set_body_columns(doc, col_count=2, col_space=720)
+            doc.save("original.docx")
+
+            # Extract
+            result = runner.invoke(main, ["extract", "original.docx"])
+            assert result.exit_code == 0
+
+            # Verify marker is in content.md
+            content = Path("original.sidedoc/content.md").read_text()
+            assert "<!-- column-break -->" in content
+
+            # Sync with output docx
+            result = runner.invoke(main, ["sync", "original.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0
+
+            # Verify column break survived in rebuilt document
+            rebuilt = Document("synced.docx")
+            breaks = rebuilt.element.body.findall('.//' + qn('w:br'))
+            column_breaks = [br for br in breaks if br.get(qn('w:type')) == 'column']
+            assert len(column_breaks) >= 1
+
+    def test_sync_preserves_unequal_columns(self):
+        """Sync should preserve unequal column widths."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            doc.add_paragraph("Unequal column text")
+            _set_body_columns(
+                doc, col_count=2, equal_width=False,
+                columns=[
+                    {'width': 5760, 'space': 720},
+                    {'width': 3600},
+                ]
+            )
+            doc.save("original.docx")
+
+            result = runner.invoke(main, ["extract", "original.docx"])
+            assert result.exit_code == 0
+
+            result = runner.invoke(main, ["sync", "original.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0
+
+            rebuilt = Document("synced.docx")
+            body = rebuilt.element.body
+            sectPr = body.find(qn('w:sectPr'))
+            cols = sectPr.find(qn('w:cols'))
+            assert cols.get(qn('w:equalWidth')) == '0'
+            col_elems = cols.findall(qn('w:col'))
+            assert len(col_elems) == 2
+            assert col_elems[0].get(qn('w:w')) == '5760'
+
+
+# =============================================================================
+# Table + Section Tests
+# =============================================================================
+
+
+class TestColumnsWithTables:
+    """Tests for column layouts in documents with tables."""
+
+    def test_roundtrip_sections_with_table(self):
+        """Section breaks with tables should preserve correct block indices."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            doc.add_paragraph("Before table")
+            table = doc.add_table(rows=2, cols=2)
+            table.cell(0, 0).text = "A"
+            table.cell(0, 1).text = "B"
+            table.cell(1, 0).text = "C"
+            table.cell(1, 1).text = "D"
+            doc.add_paragraph("After table")
+            _set_body_columns(doc, col_count=2, col_space=720, equal_width=True)
+            doc.save("original.docx")
+
+            result = runner.invoke(main, ["extract", "original.docx"])
+            assert result.exit_code == 0
+
+            result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0
+
+            rebuilt = Document("rebuilt.docx")
+            body = rebuilt.element.body
+            sectPr = body.find(qn('w:sectPr'))
+            assert sectPr is not None
+            cols = sectPr.find(qn('w:cols'))
+            assert cols is not None
+            assert cols.get(qn('w:num')) == '2'
+
+
+# =============================================================================
+# Inline Formatting with Column Breaks
+# =============================================================================
+
+
+class TestColumnBreakFormatting:
+    """Tests for inline formatting preservation with column breaks."""
+
+    def test_formatted_text_with_column_break(self):
+        """Bold/italic text should be preserved around column breaks."""
+        from sidedoc.reconstruct import create_docx_from_blocks, COLUMN_BREAK_MARKER
+        from sidedoc.models import Block
+        import hashlib
+
+        block = Block(
+            id="block-0",
+            type="paragraph",
+            content=f"**bold text** {COLUMN_BREAK_MARKER} *italic text*",
+            docx_paragraph_index=0,
+            content_start=0,
+            content_end=50,
+            content_hash=hashlib.sha256(b"test").hexdigest(),
+        )
+
+        doc = create_docx_from_blocks([block], {"block_styles": {}})
+
+        # Verify column break exists
+        breaks = doc.element.body.findall('.//' + qn('w:br'))
+        column_breaks = [br for br in breaks if br.get(qn('w:type')) == 'column']
+        assert len(column_breaks) == 1
+
+        # Verify bold and italic runs exist
+        runs = doc.element.body.findall('.//' + qn('w:r'))
+        bold_found = False
+        italic_found = False
+        for run in runs:
+            rPr = run.find(qn('w:rPr'))
+            if rPr is not None:
+                if rPr.find(qn('w:b')) is not None:
+                    bold_found = True
+                if rPr.find(qn('w:i')) is not None:
+                    italic_found = True
+        assert bold_found, "Bold formatting not found"
+        assert italic_found, "Italic formatting not found"

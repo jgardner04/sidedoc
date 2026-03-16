@@ -1012,6 +1012,8 @@ def _process_paragraph(
 def extract_blocks(
     docx_path: str,
     track_changes: Optional[bool] = None,
+    *,
+    _doc: Any = None,
 ) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
@@ -1023,6 +1025,7 @@ def extract_blocks(
         track_changes: Track changes mode. If None, auto-detect based on document.
                       If True, extract track changes as CriticMarkup.
                       If False, accept all changes and extract plain text.
+        _doc: Pre-opened Document object (internal use by extract_document).
 
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
@@ -1030,7 +1033,7 @@ def extract_blocks(
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
-    doc = Document(docx_path)
+    doc = _doc if _doc is not None else Document(docx_path)
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
     content_position = 0
@@ -1120,6 +1123,28 @@ def extract_blocks(
     return blocks, image_data
 
 
+def extract_document(
+    docx_path: str,
+    track_changes: Optional[bool] = None,
+) -> tuple[list[Block], dict[str, bytes], list[SectionProperties]]:
+    """Extract blocks and section properties from a Word document in one pass.
+
+    Opens the document once and shares the Document/body element between block
+    extraction and section extraction, ensuring block indices are consistent.
+
+    Args:
+        docx_path: Path to .docx file
+        track_changes: Track changes mode (see extract_blocks).
+
+    Returns:
+        Tuple of (blocks, image_data, sections)
+    """
+    doc = Document(docx_path)
+    blocks, image_data = extract_blocks(docx_path, track_changes=track_changes, _doc=doc)
+    sections = extract_sections(body=doc.element.body)
+    return blocks, image_data, sections
+
+
 def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     """Parse a w:cols element into a dict of column properties.
 
@@ -1129,14 +1154,20 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     Returns:
         Dict with column_count, column_spacing, equal_width, and columns
     """
-    col_count = int(cols_elem.get(qn('w:num'), '1'))
+    try:
+        col_count = int(cols_elem.get(qn('w:num'), '1'))
+    except ValueError:
+        col_count = 1
     col_space = cols_elem.get(qn('w:space'))
     equal_width_val = cols_elem.get(qn('w:equalWidth'))
 
     # equalWidth defaults to True when not specified
     equal_width = equal_width_val != '0'
 
-    column_spacing = int(col_space) if col_space else None
+    try:
+        column_spacing = int(col_space) if col_space else None
+    except ValueError:
+        column_spacing = None
 
     columns = None
     if not equal_width:
@@ -1144,11 +1175,18 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
         if col_elems:
             columns = []
             for col_el in col_elems:
-                width = int(col_el.get(qn('w:w'), '0'))
+                try:
+                    width = int(col_el.get(qn('w:w'), '0'))
+                except ValueError:
+                    width = 0
                 space = col_el.get(qn('w:space'))
+                try:
+                    space_val = int(space) if space else None
+                except ValueError:
+                    space_val = None
                 columns.append(ColumnDefinition(
                     width=width,
-                    space=int(space) if space else None,
+                    space=space_val,
                 ))
 
     return {
@@ -1179,7 +1217,7 @@ def _parse_sect_pr(sect_pr: Any) -> SectionProperties:
     return props
 
 
-def extract_sections(docx_path: str) -> list[SectionProperties]:
+def extract_sections(docx_path: str | None = None, *, body: Any = None) -> list[SectionProperties]:
     """Extract section properties (column layouts) from a Word document.
 
     OOXML sections are defined by:
@@ -1187,13 +1225,19 @@ def extract_sections(docx_path: str) -> list[SectionProperties]:
     - Final section: w:sectPr as direct child of w:body
 
     Args:
-        docx_path: Path to .docx file
+        docx_path: Path to .docx file (used if body is not provided)
+        body: Pre-opened document body element. When provided, avoids
+              re-opening the document and ensures block indices stay
+              consistent with extract_blocks.
 
     Returns:
         List of SectionProperties in document order
     """
-    doc = Document(docx_path)
-    body = doc.element.body
+    if body is None:
+        if docx_path is None:
+            raise ValueError("Either docx_path or body must be provided")
+        doc = Document(docx_path)
+        body = doc.element.body
     sections: list[SectionProperties] = []
     block_index = 0
 

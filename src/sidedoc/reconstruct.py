@@ -1138,6 +1138,9 @@ COLUMN_BREAK_MARKER = "<!-- column-break -->"
 def _add_paragraph_with_column_breaks(doc: DocumentType, content: str) -> Any:
     """Add a paragraph, inserting column breaks where markers appear.
 
+    Applies inline formatting (bold/italic/links) to text segments between
+    column break markers.
+
     Args:
         doc: Document to add paragraph to
         content: Text content possibly containing <!-- column-break --> markers
@@ -1146,17 +1149,20 @@ def _add_paragraph_with_column_breaks(doc: DocumentType, content: str) -> Any:
         The created paragraph
     """
     parts = content.split(COLUMN_BREAK_MARKER)
-    para = doc.add_paragraph(parts[0].strip())
+    para = doc.add_paragraph()
+    first_text = parts[0].strip()
+    if first_text:
+        apply_inline_formatting(para, first_text)
     for part in parts[1:]:
         # Add column break
         run = para.add_run()
         br = OxmlElement('w:br')
         br.set(qn('w:type'), 'column')
         run._element.append(br)
-        # Add text after break
+        # Add text after break with inline formatting
         text = part.strip()
         if text:
-            para.add_run(text)
+            apply_inline_formatting(para, text)
     return para
 
 
@@ -1201,10 +1207,15 @@ def _apply_sections_to_doc(doc: DocumentType, sections: list[SectionProperties])
         return
 
     body = doc.element.body
-    paragraphs = body.findall(qn('w:p'))
+    # Build combined list of block elements (paragraphs AND tables) in document
+    # order. end_block_index is a block index covering both types, so indexing
+    # into only w:p elements would be wrong when tables are present.
+    block_elements = [
+        child for child in body
+        if child.tag.endswith('}p') or child.tag.endswith('}tbl')
+    ]
 
     for i, section in enumerate(sections):
-        # Skip single-column default sections (nothing to apply)
         is_last = (i == len(sections) - 1)
 
         if is_last:
@@ -1220,10 +1231,21 @@ def _apply_sections_to_doc(doc: DocumentType, sections: list[SectionProperties])
             if section.column_count > 1 or not section.equal_width:
                 sect_pr.append(_build_cols_element(section))
         else:
-            # Mid-document section: insert sectPr in last paragraph's pPr
+            # Mid-document section: insert sectPr in last block's pPr.
+            # If the block is a table, insert sectPr in the last paragraph
+            # of that table (OOXML requires sectPr inside a w:pPr).
             end_idx = section.end_block_index
-            if end_idx is not None and end_idx < len(paragraphs):
-                p_elem = paragraphs[end_idx]
+            if end_idx is not None and end_idx < len(block_elements):
+                block_elem = block_elements[end_idx]
+                # If block is a table, find the last paragraph inside it
+                if block_elem.tag.endswith('}tbl'):
+                    paragraphs_in_table = block_elem.findall('.//' + qn('w:p'))
+                    if paragraphs_in_table:
+                        p_elem = paragraphs_in_table[-1]
+                    else:
+                        continue  # No paragraph to attach sectPr to
+                else:
+                    p_elem = block_elem
                 pPr = p_elem.find(qn('w:pPr'))
                 if pPr is None:
                     pPr = OxmlElement('w:pPr')

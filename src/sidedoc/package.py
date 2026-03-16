@@ -64,8 +64,6 @@ def section_to_structure_dict(section: SectionProperties) -> dict:
             {"width": col.width, "space": col.space}
             for col in section.columns
         ]
-    else:
-        result["columns"] = None
     return result
 
 
@@ -84,7 +82,14 @@ def _build_metadata(
     structure_data: dict = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
-    if sections:
+    # Only include sections when there's a non-trivial layout (multi-column
+    # or multi-section). A single default section with 1 column is omitted
+    # to keep structure.json clean for simple documents.
+    if sections and not (
+        len(sections) == 1
+        and sections[0].column_count == 1
+        and sections[0].equal_width
+    ):
         structure_data["sections"] = [
             section_to_structure_dict(s) for s in sections
         ]
