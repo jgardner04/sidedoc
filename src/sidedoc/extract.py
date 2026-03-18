@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
+from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
@@ -227,8 +228,6 @@ def extract_textbox_from_paragraph(paragraph: Any) -> Optional[list[dict[str, An
         position_h, position_v, fill_color, border_color, drawing_xml.
         Returns None if no text boxes found.
     """
-    from lxml import etree  # type: ignore[import-untyped]
-
     results = []
 
     for run in paragraph.runs:
@@ -289,20 +288,22 @@ def extract_textbox_from_paragraph(paragraph: Any) -> Optional[list[dict[str, An
                             if ln_srgb is not None:
                                 border_color = ln_srgb.get('val')
 
+            drawing_xml = etree.tostring(drawing, encoding='unicode')
+
             for txbx in txbx_contents:
                 texts = []
-                for a_p in txbx.findall(f'{{{DRAWINGML_NS}}}p'):
+                # txbxContent contains WordProcessingML elements (w:p/w:r/w:t),
+                # not DrawingML elements (a:p/a:r/a:t)
+                for w_p in txbx.findall(f'{{{WORDPROCESSINGML_NS}}}p'):
                     parts = []
-                    for a_r in a_p.findall(f'{{{DRAWINGML_NS}}}r'):
-                        for a_t in a_r.findall(f'{{{DRAWINGML_NS}}}t'):
-                            if a_t.text:
-                                parts.append(a_t.text)
+                    for w_r in w_p.findall(f'{{{WORDPROCESSINGML_NS}}}r'):
+                        for w_t in w_r.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
+                            if w_t.text:
+                                parts.append(w_t.text)
                     if parts:
                         texts.append("".join(parts))
 
                 if texts:
-                    drawing_xml = etree.tostring(drawing, encoding='unicode')
-
                     results.append({
                         "texts": texts,
                         "anchor_type": anchor_type,

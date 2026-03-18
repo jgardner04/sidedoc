@@ -443,10 +443,11 @@ def _make_textbox_drawing_xml(
     """Build DrawingML XML string for a text box."""
     bold_runs = bold_runs or set()
 
+    w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     paras_xml = ""
     for idx, text in enumerate(content_paragraphs):
-        rpr = '<a:rPr lang="en-US" b="1"/>' if idx in bold_runs else '<a:rPr lang="en-US"/>'
-        paras_xml += f'<a:p><a:r>{rpr}<a:t>{text}</a:t></a:r></a:p>'
+        rpr = f'<w:rPr xmlns:w="{w_ns}"><w:b/></w:rPr>' if idx in bold_runs else ''
+        paras_xml += f'<w:p xmlns:w="{w_ns}"><w:r>{rpr}<w:t>{text}</w:t></w:r></w:p>'
 
     fill_xml = '<a:noFill/>' if fill_color is None else (
         f'<a:solidFill><a:srgbClr val="{fill_color}"/></a:solidFill>'
@@ -567,7 +568,8 @@ def create_textboxes_docx() -> None:
         '<a:solidFill><a:srgbClr val="4472C4"/></a:solidFill>'
         '</wps:spPr>'
         '<wps:txbxContent>'
-        '<a:p><a:r><a:rPr lang="en-US"/><a:t>Text inside a shape.</a:t></a:r></a:p>'
+        '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:r><w:t>Text inside a shape.</w:t></w:r></w:p>'
         '</wps:txbxContent>'
         '</wps:wsp>'
         '</a:graphicData>'

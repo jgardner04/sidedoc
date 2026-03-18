@@ -157,6 +157,28 @@ class TestTextBoxStyles:
         styles = extract_styles(textboxes_docx, blocks)
         assert len(styles) == len(blocks)
 
+    def test_interleaved_blocks_styles_alignment(self, textboxes_docx):
+        """Styles array should align with blocks when textboxes are interleaved with paragraphs.
+
+        The fixture has: heading, paragraph, textbox, paragraph, textbox, textbox, paragraph.
+        Each block must have a corresponding style at the same index.
+        """
+        blocks, _ = extract_blocks(textboxes_docx)
+        styles = extract_styles(textboxes_docx, blocks)
+
+        assert len(styles) == len(blocks)
+        for i, (block, style) in enumerate(zip(blocks, styles)):
+            assert style.block_id == block.id, (
+                f"Style/block ID mismatch at index {i}: "
+                f"style.block_id={style.block_id}, block.id={block.id}"
+            )
+
+        # Verify the interleaved pattern exists
+        types = [b.type for b in blocks]
+        assert "textbox" in types
+        assert "paragraph" in types
+        assert "heading" in types
+
 
 # =============================================================================
 # Serialization tests

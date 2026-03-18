@@ -10,6 +10,7 @@ from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from lxml import etree  # type: ignore[import-untyped]
 import click
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
@@ -1354,7 +1355,6 @@ def create_docx_from_blocks(
             para = None
         elif block.type == "textbox":
             if block.text_box_metadata and "drawing_xml" in block.text_box_metadata:
-                from lxml import etree  # type: ignore[import-untyped]
                 para = doc.add_paragraph()
                 run = para.add_run()
                 drawing_elem = etree.fromstring(block.text_box_metadata["drawing_xml"])
