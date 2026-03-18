@@ -428,6 +428,166 @@ def create_tables_complex_docx() -> None:
     print("✓ Created tables_complex.docx")
 
 
+def _make_textbox_drawing_xml(
+    content_paragraphs: list[str],
+    *,
+    anchor: bool = True,
+    width_emu: int = 3657600,
+    height_emu: int = 1371600,
+    pos_x: int = 914400,
+    pos_y: int = 914400,
+    border_color: str | None = None,
+    fill_color: str | None = None,
+    bold_runs: set[int] | None = None,
+) -> str:
+    """Build DrawingML XML string for a text box."""
+    bold_runs = bold_runs or set()
+
+    w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    paras_xml = ""
+    for idx, text in enumerate(content_paragraphs):
+        rpr = f'<w:rPr xmlns:w="{w_ns}"><w:b/></w:rPr>' if idx in bold_runs else ''
+        paras_xml += f'<w:p xmlns:w="{w_ns}"><w:r>{rpr}<w:t>{text}</w:t></w:r></w:p>'
+
+    fill_xml = '<a:noFill/>' if fill_color is None else (
+        f'<a:solidFill><a:srgbClr val="{fill_color}"/></a:solidFill>'
+    )
+    line_xml = (
+        f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{border_color}"/></a:solidFill></a:ln>'
+        if border_color else '<a:ln><a:noFill/></a:ln>'
+    )
+
+    wsp_xml = (
+        '<wps:wsp>'
+        '<wps:cNvSpPr txBox="1"/>'
+        f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{width_emu}" cy="{height_emu}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        f'{fill_xml}{line_xml}'
+        '</wps:spPr>'
+        f'<wps:txbxContent>{paras_xml}</wps:txbxContent>'
+        '</wps:wsp>'
+    )
+
+    graphic_xml = (
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+        f'{wsp_xml}'
+        '</a:graphicData>'
+        '</a:graphic>'
+    )
+
+    ns_attrs = (
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    )
+
+    if anchor:
+        return (
+            f'<wp:anchor distT="0" distB="0" distL="114300" distR="114300" '
+            f'simplePos="0" relativeHeight="0" behindDoc="0" locked="0" '
+            f'layoutInCell="1" allowOverlap="1" {ns_attrs}>'
+            f'<wp:simplePos x="0" y="0"/>'
+            f'<wp:positionH relativeFrom="column"><wp:posOffset>{pos_x}</wp:posOffset></wp:positionH>'
+            f'<wp:positionV relativeFrom="paragraph"><wp:posOffset>{pos_y}</wp:posOffset></wp:positionV>'
+            f'<wp:extent cx="{width_emu}" cy="{height_emu}"/>'
+            f'<wp:wrapNone/>'
+            f'{graphic_xml}'
+            f'</wp:anchor>'
+        )
+    else:
+        return (
+            f'<wp:inline distT="0" distB="0" distL="0" distR="0" {ns_attrs}>'
+            f'<wp:extent cx="{width_emu}" cy="{height_emu}"/>'
+            f'{graphic_xml}'
+            f'</wp:inline>'
+        )
+
+
+def create_textboxes_docx() -> None:
+    """Create textboxes.docx with various text box configurations."""
+    from lxml import etree
+
+    doc = Document()
+
+    doc.add_heading("Document with Text Boxes", level=1)
+    doc.add_paragraph("Text before the first text box.")
+
+    # Text box 1: simple anchored text box
+    p1 = doc.add_paragraph()
+    run1 = p1.add_run()
+    drawing_xml = _make_textbox_drawing_xml(
+        ["This is a simple text box."],
+        anchor=True, pos_x=914400, pos_y=914400,
+        width_emu=3657600, height_emu=914400,
+    )
+    drawing_elem = etree.fromstring(
+        f'<w:drawing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'{drawing_xml}</w:drawing>'
+    )
+    run1._element.append(drawing_elem)
+
+    doc.add_paragraph("Text between text boxes.")
+
+    # Text box 2: inline text box with formatting
+    p2 = doc.add_paragraph()
+    run2 = p2.add_run()
+    drawing_xml2 = _make_textbox_drawing_xml(
+        ["Bold heading inside text box", "Regular paragraph in text box."],
+        anchor=False, width_emu=4572000, height_emu=1371600,
+        border_color="000000", fill_color="FFFF00", bold_runs={0},
+    )
+    drawing_elem2 = etree.fromstring(
+        f'<w:drawing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'{drawing_xml2}</w:drawing>'
+    )
+    run2._element.append(drawing_elem2)
+
+    # Text box 3: shape with text (not txBox flag, roundRect shape)
+    p3 = doc.add_paragraph()
+    run3 = p3.add_run()
+    shape_xml = (
+        '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" '
+        'simplePos="0" relativeHeight="0" behindDoc="0" locked="0" '
+        'layoutInCell="1" allowOverlap="1" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="column"><wp:posOffset>914400</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>2286000</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="2743200" cy="914400"/>'
+        '<wp:wrapNone/>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+        '<wps:wsp>'
+        '<wps:cNvSpPr/>'
+        '<wps:spPr>'
+        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="2743200" cy="914400"/></a:xfrm>'
+        '<a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>'
+        '<a:solidFill><a:srgbClr val="4472C4"/></a:solidFill>'
+        '</wps:spPr>'
+        '<wps:txbxContent>'
+        '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:r><w:t>Text inside a shape.</w:t></w:r></w:p>'
+        '</wps:txbxContent>'
+        '</wps:wsp>'
+        '</a:graphicData>'
+        '</a:graphic>'
+        '</wp:anchor>'
+    )
+    drawing_elem3 = etree.fromstring(
+        f'<w:drawing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f'{shape_xml}</w:drawing>'
+    )
+    run3._element.append(drawing_elem3)
+
+    doc.add_paragraph("Text after all text boxes.")
+
+    doc.save(str(FIXTURES_DIR / "textboxes.docx"))
+    print("✓ Created textboxes.docx")
+
+
 if __name__ == "__main__":
     print("Creating test fixtures...")
     create_simple_docx()
@@ -439,4 +599,5 @@ if __name__ == "__main__":
     create_tables_formatted_docx()
     create_tables_merged_docx()
     create_tables_complex_docx()
+    create_textboxes_docx()
     print("\nAll fixtures created successfully!")

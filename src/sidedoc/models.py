@@ -52,6 +52,7 @@ class Block:
     table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
     track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
     footnote_references: Optional[list[dict[str, Any]]] = None  # Footnote/endnote references in this block
+    text_box_metadata: Optional[dict[str, Any]] = None  # For text boxes: anchor_type, width, height, position, border, fill, drawing_xml
 
 
 @dataclass
@@ -71,6 +72,32 @@ class Style:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style, cell_styles
+
+
+@dataclass
+class ColumnDefinition:
+    """Represents an individual column definition for unequal-width layouts.
+
+    Used when w:equalWidth="0" in OOXML to specify per-column widths.
+    """
+
+    width: int  # Column width in twips (1/1440 inch)
+    space: Optional[int] = None  # Space after this column in twips
+
+
+@dataclass
+class SectionProperties:
+    """Represents section-level properties from OOXML w:sectPr.
+
+    Stores column layout configuration. Extensible for headers/footers later.
+    """
+
+    column_count: int = 1
+    column_spacing: Optional[int] = None  # Default spacing between columns in twips
+    equal_width: bool = True
+    columns: Optional[list[ColumnDefinition]] = None  # Per-column definitions (unequal widths)
+    start_block_index: Optional[int] = None  # First block index in this section
+    end_block_index: Optional[int] = None  # Last block index in this section (inclusive)
 
 
 @dataclass

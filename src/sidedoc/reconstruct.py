@@ -9,9 +9,12 @@ from docx import Document
 from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
+from docx.opc.part import Part
+from docx.opc.packuri import PackURI
 from docx.oxml import OxmlElement
+from lxml import etree  # type: ignore[import-untyped]
 import click
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
@@ -60,6 +63,25 @@ ENDNOTES_CT = (
 
 # Cache the mistune parser at module level to avoid recreating per paragraph
 _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
+
+
+def _extract_textbox_inner_content(content: str) -> str:
+    """Extract inner text from textbox markdown markers.
+
+    Args:
+        content: Block content like "<!-- textbox -->\\nText here.\\n<!-- /textbox -->"
+
+    Returns:
+        Inner text with markers stripped.
+    """
+    lines = content.split("\n")
+    inner = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("<!-- textbox") or stripped == "<!-- /textbox -->":
+            continue
+        inner.append(line)
+    return "\n".join(inner)
 
 
 def apply_inline_formatting(paragraph: Any, content: str) -> None:
@@ -706,6 +728,34 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             i += 1
             continue
 
+        # Check if this is a textbox block
+        if stripped_line == "<!-- textbox -->" or stripped_line.startswith("<!-- textbox"):
+            textbox_lines = [stripped_line]
+            j = i + 1
+            while j < len(lines):
+                tl = lines[j].strip()
+                textbox_lines.append(tl)
+                if tl == "<!-- /textbox -->":
+                    break
+                j += 1
+
+            textbox_content = "\n".join(textbox_lines)
+
+            block = Block(
+                id=f"block-{block_id}",
+                type="textbox",
+                content=textbox_content,
+                docx_paragraph_index=block_id,
+                content_start=content_position,
+                content_end=content_position + len(textbox_content),
+                content_hash=hashlib.sha256(textbox_content.encode()).hexdigest(),
+            )
+            blocks.append(block)
+            block_id += 1
+            content_position += len(textbox_content) + 1
+            i = j + 1
+            continue
+
         # Check if this is the start of a GFM table
         # A table starts with a row that starts/ends with pipes
         # and is followed by a separator line
@@ -1161,7 +1211,6 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
-
 def _parse_footnote_definitions(content_md: str) -> dict[int, str]:
     """Parse [^N]: text definitions from markdown content.
 
@@ -1181,25 +1230,28 @@ def _has_footnote_refs(text: str) -> bool:
     return bool(FOOTNOTE_REF_PATTERN.search(text))
 
 
-def _get_or_create_footnotes_part(doc):
-    """Get or create the footnotes.xml part in the document."""
-    from docx.opc.part import Part
-    from docx.opc.packuri import PackURI
+def _get_or_create_notes_part(doc, note_tag, rel_type, content_type, part_path):
+    """Get or create a footnotes/endnotes XML part in the document.
 
-    # Check existing rels first
+    Args:
+        doc: Document object
+        note_tag: XML tag for notes (e.g. "w:footnotes" or "w:endnotes")
+        rel_type: Relationship type constant
+        content_type: Content type constant
+        part_path: Part URI path (e.g. "/word/footnotes.xml")
+    """
     for rel in doc.part.rels.values():
-        if rel.reltype == FOOTNOTES_RT:
+        if rel.reltype == rel_type:
             return rel.target_part
 
-    # Create new footnotes.xml
+    note_singular = note_tag.replace("s", "", 1)  # w:footnotes -> w:footnote
     nsmap = {"w": WORDPROCESSINGML_NS, "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
-    root = etree.Element(qn("w:footnotes"), nsmap=nsmap)
-    # Add separator footnotes (required)
+    root = etree.Element(qn(note_tag), nsmap=nsmap)
     for sep_id, sep_type in [("-1", "separator"), ("0", "continuationSeparator")]:
-        fn = etree.SubElement(root, qn("w:footnote"))
-        fn.set(qn("w:type"), sep_type)
-        fn.set(qn("w:id"), sep_id)
-        p = etree.SubElement(fn, qn("w:p"))
+        note = etree.SubElement(root, qn(note_singular))
+        note.set(qn("w:type"), sep_type)
+        note.set(qn("w:id"), sep_id)
+        p = etree.SubElement(note, qn("w:p"))
         r = etree.SubElement(p, qn("w:r"))
         if sep_type == "separator":
             etree.SubElement(r, qn("w:separator"))
@@ -1207,44 +1259,23 @@ def _get_or_create_footnotes_part(doc):
             etree.SubElement(r, qn("w:continuationSeparator"))
 
     xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    part_name = PackURI("/word/footnotes.xml")
-    footnotes_part = Part(part_name, FOOTNOTES_CT, xml_bytes, doc.part.package)
-    # Store parsed element so _add_footnote_to_part can accumulate mutations
-    footnotes_part._element = root
-    doc.part.relate_to(footnotes_part, FOOTNOTES_RT)
-    return footnotes_part
+    part_name = PackURI(part_path)
+    notes_part = Part(part_name, content_type, xml_bytes, doc.part.package)
+    # Cache parsed element so _add_note_to_part can accumulate mutations
+    # without re-parsing from blob on each call.
+    notes_part._element = root
+    doc.part.relate_to(notes_part, rel_type)
+    return notes_part
+
+
+def _get_or_create_footnotes_part(doc):
+    """Get or create the footnotes.xml part in the document."""
+    return _get_or_create_notes_part(doc, "w:footnotes", FOOTNOTES_RT, FOOTNOTES_CT, "/word/footnotes.xml")
 
 
 def _get_or_create_endnotes_part(doc):
     """Get or create the endnotes.xml part in the document."""
-    from docx.opc.part import Part
-    from docx.opc.packuri import PackURI
-
-    # Check existing rels first
-    for rel in doc.part.rels.values():
-        if rel.reltype == ENDNOTES_RT:
-            return rel.target_part
-
-    nsmap = {"w": WORDPROCESSINGML_NS, "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
-    root = etree.Element(qn("w:endnotes"), nsmap=nsmap)
-    for sep_id, sep_type in [("-1", "separator"), ("0", "continuationSeparator")]:
-        en = etree.SubElement(root, qn("w:endnote"))
-        en.set(qn("w:type"), sep_type)
-        en.set(qn("w:id"), sep_id)
-        p = etree.SubElement(en, qn("w:p"))
-        r = etree.SubElement(p, qn("w:r"))
-        if sep_type == "separator":
-            etree.SubElement(r, qn("w:separator"))
-        else:
-            etree.SubElement(r, qn("w:continuationSeparator"))
-
-    xml_bytes = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    part_name = PackURI("/word/endnotes.xml")
-    endnotes_part = Part(part_name, ENDNOTES_CT, xml_bytes, doc.part.package)
-    # Store parsed element so _add_endnote_to_part can accumulate mutations
-    endnotes_part._element = root
-    doc.part.relate_to(endnotes_part, ENDNOTES_RT)
-    return endnotes_part
+    return _get_or_create_notes_part(doc, "w:endnotes", ENDNOTES_RT, ENDNOTES_CT, "/word/endnotes.xml")
 
 
 def _parse_formatted_segments(text: str) -> list[tuple[str, bool, bool]]:
@@ -1295,53 +1326,41 @@ def _add_formatted_runs_to_note(p, text):
         t.text = seg_text
 
 
-def _add_footnote_to_part(part, note_id, text):
-    """Add a footnote element to the footnotes part."""
+def _add_note_to_part(part, note_id, text, note_tag, ref_tag, style_name):
+    """Add a footnote or endnote element to a notes part.
+
+    Uses a lazy _element cache: on first call, parses blob into an element tree
+    and caches it on the part. Subsequent calls mutate the cached tree directly.
+    The blob is updated after each mutation so Part serializes correctly.
+    """
     if hasattr(part, '_element'):
         root = part._element
     else:
         root = etree.fromstring(part.blob)
         part._element = root
 
-    fn = etree.SubElement(root, qn("w:footnote"))
-    fn.set(qn("w:id"), str(note_id))
-    p = etree.SubElement(fn, qn("w:p"))
-    # Add footnoteRef run
+    note = etree.SubElement(root, qn(note_tag))
+    note.set(qn("w:id"), str(note_id))
+    p = etree.SubElement(note, qn("w:p"))
     ref_run = etree.SubElement(p, qn("w:r"))
     rPr = etree.SubElement(ref_run, qn("w:rPr"))
     style = etree.SubElement(rPr, qn("w:rStyle"))
-    style.set(qn("w:val"), "FootnoteReference")
-    etree.SubElement(ref_run, qn("w:footnoteRef"))
-    # Add text runs with inline formatting
+    style.set(qn("w:val"), style_name)
+    etree.SubElement(ref_run, qn(ref_tag))
     _add_formatted_runs_to_note(p, text)
 
-    # Always update the blob so Part serializes correctly
     part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
     return note_id
+
+
+def _add_footnote_to_part(part, note_id, text):
+    """Add a footnote element to the footnotes part."""
+    return _add_note_to_part(part, note_id, text, "w:footnote", "w:footnoteRef", "FootnoteReference")
 
 
 def _add_endnote_to_part(part, note_id, text):
     """Add an endnote element to the endnotes part."""
-    if hasattr(part, '_element'):
-        root = part._element
-    else:
-        root = etree.fromstring(part.blob)
-        part._element = root
-
-    en = etree.SubElement(root, qn("w:endnote"))
-    en.set(qn("w:id"), str(note_id))
-    p = etree.SubElement(en, qn("w:p"))
-    ref_run = etree.SubElement(p, qn("w:r"))
-    rPr = etree.SubElement(ref_run, qn("w:rPr"))
-    style = etree.SubElement(rPr, qn("w:rStyle"))
-    style.set(qn("w:val"), "EndnoteReference")
-    etree.SubElement(ref_run, qn("w:endnoteRef"))
-    # Add text runs with inline formatting
-    _add_formatted_runs_to_note(p, text)
-
-    # Always update the blob so Part serializes correctly
-    part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
-    return note_id
+    return _add_note_to_part(part, note_id, text, "w:endnote", "w:endnoteRef", "EndnoteReference")
 
 
 def _insert_footnote_reference(run, note_id):
@@ -1404,6 +1423,130 @@ def _add_text_with_footnotes(paragraph, text, doc, footnote_defs, footnote_meta)
                 _insert_footnote_reference(run, note_id)
 
 
+COLUMN_BREAK_MARKER = "<!-- column-break -->"
+
+
+def _add_paragraph_with_column_breaks(doc: DocumentType, content: str) -> Any:
+    """Add a paragraph, inserting column breaks where markers appear.
+
+    Applies inline formatting (bold/italic/links) to text segments between
+    column break markers.
+
+    Args:
+        doc: Document to add paragraph to
+        content: Text content possibly containing <!-- column-break --> markers
+
+    Returns:
+        The created paragraph
+    """
+    parts = content.split(COLUMN_BREAK_MARKER)
+    para = doc.add_paragraph()
+    first_text = parts[0].strip()
+    if first_text:
+        apply_inline_formatting(para, first_text)
+    for part in parts[1:]:
+        # Add column break
+        run = para.add_run()
+        br = OxmlElement('w:br')
+        br.set(qn('w:type'), 'column')
+        run._element.append(br)
+        # Add text after break with inline formatting
+        text = part.strip()
+        if text:
+            apply_inline_formatting(para, text)
+    return para
+
+
+def _build_cols_element(section: SectionProperties) -> Any:
+    """Build a w:cols XML element from SectionProperties.
+
+    Args:
+        section: SectionProperties with column configuration
+
+    Returns:
+        OxmlElement for w:cols
+    """
+    cols = OxmlElement('w:cols')
+    cols.set(qn('w:num'), str(section.column_count))
+    if section.column_spacing is not None:
+        cols.set(qn('w:space'), str(section.column_spacing))
+    if section.equal_width:
+        cols.set(qn('w:equalWidth'), '1')
+    else:
+        cols.set(qn('w:equalWidth'), '0')
+        if section.columns:
+            for col_def in section.columns:
+                col_elem = OxmlElement('w:col')
+                col_elem.set(qn('w:w'), str(col_def.width))
+                if col_def.space is not None:
+                    col_elem.set(qn('w:space'), str(col_def.space))
+                cols.append(col_elem)
+    return cols
+
+
+def _apply_sections_to_doc(doc: DocumentType, sections: list[SectionProperties]) -> None:
+    """Apply section properties (columns) to a document.
+
+    Mid-document sections get a sectPr in the last paragraph's pPr.
+    The final section gets a sectPr as direct child of w:body.
+
+    Args:
+        doc: Document to modify
+        sections: List of SectionProperties in document order
+    """
+    if not sections:
+        return
+
+    body = doc.element.body
+    # Build combined list of block elements (paragraphs AND tables) in document
+    # order. end_block_index is a block index covering both types, so indexing
+    # into only w:p elements would be wrong when tables are present.
+    block_elements = [
+        child for child in body
+        if child.tag.endswith('}p') or child.tag.endswith('}tbl')
+    ]
+
+    for i, section in enumerate(sections):
+        is_last = (i == len(sections) - 1)
+
+        if is_last:
+            # Final section: apply to body-level sectPr
+            sect_pr = body.find(qn('w:sectPr'))
+            if sect_pr is None:
+                sect_pr = OxmlElement('w:sectPr')
+                body.append(sect_pr)
+            # Remove existing cols if any
+            existing_cols = sect_pr.find(qn('w:cols'))
+            if existing_cols is not None:
+                sect_pr.remove(existing_cols)
+            if section.column_count > 1 or not section.equal_width:
+                sect_pr.append(_build_cols_element(section))
+        else:
+            # Mid-document section: insert sectPr in last block's pPr.
+            # If the block is a table, insert sectPr in the last paragraph
+            # of that table (OOXML requires sectPr inside a w:pPr).
+            end_idx = section.end_block_index
+            if end_idx is not None and end_idx < len(block_elements):
+                block_elem = block_elements[end_idx]
+                # If block is a table, find the last paragraph inside it
+                if block_elem.tag.endswith('}tbl'):
+                    paragraphs_in_table = block_elem.findall('.//' + qn('w:p'))
+                    if paragraphs_in_table:
+                        p_elem = paragraphs_in_table[-1]
+                    else:
+                        continue  # No paragraph to attach sectPr to
+                else:
+                    p_elem = block_elem
+                pPr = p_elem.find(qn('w:pPr'))
+                if pPr is None:
+                    pPr = OxmlElement('w:pPr')
+                    p_elem.insert(0, pPr)
+                sect_pr = OxmlElement('w:sectPr')
+                if section.column_count > 1 or not section.equal_width:
+                    sect_pr.append(_build_cols_element(section))
+                pPr.append(sect_pr)
+
+
 def create_docx_from_blocks(
     blocks: list[Block],
     styles: dict[str, Any],
@@ -1414,6 +1557,7 @@ def create_docx_from_blocks(
     footnote_defs: Optional[dict[int, str]] = None,
     footnote_meta: Optional[dict[int, dict]] = None,
     content_md: Optional[str] = None,
+    sections: Optional[list[SectionProperties]] = None,
 ) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -1424,6 +1568,7 @@ def create_docx_from_blocks(
         style_id_remap: Optional mapping from new block IDs to old block IDs for style lookup
         default_tc_author: Optional default author for CriticMarkup track changes (sync use case)
         default_tc_date: Optional default date for CriticMarkup track changes (sync use case)
+        sections: Optional list of SectionProperties for column layouts
 
     Returns:
         Document object
@@ -1434,16 +1579,8 @@ def create_docx_from_blocks(
     # Auto-parse footnote definitions if not provided
     if footnote_defs is None:
         footnote_defs = {}
-        # Parse from original markdown if available (definitions are skipped by parse_markdown_to_blocks)
         if content_md:
             footnote_defs = _parse_footnote_definitions(content_md)
-        else:
-            # Fallback: scan block content (won't find defs filtered out during parsing)
-            for block in blocks:
-                for line in block.content.split("\n"):
-                    m = FOOTNOTE_DEF_PATTERN.match(line.strip())
-                    if m:
-                        footnote_defs[int(m.group(1))] = m.group(2)
     if footnote_meta is None:
         footnote_meta = {}
 
@@ -1473,6 +1610,15 @@ def create_docx_from_blocks(
                 table_style_id = style_id_remap[block.id]
             create_table_from_gfm(doc, block.content, styles, table_style_id, block.table_metadata)
             para = None
+        elif block.type == "textbox":
+            if block.text_box_metadata and "drawing_xml" in block.text_box_metadata:
+                para = doc.add_paragraph()
+                run = para.add_run()
+                drawing_elem = etree.fromstring(block.text_box_metadata["drawing_xml"])
+                run._element.append(drawing_elem)
+            else:
+                inner_text = _extract_textbox_inner_content(block.content)
+                para = doc.add_paragraph(inner_text)
         elif block.type == "image":
             if block.image_path and assets_dir:
                 image_filename = block.image_path.split("/")[-1]
@@ -1489,7 +1635,9 @@ def create_docx_from_blocks(
         else:
             # Paragraph and all other block types
             content = block.content
-            if has_criticmarkup(content):
+            if COLUMN_BREAK_MARKER in content:
+                para = _add_paragraph_with_column_breaks(doc, content)
+            elif has_criticmarkup(content):
                 para = doc.add_paragraph()
                 if default_tc_author is not None:
                     add_text_with_track_changes(para, content, default_author=default_tc_author, default_date=default_tc_date or "")
@@ -1512,6 +1660,10 @@ def create_docx_from_blocks(
                 lookup_id = block.id
             block_style = styles.get("block_styles", {}).get(lookup_id, {})
             _apply_block_formatting(para, block_style)
+
+    # Apply section column properties
+    if sections:
+        _apply_sections_to_doc(doc, sections)
 
     return doc
 
@@ -1537,9 +1689,12 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         footnote_defs = _parse_footnote_definitions(content_md)
         footnote_meta: dict[int, dict] = {}
 
-        # Enrich blocks with track changes, footnotes, and section data from structure.json
+        # Read structure.json for track changes, footnotes, and section properties
+        sections: list[SectionProperties] | None = None
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
+
+            # Enrich blocks with track changes data
             structure_blocks = structure_data.get("blocks", [])
             # Build footnote metadata from structure.json
             footnotes_data = structure_data.get("footnotes", {})
@@ -1556,7 +1711,6 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                             footnote_meta[mid] = {"note_type": ref.get("note_type", "footnote")}
 
             for block, struct_block in zip(blocks, structure_blocks):
-                # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
                     block.track_changes = [
                         TrackChange(
@@ -1570,7 +1724,32 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         )
                         for tc in struct_block["track_changes"]
                     ]
+                # Transfer text box metadata if present
+                if "text_box_metadata" in struct_block and struct_block["text_box_metadata"]:
+                    block.text_box_metadata = struct_block["text_box_metadata"]
 
-        doc = create_docx_from_blocks(blocks, styles_data, assets_dir, footnote_defs=footnote_defs, footnote_meta=footnote_meta, content_md=content_md)
+            # Read section properties
+            section_dicts = structure_data.get("sections", [])
+            if section_dicts:
+                sections = []
+                for sd in section_dicts:
+                    cols = None
+                    if sd.get("columns"):
+                        cols = [
+                            ColumnDefinition(
+                                width=c["width"],
+                                space=c.get("space"),
+                            )
+                            for c in sd["columns"]
+                        ]
+                    sections.append(SectionProperties(
+                        column_count=sd.get("column_count", 1),
+                        column_spacing=sd.get("column_spacing"),
+                        equal_width=sd.get("equal_width", True),
+                        columns=cols,
+                        start_block_index=sd.get("start_block_index"),
+                        end_block_index=sd.get("end_block_index"),
+                    ))
 
+        doc = create_docx_from_blocks(blocks, styles_data, assets_dir, footnote_defs=footnote_defs, footnote_meta=footnote_meta, content_md=content_md, sections=sections)
         doc.save(output_path)

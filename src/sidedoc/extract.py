@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
-from lxml import etree
+from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
@@ -23,6 +23,9 @@ from sidedoc.constants import (
 
 # XML namespaces used in Office Open XML documents
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -209,6 +212,111 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
                     return (image_filename, extension, image_bytes, error_message)
 
     return None
+
+
+def extract_textbox_from_paragraph(paragraph: Any) -> Optional[list[dict[str, Any]]]:
+    """Check if paragraph contains text boxes or shapes with text and extract them.
+
+    Looks for wps:txbxContent elements within drawing elements. These can be
+    either text boxes (txBox="1") or shapes with text content.
+
+    Args:
+        paragraph: python-docx paragraph object
+
+    Returns:
+        List of text box info dicts with keys: texts, anchor_type, width, height,
+        position_h, position_v, fill_color, border_color, drawing_xml.
+        Returns None if no text boxes found.
+    """
+    results = []
+
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall(f'{{{WORDPROCESSINGML_NS}}}drawing')
+        for drawing in drawing_elems:
+            txbx_contents = drawing.findall(f'.//{{{WPS_NS}}}txbxContent')
+            if not txbx_contents:
+                continue
+
+            # Skip images (drawings with blip elements)
+            blips = drawing.findall(f'.//{{{DRAWINGML_NS}}}blip')
+            if blips:
+                continue
+
+            anchor = drawing.find(f'{{{WP_DRAWING_NS}}}anchor')
+            inline = drawing.find(f'{{{WP_DRAWING_NS}}}inline')
+            anchor_type = "anchor" if anchor is not None else "inline"
+            wrapper = anchor if anchor is not None else inline
+
+            if wrapper is None:
+                continue
+
+            extent = wrapper.find(f'{{{WP_DRAWING_NS}}}extent')
+            width = int(extent.get('cx', '0')) if extent is not None else 0
+            height = int(extent.get('cy', '0')) if extent is not None else 0
+
+            position_h = None
+            position_v = None
+            if anchor_type == "anchor":
+                pos_h_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionH')
+                pos_v_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionV')
+                if pos_h_elem is not None:
+                    offset_h = pos_h_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_h is not None and offset_h.text:
+                        position_h = int(offset_h.text)
+                if pos_v_elem is not None:
+                    offset_v = pos_v_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_v is not None and offset_v.text:
+                        position_v = int(offset_v.text)
+
+            fill_color = None
+            border_color = None
+            wsp = drawing.find(f'.//{{{WPS_NS}}}wsp')
+            if wsp is not None:
+                spPr = wsp.find(f'{{{WPS_NS}}}spPr')
+                if spPr is not None:
+                    solid_fill = spPr.find(f'{{{DRAWINGML_NS}}}solidFill')
+                    if solid_fill is not None:
+                        srgb = solid_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                        if srgb is not None:
+                            fill_color = srgb.get('val')
+
+                    ln = spPr.find(f'{{{DRAWINGML_NS}}}ln')
+                    if ln is not None:
+                        ln_fill = ln.find(f'{{{DRAWINGML_NS}}}solidFill')
+                        if ln_fill is not None:
+                            ln_srgb = ln_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                            if ln_srgb is not None:
+                                border_color = ln_srgb.get('val')
+
+            drawing_xml = etree.tostring(drawing, encoding='unicode')
+
+            for txbx in txbx_contents:
+                texts = []
+                # txbxContent contains WordProcessingML elements (w:p/w:r/w:t),
+                # not DrawingML elements (a:p/a:r/a:t)
+                for w_p in txbx.findall(f'{{{WORDPROCESSINGML_NS}}}p'):
+                    parts = []
+                    for w_r in w_p.findall(f'{{{WORDPROCESSINGML_NS}}}r'):
+                        for w_t in w_r.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
+                            if w_t.text:
+                                parts.append(w_t.text)
+                    if parts:
+                        texts.append("".join(parts))
+
+                if texts:
+                    results.append({
+                        "texts": texts,
+                        "anchor_type": anchor_type,
+                        "width": width,
+                        "height": height,
+                        "position_h": position_h,
+                        "position_v": position_v,
+                        "fill_color": fill_color,
+                        "border_color": border_color,
+                        "drawing_xml": drawing_xml,
+                    })
+
+    return results if results else None
 
 
 def encode_url_for_markdown(url: str) -> str:
@@ -556,7 +664,11 @@ def extract_paragraph_content(
                     if run_child.text:
                         text_parts.append(run_child.text)
                 elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
-                    text_parts.append('\n')
+                    br_type = run_child.get(qn('w:type'))
+                    if br_type == 'column':
+                        text_parts.append('\n<!-- column-break -->\n')
+                    else:
+                        text_parts.append('\n')
 
             text = "".join(text_parts)
             if not text:
@@ -1050,6 +1162,8 @@ def _process_paragraph(
 def extract_blocks(
     docx_path: str,
     track_changes: Optional[bool] = None,
+    *,
+    _doc: Any = None,
 ) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
@@ -1061,6 +1175,7 @@ def extract_blocks(
         track_changes: Track changes mode. If None, auto-detect based on document.
                       If True, extract track changes as CriticMarkup.
                       If False, accept all changes and extract plain text.
+        _doc: Pre-opened Document object (internal use by extract_document).
 
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
@@ -1068,7 +1183,7 @@ def extract_blocks(
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
-    doc = Document(docx_path)
+    doc = _doc if _doc is not None else Document(docx_path)
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
     content_position = 0
@@ -1096,30 +1211,74 @@ def extract_blocks(
             # Create a Paragraph object from the XML element
             paragraph = Paragraph(child, doc)
 
-            block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter = _process_paragraph(
-                paragraph=paragraph,
-                doc_part=doc.part,
-                block_index=block_index,
-                para_index=para_index,
-                content_position=content_position,
-                image_counter=image_counter,
-                list_number_counter=list_number_counter,
-                previous_list_type=previous_list_type,
-                image_data=image_data,
-                extract_track_changes=extract_track_changes,
-                track_changes_explicit=track_changes,
-                footnote_counter=footnote_counter,
-            )
+            # Check for text boxes/shapes with text before other content
+            textbox_infos = extract_textbox_from_paragraph(paragraph)
+            if textbox_infos:
+                for tb_info in textbox_infos:
+                    inner_lines = "\n".join(tb_info["texts"])
+                    markdown_content = f"<!-- textbox -->\n{inner_lines}\n<!-- /textbox -->"
 
-            blocks.append(block)
-            content_position = block.content_end + 1
-            block_index += 1
-            para_index += 1
+                    content_start = content_position
+                    content_end = content_position + len(markdown_content)
 
-            # Reset list counters for non-list content
-            if block.type != "list":
+                    tb_metadata: dict[str, Any] = {
+                        "anchor_type": tb_info["anchor_type"],
+                        "width": tb_info["width"],
+                        "height": tb_info["height"],
+                        "drawing_xml": tb_info["drawing_xml"],
+                    }
+                    if tb_info["position_h"] is not None:
+                        tb_metadata["position_h"] = tb_info["position_h"]
+                    if tb_info["position_v"] is not None:
+                        tb_metadata["position_v"] = tb_info["position_v"]
+                    if tb_info["fill_color"] is not None:
+                        tb_metadata["fill_color"] = tb_info["fill_color"]
+                    if tb_info["border_color"] is not None:
+                        tb_metadata["border_color"] = tb_info["border_color"]
+
+                    block = Block(
+                        id=generate_block_id(block_index),
+                        type="textbox",
+                        content=markdown_content,
+                        docx_paragraph_index=para_index,
+                        content_start=content_start,
+                        content_end=content_end,
+                        content_hash=compute_content_hash(markdown_content),
+                        text_box_metadata=tb_metadata,
+                    )
+
+                    blocks.append(block)
+                    content_position = content_end + 1
+                    block_index += 1
+
+                para_index += 1
                 list_number_counter = 0
                 previous_list_type = None
+            else:
+                block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter = _process_paragraph(
+                    paragraph=paragraph,
+                    doc_part=doc.part,
+                    block_index=block_index,
+                    para_index=para_index,
+                    content_position=content_position,
+                    image_counter=image_counter,
+                    list_number_counter=list_number_counter,
+                    previous_list_type=previous_list_type,
+                    image_data=image_data,
+                    extract_track_changes=extract_track_changes,
+                    track_changes_explicit=track_changes,
+                    footnote_counter=footnote_counter,
+                )
+
+                blocks.append(block)
+                content_position = block.content_end + 1
+                block_index += 1
+                para_index += 1
+
+                # Reset list counters for non-list content
+                if block.type != "list":
+                    list_number_counter = 0
+                    previous_list_type = None
 
         elif tag == 'tbl':
             # Create a Table object from the XML element
@@ -1299,6 +1458,161 @@ def _extract_note_text(note_elem: Any, ns: dict[str, str]) -> str:
             text_parts.append(formatted)
 
     return "".join(text_parts)
+
+
+def extract_document(
+    docx_path: str,
+    track_changes: Optional[bool] = None,
+) -> tuple[list[Block], dict[str, bytes], list[SectionProperties]]:
+    """Extract blocks and section properties from a Word document in one pass.
+
+    Opens the document once and shares the Document/body element between block
+    extraction and section extraction, ensuring block indices are consistent.
+
+    Args:
+        docx_path: Path to .docx file
+        track_changes: Track changes mode (see extract_blocks).
+
+    Returns:
+        Tuple of (blocks, image_data, sections)
+    """
+    doc = Document(docx_path)
+    blocks, image_data = extract_blocks(docx_path, track_changes=track_changes, _doc=doc)
+    sections = extract_sections(body=doc.element.body)
+    return blocks, image_data, sections
+
+
+def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
+    """Parse a w:cols element into a dict of column properties.
+
+    Args:
+        cols_elem: The w:cols XML element
+
+    Returns:
+        Dict with column_count, column_spacing, equal_width, and columns
+    """
+    try:
+        col_count = int(cols_elem.get(qn('w:num'), '1'))
+    except ValueError:
+        col_count = 1
+    col_space = cols_elem.get(qn('w:space'))
+    equal_width_val = cols_elem.get(qn('w:equalWidth'))
+
+    # equalWidth defaults to True when not specified
+    equal_width = equal_width_val != '0'
+
+    try:
+        column_spacing = int(col_space) if col_space else None
+    except ValueError:
+        column_spacing = None
+
+    columns = None
+    if not equal_width:
+        col_elems = cols_elem.findall(qn('w:col'))
+        if col_elems:
+            columns = []
+            for col_el in col_elems:
+                try:
+                    width = int(col_el.get(qn('w:w'), '0'))
+                except ValueError:
+                    width = 0
+                space = col_el.get(qn('w:space'))
+                try:
+                    space_val = int(space) if space else None
+                except ValueError:
+                    space_val = None
+                columns.append(ColumnDefinition(
+                    width=width,
+                    space=space_val,
+                ))
+
+    return {
+        'column_count': col_count,
+        'column_spacing': column_spacing,
+        'equal_width': equal_width,
+        'columns': columns,
+    }
+
+
+def _parse_sect_pr(sect_pr: Any) -> SectionProperties:
+    """Parse a w:sectPr element into SectionProperties.
+
+    Args:
+        sect_pr: The w:sectPr XML element
+
+    Returns:
+        SectionProperties with column data populated
+    """
+    props = SectionProperties()
+    cols_elem = sect_pr.find(qn('w:cols'))
+    if cols_elem is not None:
+        parsed = _parse_cols_element(cols_elem)
+        props.column_count = parsed['column_count']
+        props.column_spacing = parsed['column_spacing']
+        props.equal_width = parsed['equal_width']
+        props.columns = parsed['columns']
+    return props
+
+
+def extract_sections(docx_path: str | None = None, *, body: Any = None) -> list[SectionProperties]:
+    """Extract section properties (column layouts) from a Word document.
+
+    OOXML sections are defined by:
+    - Mid-document: w:sectPr inside the last w:pPr of a section's final paragraph
+    - Final section: w:sectPr as direct child of w:body
+
+    Args:
+        docx_path: Path to .docx file (used if body is not provided)
+        body: Pre-opened document body element. When provided, avoids
+              re-opening the document and ensures block indices stay
+              consistent with extract_blocks.
+
+    Returns:
+        List of SectionProperties in document order
+    """
+    if body is None:
+        if docx_path is None:
+            raise ValueError("Either docx_path or body must be provided")
+        doc = Document(docx_path)
+        body = doc.element.body
+    sections: list[SectionProperties] = []
+    block_index = 0
+
+    for child in body:
+        tag = child.tag.split('}')[-1]
+
+        if tag == 'p':
+            # Check for mid-document section break (sectPr inside pPr)
+            pPr = child.find(qn('w:pPr'))
+            if pPr is not None:
+                sect_pr = pPr.find(qn('w:sectPr'))
+                if sect_pr is not None:
+                    props = _parse_sect_pr(sect_pr)
+                    props.end_block_index = block_index
+                    prev_end = sections[-1].end_block_index if sections else None
+                    props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+                    sections.append(props)
+            block_index += 1
+
+        elif tag == 'tbl':
+            block_index += 1
+
+        elif tag == 'sectPr':
+            # Final section (body-level sectPr)
+            props = _parse_sect_pr(child)
+            props.end_block_index = block_index - 1 if block_index > 0 else 0
+            prev_end = sections[-1].end_block_index if sections else None
+            props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+            sections.append(props)
+
+    # If no sections found, create a default single-column section
+    if not sections:
+        props = SectionProperties()
+        props.start_block_index = 0
+        props.end_block_index = max(block_index - 1, 0)
+        sections.append(props)
+
+    return sections
 
 
 def extract_cell_shading(cell: Any) -> str | None:
@@ -1487,6 +1801,20 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
 
         if tag == 'p':
             paragraph = Paragraph(child, doc)
+
+            # Check if this paragraph produced text box blocks
+            if block.type == "textbox":
+                while block_index < len(blocks) and blocks[block_index].type == "textbox":
+                    style = Style(
+                        block_id=blocks[block_index].id,
+                        docx_style="TextBox",
+                        font_name="Calibri",
+                        font_size=11,
+                        alignment="left",
+                    )
+                    styles.append(style)
+                    block_index += 1
+                continue
 
             # Get font properties
             font_name = "Calibri"
