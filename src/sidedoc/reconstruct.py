@@ -36,7 +36,14 @@ from lxml import etree
 import mistune
 
 FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^(\d+)\]:\s*(.+)$')
+# Note: only numeric markers are supported. Alphanumeric labels like [^label]
+# (valid in standard Markdown) will be left as literal text. This is consistent
+# with the extraction side, which always generates numeric markers.
 FOOTNOTE_REF_PATTERN = re.compile(r'\[\^(\d+)\]')
+
+# Pattern for parsing inline markdown formatting (bold/italic) in footnote text.
+# Matches ***bold italic***, **bold**, or *italic* spans.
+_INLINE_FORMAT_PATTERN = re.compile(r'(\*{1,3})(.*?)\1')
 
 FOOTNOTES_RT = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
@@ -1240,6 +1247,54 @@ def _get_or_create_endnotes_part(doc):
     return endnotes_part
 
 
+def _parse_formatted_segments(text: str) -> list[tuple[str, bool, bool]]:
+    """Parse markdown inline formatting into (text, bold, italic) segments.
+
+    Returns a list of tuples, each containing the plain text and its
+    bold/italic state. Handles **bold**, *italic*, and ***bold italic***.
+    """
+    segments: list[tuple[str, bool, bool]] = []
+    last_end = 0
+    for m in _INLINE_FORMAT_PATTERN.finditer(text):
+        # Add any plain text before this match
+        if m.start() > last_end:
+            segments.append((text[last_end:m.start()], False, False))
+        stars = len(m.group(1))
+        content = m.group(2)
+        bold = stars >= 2
+        italic = stars % 2 == 1
+        segments.append((content, bold, italic))
+        last_end = m.end()
+    # Add any remaining plain text
+    if last_end < len(text):
+        segments.append((text[last_end:], False, False))
+    # If no formatting found, return the whole text as plain
+    if not segments:
+        segments.append((text, False, False))
+    return segments
+
+
+def _add_formatted_runs_to_note(p, text):
+    """Add text runs to a footnote/endnote paragraph, preserving bold/italic formatting.
+
+    The leading space (OOXML convention after the ref mark) is prepended to the first segment.
+    """
+    segments = _parse_formatted_segments(text)
+    for idx, (seg_text, bold, italic) in enumerate(segments):
+        if idx == 0:
+            seg_text = f" {seg_text}"
+        text_run = etree.SubElement(p, qn("w:r"))
+        if bold or italic:
+            rPr = etree.SubElement(text_run, qn("w:rPr"))
+            if bold:
+                etree.SubElement(rPr, qn("w:b"))
+            if italic:
+                etree.SubElement(rPr, qn("w:i"))
+        t = etree.SubElement(text_run, qn("w:t"))
+        t.set(qn("xml:space"), "preserve")
+        t.text = seg_text
+
+
 def _add_footnote_to_part(part, note_id, text):
     """Add a footnote element to the footnotes part."""
     if hasattr(part, '_element'):
@@ -1257,11 +1312,8 @@ def _add_footnote_to_part(part, note_id, text):
     style = etree.SubElement(rPr, qn("w:rStyle"))
     style.set(qn("w:val"), "FootnoteReference")
     etree.SubElement(ref_run, qn("w:footnoteRef"))
-    # Add text run
-    text_run = etree.SubElement(p, qn("w:r"))
-    t = etree.SubElement(text_run, qn("w:t"))
-    t.set(qn("xml:space"), "preserve")
-    t.text = f" {text}"
+    # Add text runs with inline formatting
+    _add_formatted_runs_to_note(p, text)
 
     # Always update the blob so Part serializes correctly
     part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
@@ -1284,10 +1336,8 @@ def _add_endnote_to_part(part, note_id, text):
     style = etree.SubElement(rPr, qn("w:rStyle"))
     style.set(qn("w:val"), "EndnoteReference")
     etree.SubElement(ref_run, qn("w:endnoteRef"))
-    text_run = etree.SubElement(p, qn("w:r"))
-    t = etree.SubElement(text_run, qn("w:t"))
-    t.set(qn("xml:space"), "preserve")
-    t.text = f" {text}"
+    # Add text runs with inline formatting
+    _add_formatted_runs_to_note(p, text)
 
     # Always update the blob so Part serializes correctly
     part._blob = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
@@ -1466,76 +1516,6 @@ def create_docx_from_blocks(
     return doc
 
 
-def _populate_header_footer(header_footer, paragraphs, assets_dir=None):
-    """Populate a header or footer with paragraph content."""
-    if not paragraphs:
-        return
-    header_footer.is_linked_to_previous = False
-    for i, para_dict in enumerate(paragraphs):
-        if i == 0:
-            para = header_footer.paragraphs[0]
-        else:
-            para = header_footer.add_paragraph()
-        if para_dict.get("type") == "image" and para_dict.get("image_path"):
-            image_filename = para_dict["image_path"].split("/")[-1]
-            if assets_dir:
-                image_file_path = assets_dir / image_filename
-                if image_file_path.exists():
-                    run = para.add_run()
-                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
-                    continue
-            para.text = f"[Image: {para_dict.get('content', '')}]"
-        else:
-            para.text = para_dict.get("content", "")
-
-
-def apply_sections_to_document(doc, sections_data, assets_dir=None):
-    """Apply section metadata (headers, footers, page setup) to a document."""
-    from docx.enum.section import WD_ORIENT
-
-    if not sections_data:
-        return
-    for section_idx, section_meta in enumerate(sections_data):
-        if section_idx < len(doc.sections):
-            section = doc.sections[section_idx]
-        else:
-            section = doc.add_section()
-        page_setup = section_meta.get("page_setup", {})
-        if page_setup:
-            orientation = page_setup.get("orientation", "portrait")
-            if orientation == "landscape":
-                section.orientation = WD_ORIENT.LANDSCAPE
-            else:
-                section.orientation = WD_ORIENT.PORTRAIT
-            for attr in ("top_margin", "bottom_margin", "left_margin", "right_margin",
-                         "page_width", "page_height", "header_distance", "footer_distance"):
-                value = page_setup.get(attr)
-                if value is not None:
-                    setattr(section, attr, value)
-            if page_setup.get("different_first_page", False):
-                section.different_first_page_header_footer = True
-        header_default = section_meta.get("header_default", [])
-        if header_default:
-            _populate_header_footer(section.header, header_default, assets_dir)
-        header_first = section_meta.get("header_first", [])
-        if header_first:
-            section.different_first_page_header_footer = True
-            _populate_header_footer(section.first_page_header, header_first, assets_dir)
-        header_even = section_meta.get("header_even", [])
-        if header_even:
-            _populate_header_footer(section.even_page_header, header_even, assets_dir)
-        footer_default = section_meta.get("footer_default", [])
-        if footer_default:
-            _populate_header_footer(section.footer, footer_default, assets_dir)
-        footer_first = section_meta.get("footer_first", [])
-        if footer_first:
-            section.different_first_page_header_footer = True
-            _populate_header_footer(section.first_page_footer, footer_first, assets_dir)
-        footer_even = section_meta.get("footer_even", [])
-        if footer_even:
-            _populate_header_footer(section.even_page_footer, footer_even, assets_dir)
-
-
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
     """Build a Word document from a sidedoc archive or directory.
 
@@ -1554,7 +1534,6 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         blocks = parse_markdown_to_blocks(content_md)
 
-        sections_data = []
         footnote_defs = _parse_footnote_definitions(content_md)
         footnote_meta: dict[int, dict] = {}
 
@@ -1562,8 +1541,6 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
             structure_blocks = structure_data.get("blocks", [])
-            sections_data = structure_data.get("sections", [])
-
             # Build footnote metadata from structure.json
             footnotes_data = structure_data.get("footnotes", {})
             for fn_id_str, fn_info in footnotes_data.items():
@@ -1595,8 +1572,5 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                     ]
 
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir, footnote_defs=footnote_defs, footnote_meta=footnote_meta, content_md=content_md)
-
-        if sections_data:
-            apply_sections_to_document(doc, sections_data, assets_dir)
 
         doc.save(output_path)

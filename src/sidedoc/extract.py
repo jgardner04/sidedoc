@@ -1254,7 +1254,12 @@ def _extract_notes_from_part(
 
 
 def _extract_note_text(note_elem: Any, ns: dict[str, str]) -> str:
-    """Extract text content from a footnote/endnote element, preserving bold/italic."""
+    """Extract text content from a footnote/endnote element, preserving bold/italic.
+
+    Known limitation: the leading-space strip (OOXML convention after the ref mark)
+    only applies to the first run of the first paragraph. Multi-paragraph footnotes
+    may retain a leading space on subsequent paragraphs' first runs.
+    """
     text_parts: list[str] = []
     for para in note_elem.findall("w:p", ns):
         for run in para.findall("w:r", ns):

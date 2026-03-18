@@ -404,6 +404,36 @@ class TestFootnoteRoundTrip:
         assert "[^2]" in md2
         assert "Document Processing" in md2
 
+    def test_roundtrip_preserves_footnote_formatting(self, tmp_path):
+        """Round-trip preserves bold/italic formatting in footnote text."""
+        blocks, images = extract_blocks(
+            str(FIXTURES_DIR / "footnotes_formatted.docx")
+        )
+        md = blocks_to_markdown(blocks)
+        from sidedoc.extract import extract_styles
+        styles = extract_styles(str(FIXTURES_DIR / "footnotes_formatted.docx"), blocks)
+
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), md, blocks, styles,
+            str(FIXTURES_DIR / "footnotes_formatted.docx"),
+        )
+
+        output = str(tmp_path / "output.docx")
+        build_docx_from_sidedoc(str(sidedoc_dir), output)
+
+        # Re-extract and verify bold/italic markers survived
+        blocks2, _ = extract_blocks(output)
+        md2 = blocks_to_markdown(blocks2)
+        # The formatted fixture has bold and/or italic in footnote text
+        assert "[^1]" in md2
+        # Check that formatting markers exist in footnote definitions
+        footnote_defs = [line for line in md2.split("\n") if line.startswith("[^")]
+        assert len(footnote_defs) > 0
+        # At least one definition should contain formatting markers
+        has_formatting = any("**" in d or "*" in d for d in footnote_defs)
+        assert has_formatting, f"Expected formatting in footnote defs, got: {footnote_defs}"
+
 
 # ============================================================================
 # Sync Tests
@@ -552,6 +582,22 @@ class TestFootnoteSync:
                 para._element.findall(".//" + qn("w:footnoteReference"))
             )
         assert len(refs) == 0
+
+        # Verify footnotes.xml has no user footnotes (only separator elements if present)
+        from docx.opc.constants import RELATIONSHIP_TYPE as RT
+        footnotes_rt = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+        has_footnotes_part = False
+        for rel in rebuilt.part.rels.values():
+            if rel.reltype == footnotes_rt:
+                has_footnotes_part = True
+                from lxml import etree as et
+                root = et.fromstring(rel.target_part.blob)
+                ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                user_notes = [
+                    fn for fn in root.findall("w:footnote", ns)
+                    if fn.get(et.QName(ns["w"], "type")) is None  # separator notes have a type attr
+                ]
+                assert len(user_notes) == 0, f"Expected no user footnotes, found {len(user_notes)}"
 
 
 # ============================================================================
