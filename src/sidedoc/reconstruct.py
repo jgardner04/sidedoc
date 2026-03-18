@@ -10,6 +10,7 @@ from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from lxml import etree  # type: ignore[import-untyped]
 import click
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
@@ -36,6 +37,25 @@ import mistune
 
 # Cache the mistune parser at module level to avoid recreating per paragraph
 _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
+
+
+def _extract_textbox_inner_content(content: str) -> str:
+    """Extract inner text from textbox markdown markers.
+
+    Args:
+        content: Block content like "<!-- textbox -->\\nText here.\\n<!-- /textbox -->"
+
+    Returns:
+        Inner text with markers stripped.
+    """
+    lines = content.split("\n")
+    inner = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("<!-- textbox") or stripped == "<!-- /textbox -->":
+            continue
+        inner.append(line)
+    return "\n".join(inner)
 
 
 def apply_inline_formatting(paragraph: Any, content: str) -> None:
@@ -677,6 +697,34 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             i += 1
             continue
 
+        # Check if this is a textbox block
+        if stripped_line == "<!-- textbox -->" or stripped_line.startswith("<!-- textbox"):
+            textbox_lines = [stripped_line]
+            j = i + 1
+            while j < len(lines):
+                tl = lines[j].strip()
+                textbox_lines.append(tl)
+                if tl == "<!-- /textbox -->":
+                    break
+                j += 1
+
+            textbox_content = "\n".join(textbox_lines)
+
+            block = Block(
+                id=f"block-{block_id}",
+                type="textbox",
+                content=textbox_content,
+                docx_paragraph_index=block_id,
+                content_start=content_position,
+                content_end=content_position + len(textbox_content),
+                content_hash=hashlib.sha256(textbox_content.encode()).hexdigest(),
+            )
+            blocks.append(block)
+            block_id += 1
+            content_position += len(textbox_content) + 1
+            i = j + 1
+            continue
+
         # Check if this is the start of a GFM table
         # A table starts with a row that starts/ends with pipes
         # and is followed by a separator line
@@ -1305,6 +1353,15 @@ def create_docx_from_blocks(
                 table_style_id = style_id_remap[block.id]
             create_table_from_gfm(doc, block.content, styles, table_style_id, block.table_metadata)
             para = None
+        elif block.type == "textbox":
+            if block.text_box_metadata and "drawing_xml" in block.text_box_metadata:
+                para = doc.add_paragraph()
+                run = para.add_run()
+                drawing_elem = etree.fromstring(block.text_box_metadata["drawing_xml"])
+                run._element.append(drawing_elem)
+            else:
+                inner_text = _extract_textbox_inner_content(block.content)
+                para = doc.add_paragraph(inner_text)
         elif block.type == "image":
             if block.image_path and assets_dir:
                 image_filename = block.image_path.split("/")[-1]
@@ -1390,6 +1447,9 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         )
                         for tc in struct_block["track_changes"]
                     ]
+                # Transfer text box metadata if present
+                if "text_box_metadata" in struct_block and struct_block["text_box_metadata"]:
+                    block.text_box_metadata = struct_block["text_box_metadata"]
 
             # Read section properties
             section_dicts = structure_data.get("sections", [])
