@@ -199,6 +199,19 @@ Created: quarterly_report_updated.docx
 | Tables | GFM pipe tables | See Tables section |
 | Track Changes | CriticMarkup | See Track Changes section |
 
+## Limitations & Roadmap
+
+Sidedoc currently supports the most common document elements. The following are **not yet supported** but are on the roadmap:
+
+- Nested lists (multi-level indentation)
+- Headers and footers
+- Footnotes and endnotes
+- Comments
+- Text boxes and shapes
+- Charts and SmartArt
+
+Have a use case that needs one of these? [Open an issue](https://github.com/jgardner04/sidedoc/issues) to help prioritize.
+
 ---
 
 ## Table Support
