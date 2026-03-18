@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-column layouts** - Extract, store, and reconstruct column properties (count, spacing, widths) and column breaks from OOXML section definitions. ([JON-95](https://linear.app/jonathangardner/issue/JON-95/multi-column-layouts), [#53](https://github.com/jgardner04/sidedoc/pull/53))
+
 ## [0.1.0] - 2026-03-15
 
 ### Added

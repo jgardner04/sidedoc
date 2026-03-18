@@ -11,7 +11,7 @@ from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import click
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
@@ -1132,6 +1132,130 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
 
+COLUMN_BREAK_MARKER = "<!-- column-break -->"
+
+
+def _add_paragraph_with_column_breaks(doc: DocumentType, content: str) -> Any:
+    """Add a paragraph, inserting column breaks where markers appear.
+
+    Applies inline formatting (bold/italic/links) to text segments between
+    column break markers.
+
+    Args:
+        doc: Document to add paragraph to
+        content: Text content possibly containing <!-- column-break --> markers
+
+    Returns:
+        The created paragraph
+    """
+    parts = content.split(COLUMN_BREAK_MARKER)
+    para = doc.add_paragraph()
+    first_text = parts[0].strip()
+    if first_text:
+        apply_inline_formatting(para, first_text)
+    for part in parts[1:]:
+        # Add column break
+        run = para.add_run()
+        br = OxmlElement('w:br')
+        br.set(qn('w:type'), 'column')
+        run._element.append(br)
+        # Add text after break with inline formatting
+        text = part.strip()
+        if text:
+            apply_inline_formatting(para, text)
+    return para
+
+
+def _build_cols_element(section: SectionProperties) -> Any:
+    """Build a w:cols XML element from SectionProperties.
+
+    Args:
+        section: SectionProperties with column configuration
+
+    Returns:
+        OxmlElement for w:cols
+    """
+    cols = OxmlElement('w:cols')
+    cols.set(qn('w:num'), str(section.column_count))
+    if section.column_spacing is not None:
+        cols.set(qn('w:space'), str(section.column_spacing))
+    if section.equal_width:
+        cols.set(qn('w:equalWidth'), '1')
+    else:
+        cols.set(qn('w:equalWidth'), '0')
+        if section.columns:
+            for col_def in section.columns:
+                col_elem = OxmlElement('w:col')
+                col_elem.set(qn('w:w'), str(col_def.width))
+                if col_def.space is not None:
+                    col_elem.set(qn('w:space'), str(col_def.space))
+                cols.append(col_elem)
+    return cols
+
+
+def _apply_sections_to_doc(doc: DocumentType, sections: list[SectionProperties]) -> None:
+    """Apply section properties (columns) to a document.
+
+    Mid-document sections get a sectPr in the last paragraph's pPr.
+    The final section gets a sectPr as direct child of w:body.
+
+    Args:
+        doc: Document to modify
+        sections: List of SectionProperties in document order
+    """
+    if not sections:
+        return
+
+    body = doc.element.body
+    # Build combined list of block elements (paragraphs AND tables) in document
+    # order. end_block_index is a block index covering both types, so indexing
+    # into only w:p elements would be wrong when tables are present.
+    block_elements = [
+        child for child in body
+        if child.tag.endswith('}p') or child.tag.endswith('}tbl')
+    ]
+
+    for i, section in enumerate(sections):
+        is_last = (i == len(sections) - 1)
+
+        if is_last:
+            # Final section: apply to body-level sectPr
+            sect_pr = body.find(qn('w:sectPr'))
+            if sect_pr is None:
+                sect_pr = OxmlElement('w:sectPr')
+                body.append(sect_pr)
+            # Remove existing cols if any
+            existing_cols = sect_pr.find(qn('w:cols'))
+            if existing_cols is not None:
+                sect_pr.remove(existing_cols)
+            if section.column_count > 1 or not section.equal_width:
+                sect_pr.append(_build_cols_element(section))
+        else:
+            # Mid-document section: insert sectPr in last block's pPr.
+            # If the block is a table, insert sectPr in the last paragraph
+            # of that table (OOXML requires sectPr inside a w:pPr).
+            end_idx = section.end_block_index
+            if end_idx is not None and end_idx < len(block_elements):
+                block_elem = block_elements[end_idx]
+                # If block is a table, find the last paragraph inside it
+                if block_elem.tag.endswith('}tbl'):
+                    paragraphs_in_table = block_elem.findall('.//' + qn('w:p'))
+                    if paragraphs_in_table:
+                        p_elem = paragraphs_in_table[-1]
+                    else:
+                        continue  # No paragraph to attach sectPr to
+                else:
+                    p_elem = block_elem
+                pPr = p_elem.find(qn('w:pPr'))
+                if pPr is None:
+                    pPr = OxmlElement('w:pPr')
+                    p_elem.insert(0, pPr)
+                sect_pr = OxmlElement('w:sectPr')
+                if section.column_count > 1 or not section.equal_width:
+                    sect_pr.append(_build_cols_element(section))
+                pPr.append(sect_pr)
+
+
 def create_docx_from_blocks(
     blocks: list[Block],
     styles: dict[str, Any],
@@ -1139,6 +1263,7 @@ def create_docx_from_blocks(
     style_id_remap: Optional[dict[str, str]] = None,
     default_tc_author: Optional[str] = None,
     default_tc_date: Optional[str] = None,
+    sections: Optional[list[SectionProperties]] = None,
 ) -> DocumentType:
     """Create a Word document from Block objects.
 
@@ -1149,6 +1274,7 @@ def create_docx_from_blocks(
         style_id_remap: Optional mapping from new block IDs to old block IDs for style lookup
         default_tc_author: Optional default author for CriticMarkup track changes (sync use case)
         default_tc_date: Optional default date for CriticMarkup track changes (sync use case)
+        sections: Optional list of SectionProperties for column layouts
 
     Returns:
         Document object
@@ -1195,7 +1321,9 @@ def create_docx_from_blocks(
         else:
             # Paragraph and all other block types
             content = block.content
-            if has_criticmarkup(content):
+            if COLUMN_BREAK_MARKER in content:
+                para = _add_paragraph_with_column_breaks(doc, content)
+            elif has_criticmarkup(content):
                 para = doc.add_paragraph()
                 if default_tc_author is not None:
                     add_text_with_track_changes(para, content, default_author=default_tc_author, default_date=default_tc_date or "")
@@ -1215,6 +1343,10 @@ def create_docx_from_blocks(
                 lookup_id = block.id
             block_style = styles.get("block_styles", {}).get(lookup_id, {})
             _apply_block_formatting(para, block_style)
+
+    # Apply section column properties
+    if sections:
+        _apply_sections_to_doc(doc, sections)
 
     return doc
 
@@ -1237,12 +1369,14 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         blocks = parse_markdown_to_blocks(content_md)
 
-        # Enrich blocks with track changes data from structure.json
+        # Read structure.json for track changes and section properties
+        sections: list[SectionProperties] | None = None
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
+
+            # Enrich blocks with track changes data
             structure_blocks = structure_data.get("blocks", [])
             for block, struct_block in zip(blocks, structure_blocks):
-                # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
                     block.track_changes = [
                         TrackChange(
@@ -1257,5 +1391,28 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         for tc in struct_block["track_changes"]
                     ]
 
-        doc = create_docx_from_blocks(blocks, styles_data, assets_dir)
+            # Read section properties
+            section_dicts = structure_data.get("sections", [])
+            if section_dicts:
+                sections = []
+                for sd in section_dicts:
+                    cols = None
+                    if sd.get("columns"):
+                        cols = [
+                            ColumnDefinition(
+                                width=c["width"],
+                                space=c.get("space"),
+                            )
+                            for c in sd["columns"]
+                        ]
+                    sections.append(SectionProperties(
+                        column_count=sd.get("column_count", 1),
+                        column_spacing=sd.get("column_spacing"),
+                        equal_width=sd.get("equal_width", True),
+                        columns=cols,
+                        start_block_index=sd.get("start_block_index"),
+                        end_block_index=sd.get("end_block_index"),
+                    ))
+
+        doc = create_docx_from_blocks(blocks, styles_data, assets_dir, sections=sections)
         doc.save(output_path)

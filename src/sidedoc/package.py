@@ -3,7 +3,7 @@
 import json
 import zipfile
 from pathlib import Path
-from sidedoc.models import Block, Style, Manifest
+from sidedoc.models import Block, SectionProperties, Style, Manifest
 from sidedoc.utils import compute_file_hash, get_iso_timestamp
 from sidedoc import __version__
 
@@ -43,20 +43,56 @@ def block_to_structure_dict(block: Block) -> dict:
     }
 
 
+def section_to_structure_dict(section: SectionProperties) -> dict:
+    """Convert a SectionProperties to its structure.json dictionary representation.
+
+    Args:
+        section: SectionProperties to serialize
+
+    Returns:
+        Dictionary suitable for structure.json sections array
+    """
+    result: dict = {
+        "column_count": section.column_count,
+        "column_spacing": section.column_spacing,
+        "equal_width": section.equal_width,
+        "start_block_index": section.start_block_index,
+        "end_block_index": section.end_block_index,
+    }
+    if section.columns:
+        result["columns"] = [
+            {"width": col.width, "space": col.space}
+            for col in section.columns
+        ]
+    return result
+
+
 def _build_metadata(
     content_md: str,
     blocks: list[Block],
     styles: list[Style],
     source_file: str,
+    sections: list[SectionProperties] | None = None,
 ) -> tuple[dict, dict, dict]:
     """Build structure, styles, and manifest dicts from extraction data.
 
     Returns:
         Tuple of (structure_data, styles_data, manifest_data)
     """
-    structure_data = {
+    structure_data: dict = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
+    # Only include sections when there's a non-trivial layout (multi-column
+    # or multi-section). A single default section with 1 column is omitted
+    # to keep structure.json clean for simple documents.
+    if sections and not (
+        len(sections) == 1
+        and sections[0].column_count == 1
+        and sections[0].equal_width
+    ):
+        structure_data["sections"] = [
+            section_to_structure_dict(s) for s in sections
+        ]
 
     styles_data = {
         "block_styles": {
@@ -111,6 +147,7 @@ def create_sidedoc_archive(
     styles: list[Style],
     source_file: str,
     image_data: dict[str, bytes] | None = None,
+    sections: list[SectionProperties] | None = None,
 ) -> None:
     """Create a .sidedoc/.sdoc ZIP archive.
 
@@ -121,9 +158,10 @@ def create_sidedoc_archive(
         styles: List of Style objects
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
+        sections: Optional list of SectionProperties for column layouts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file
+        content_md, blocks, styles, source_file, sections
     )
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -144,6 +182,7 @@ def create_sidedoc_directory(
     styles: list[Style],
     source_file: str,
     image_data: dict[str, bytes] | None = None,
+    sections: list[SectionProperties] | None = None,
 ) -> None:
     """Create a .sidedoc directory.
 
@@ -154,9 +193,10 @@ def create_sidedoc_directory(
         styles: List of Style objects
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
+        sections: Optional list of SectionProperties for column layouts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file
+        content_md, blocks, styles, source_file, sections
     )
 
     out = Path(output_path)

@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
 from PIL import Image
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
@@ -521,7 +521,11 @@ def extract_paragraph_content(
                     if run_child.text:
                         text_parts.append(run_child.text)
                 elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
-                    text_parts.append('\n')
+                    br_type = run_child.get(qn('w:type'))
+                    if br_type == 'column':
+                        text_parts.append('\n<!-- column-break -->\n')
+                    else:
+                        text_parts.append('\n')
 
             text = "".join(text_parts)
             if not text:
@@ -1008,6 +1012,8 @@ def _process_paragraph(
 def extract_blocks(
     docx_path: str,
     track_changes: Optional[bool] = None,
+    *,
+    _doc: Any = None,
 ) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
@@ -1019,6 +1025,7 @@ def extract_blocks(
         track_changes: Track changes mode. If None, auto-detect based on document.
                       If True, extract track changes as CriticMarkup.
                       If False, accept all changes and extract plain text.
+        _doc: Pre-opened Document object (internal use by extract_document).
 
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
@@ -1026,7 +1033,7 @@ def extract_blocks(
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
-    doc = Document(docx_path)
+    doc = _doc if _doc is not None else Document(docx_path)
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
     content_position = 0
@@ -1114,6 +1121,161 @@ def extract_blocks(
             previous_list_type = None
 
     return blocks, image_data
+
+
+def extract_document(
+    docx_path: str,
+    track_changes: Optional[bool] = None,
+) -> tuple[list[Block], dict[str, bytes], list[SectionProperties]]:
+    """Extract blocks and section properties from a Word document in one pass.
+
+    Opens the document once and shares the Document/body element between block
+    extraction and section extraction, ensuring block indices are consistent.
+
+    Args:
+        docx_path: Path to .docx file
+        track_changes: Track changes mode (see extract_blocks).
+
+    Returns:
+        Tuple of (blocks, image_data, sections)
+    """
+    doc = Document(docx_path)
+    blocks, image_data = extract_blocks(docx_path, track_changes=track_changes, _doc=doc)
+    sections = extract_sections(body=doc.element.body)
+    return blocks, image_data, sections
+
+
+def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
+    """Parse a w:cols element into a dict of column properties.
+
+    Args:
+        cols_elem: The w:cols XML element
+
+    Returns:
+        Dict with column_count, column_spacing, equal_width, and columns
+    """
+    try:
+        col_count = int(cols_elem.get(qn('w:num'), '1'))
+    except ValueError:
+        col_count = 1
+    col_space = cols_elem.get(qn('w:space'))
+    equal_width_val = cols_elem.get(qn('w:equalWidth'))
+
+    # equalWidth defaults to True when not specified
+    equal_width = equal_width_val != '0'
+
+    try:
+        column_spacing = int(col_space) if col_space else None
+    except ValueError:
+        column_spacing = None
+
+    columns = None
+    if not equal_width:
+        col_elems = cols_elem.findall(qn('w:col'))
+        if col_elems:
+            columns = []
+            for col_el in col_elems:
+                try:
+                    width = int(col_el.get(qn('w:w'), '0'))
+                except ValueError:
+                    width = 0
+                space = col_el.get(qn('w:space'))
+                try:
+                    space_val = int(space) if space else None
+                except ValueError:
+                    space_val = None
+                columns.append(ColumnDefinition(
+                    width=width,
+                    space=space_val,
+                ))
+
+    return {
+        'column_count': col_count,
+        'column_spacing': column_spacing,
+        'equal_width': equal_width,
+        'columns': columns,
+    }
+
+
+def _parse_sect_pr(sect_pr: Any) -> SectionProperties:
+    """Parse a w:sectPr element into SectionProperties.
+
+    Args:
+        sect_pr: The w:sectPr XML element
+
+    Returns:
+        SectionProperties with column data populated
+    """
+    props = SectionProperties()
+    cols_elem = sect_pr.find(qn('w:cols'))
+    if cols_elem is not None:
+        parsed = _parse_cols_element(cols_elem)
+        props.column_count = parsed['column_count']
+        props.column_spacing = parsed['column_spacing']
+        props.equal_width = parsed['equal_width']
+        props.columns = parsed['columns']
+    return props
+
+
+def extract_sections(docx_path: str | None = None, *, body: Any = None) -> list[SectionProperties]:
+    """Extract section properties (column layouts) from a Word document.
+
+    OOXML sections are defined by:
+    - Mid-document: w:sectPr inside the last w:pPr of a section's final paragraph
+    - Final section: w:sectPr as direct child of w:body
+
+    Args:
+        docx_path: Path to .docx file (used if body is not provided)
+        body: Pre-opened document body element. When provided, avoids
+              re-opening the document and ensures block indices stay
+              consistent with extract_blocks.
+
+    Returns:
+        List of SectionProperties in document order
+    """
+    if body is None:
+        if docx_path is None:
+            raise ValueError("Either docx_path or body must be provided")
+        doc = Document(docx_path)
+        body = doc.element.body
+    sections: list[SectionProperties] = []
+    block_index = 0
+
+    for child in body:
+        tag = child.tag.split('}')[-1]
+
+        if tag == 'p':
+            # Check for mid-document section break (sectPr inside pPr)
+            pPr = child.find(qn('w:pPr'))
+            if pPr is not None:
+                sect_pr = pPr.find(qn('w:sectPr'))
+                if sect_pr is not None:
+                    props = _parse_sect_pr(sect_pr)
+                    props.end_block_index = block_index
+                    prev_end = sections[-1].end_block_index if sections else None
+                    props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+                    sections.append(props)
+            block_index += 1
+
+        elif tag == 'tbl':
+            block_index += 1
+
+        elif tag == 'sectPr':
+            # Final section (body-level sectPr)
+            props = _parse_sect_pr(child)
+            props.end_block_index = block_index - 1 if block_index > 0 else 0
+            prev_end = sections[-1].end_block_index if sections else None
+            props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+            sections.append(props)
+
+    # If no sections found, create a default single-column section
+    if not sections:
+        props = SectionProperties()
+        props.start_block_index = 0
+        props.end_block_index = max(block_index - 1, 0)
+        sections.append(props)
+
+    return sections
 
 
 def extract_cell_shading(cell: Any) -> str | None:
