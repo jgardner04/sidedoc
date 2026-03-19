@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
 from docx.oxml.ns import qn
+from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from docx.enum.section import WD_ORIENT
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
@@ -23,6 +24,9 @@ from sidedoc.constants import (
 
 # XML namespaces used in Office Open XML documents
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -209,6 +213,111 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
                     return (image_filename, extension, image_bytes, error_message)
 
     return None
+
+
+def extract_textbox_from_paragraph(paragraph: Any) -> Optional[list[dict[str, Any]]]:
+    """Check if paragraph contains text boxes or shapes with text and extract them.
+
+    Looks for wps:txbxContent elements within drawing elements. These can be
+    either text boxes (txBox="1") or shapes with text content.
+
+    Args:
+        paragraph: python-docx paragraph object
+
+    Returns:
+        List of text box info dicts with keys: texts, anchor_type, width, height,
+        position_h, position_v, fill_color, border_color, drawing_xml.
+        Returns None if no text boxes found.
+    """
+    results = []
+
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall(f'{{{WORDPROCESSINGML_NS}}}drawing')
+        for drawing in drawing_elems:
+            txbx_contents = drawing.findall(f'.//{{{WPS_NS}}}txbxContent')
+            if not txbx_contents:
+                continue
+
+            # Skip images (drawings with blip elements)
+            blips = drawing.findall(f'.//{{{DRAWINGML_NS}}}blip')
+            if blips:
+                continue
+
+            anchor = drawing.find(f'{{{WP_DRAWING_NS}}}anchor')
+            inline = drawing.find(f'{{{WP_DRAWING_NS}}}inline')
+            anchor_type = "anchor" if anchor is not None else "inline"
+            wrapper = anchor if anchor is not None else inline
+
+            if wrapper is None:
+                continue
+
+            extent = wrapper.find(f'{{{WP_DRAWING_NS}}}extent')
+            width = int(extent.get('cx', '0')) if extent is not None else 0
+            height = int(extent.get('cy', '0')) if extent is not None else 0
+
+            position_h = None
+            position_v = None
+            if anchor_type == "anchor":
+                pos_h_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionH')
+                pos_v_elem = wrapper.find(f'{{{WP_DRAWING_NS}}}positionV')
+                if pos_h_elem is not None:
+                    offset_h = pos_h_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_h is not None and offset_h.text:
+                        position_h = int(offset_h.text)
+                if pos_v_elem is not None:
+                    offset_v = pos_v_elem.find(f'{{{WP_DRAWING_NS}}}posOffset')
+                    if offset_v is not None and offset_v.text:
+                        position_v = int(offset_v.text)
+
+            fill_color = None
+            border_color = None
+            wsp = drawing.find(f'.//{{{WPS_NS}}}wsp')
+            if wsp is not None:
+                spPr = wsp.find(f'{{{WPS_NS}}}spPr')
+                if spPr is not None:
+                    solid_fill = spPr.find(f'{{{DRAWINGML_NS}}}solidFill')
+                    if solid_fill is not None:
+                        srgb = solid_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                        if srgb is not None:
+                            fill_color = srgb.get('val')
+
+                    ln = spPr.find(f'{{{DRAWINGML_NS}}}ln')
+                    if ln is not None:
+                        ln_fill = ln.find(f'{{{DRAWINGML_NS}}}solidFill')
+                        if ln_fill is not None:
+                            ln_srgb = ln_fill.find(f'{{{DRAWINGML_NS}}}srgbClr')
+                            if ln_srgb is not None:
+                                border_color = ln_srgb.get('val')
+
+            drawing_xml = etree.tostring(drawing, encoding='unicode')
+
+            for txbx in txbx_contents:
+                texts = []
+                # txbxContent contains WordProcessingML elements (w:p/w:r/w:t),
+                # not DrawingML elements (a:p/a:r/a:t)
+                for w_p in txbx.findall(f'{{{WORDPROCESSINGML_NS}}}p'):
+                    parts = []
+                    for w_r in w_p.findall(f'{{{WORDPROCESSINGML_NS}}}r'):
+                        for w_t in w_r.findall(f'{{{WORDPROCESSINGML_NS}}}t'):
+                            if w_t.text:
+                                parts.append(w_t.text)
+                    if parts:
+                        texts.append("".join(parts))
+
+                if texts:
+                    results.append({
+                        "texts": texts,
+                        "anchor_type": anchor_type,
+                        "width": width,
+                        "height": height,
+                        "position_h": position_h,
+                        "position_v": position_v,
+                        "fill_color": fill_color,
+                        "border_color": border_color,
+                        "drawing_xml": drawing_xml,
+                    })
+
+    return results if results else None
 
 
 def encode_url_for_markdown(url: str) -> str:
@@ -416,7 +525,8 @@ def extract_paragraph_content(
     para_elem: Any,
     doc_part: Any = None,
     mode: Literal["normal", "accept_all", "track_changes"] = "normal",
-) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
+    footnote_counter: int = 0,
+) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None, list[dict[str, Any]], int]:
     """Extract content from a paragraph XML element.
 
     Unified function that handles all three extraction modes:
@@ -430,8 +540,12 @@ def extract_paragraph_content(
         mode: Extraction mode - "normal", "accept_all", or "track_changes"
 
     Returns:
-        Tuple of (markdown_content, inline_formatting, track_changes)
-        track_changes is only populated when mode == "track_changes"
+        Tuple of (markdown_content, inline_formatting, track_changes, footnote_refs, footnote_counter)
+        - markdown_content: The extracted markdown string
+        - inline_formatting: List of inline formatting dicts, or None
+        - track_changes: List of TrackChange objects (only populated when mode == "track_changes"), or None
+        - footnote_refs: List of footnote reference dicts found in this paragraph
+        - footnote_counter: Updated footnote counter after processing this paragraph
     """
     markdown_parts: list[str] = []
     inline_formatting: list[dict[str, Any]] = []
@@ -439,6 +553,7 @@ def extract_paragraph_content(
     if mode not in valid_modes:
         raise ValueError(f"Unknown mode: {mode!r}. Must be one of {valid_modes}")
     track_changes: list[TrackChange] = []
+    footnote_refs: list[dict[str, Any]] = []
     plain_text_position = 0
 
     for child in para_elem:
@@ -515,6 +630,38 @@ def extract_paragraph_content(
             plain_text_position += len(text)
 
         elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            # Check for footnote/endnote references in this run
+            fn_ref = child.find(f'{{{WORDPROCESSINGML_NS}}}footnoteReference')
+            en_ref = child.find(f'{{{WORDPROCESSINGML_NS}}}endnoteReference')
+            if fn_ref is not None:
+                note_id = fn_ref.get(qn('w:id'))
+                if note_id and int(note_id) > 0:
+                    footnote_counter += 1
+                    marker = f"[^{footnote_counter}]"
+                    markdown_parts.append(marker)
+                    footnote_refs.append({
+                        "note_id": footnote_counter,
+                        "note_type": "footnote",
+                        "marker": marker,
+                        "original_id": note_id,
+                    })
+                    plain_text_position += len(marker)
+                continue
+            if en_ref is not None:
+                note_id = en_ref.get(qn('w:id'))
+                if note_id and int(note_id) > 0:
+                    footnote_counter += 1
+                    marker = f"[^{footnote_counter}]"
+                    markdown_parts.append(marker)
+                    footnote_refs.append({
+                        "note_id": footnote_counter,
+                        "note_type": "endnote",
+                        "marker": marker,
+                        "original_id": note_id,
+                    })
+                    plain_text_position += len(marker)
+                continue
+
             text_parts = []
             for run_child in child:
                 run_child_tag = run_child.tag
@@ -522,7 +669,11 @@ def extract_paragraph_content(
                     if run_child.text:
                         text_parts.append(run_child.text)
                 elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
-                    text_parts.append('\n')
+                    br_type = run_child.get(qn('w:type'))
+                    if br_type == 'column':
+                        text_parts.append('\n<!-- column-break -->\n')
+                    else:
+                        text_parts.append('\n')
 
             text = "".join(text_parts)
             if not text:
@@ -551,6 +702,8 @@ def extract_paragraph_content(
         markdown_content,
         inline_formatting if inline_formatting else None,
         track_changes if track_changes else None,
+        footnote_refs,
+        footnote_counter,
     )
 
 
@@ -559,19 +712,21 @@ def extract_paragraph_accept_all(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, accepting all track changes."""
-    return extract_paragraph_content(para_elem, doc_part, mode="accept_all")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
+    return content, fmt, tc
 
 
 def extract_paragraph_with_track_changes(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, including track changes as CriticMarkup."""
-    return extract_paragraph_content(para_elem, doc_part, mode="track_changes")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
+    return content, fmt, tc
 
 
 def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
     """Extract inline formatting from paragraph runs, including hyperlinks."""
-    content, inline_fmt, _ = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
+    content, inline_fmt, _, _fn, _counter = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
     return content, inline_fmt
 
 
@@ -896,7 +1051,8 @@ def _process_paragraph(
     image_data: dict[str, bytes],
     extract_track_changes: bool = False,
     track_changes_explicit: Optional[bool] = None,
-) -> tuple[Block, int, int, Optional[str], dict[str, bytes]]:
+    footnote_counter: int = 0,
+) -> tuple[Block, int, int, Optional[str], dict[str, bytes], int]:
     """Process a single paragraph element.
 
     Args:
@@ -913,11 +1069,12 @@ def _process_paragraph(
         track_changes_explicit: The explicit track_changes parameter (None, True, or False)
 
     Returns:
-        Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data)
+        Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data, footnote_counter)
     """
     style_name = paragraph.style.name if paragraph.style else "Normal"
     image_path = None
     block_track_changes = None
+    footnote_refs: list[dict[str, Any]] = []
 
     image_info = extract_image_from_paragraph(paragraph, doc_part, image_counter)
     if image_info:
@@ -950,8 +1107,8 @@ def _process_paragraph(
         else:
             mode = "normal"
 
-        text_content, inline_formatting, block_track_changes = extract_paragraph_content(
-            paragraph._element, doc_part, mode=mode
+        text_content, inline_formatting, block_track_changes, footnote_refs, footnote_counter = extract_paragraph_content(
+            paragraph._element, doc_part, mode=mode, footnote_counter=footnote_counter,
         )
 
         if style_name.startswith("Heading"):
@@ -1001,14 +1158,17 @@ def _process_paragraph(
         inline_formatting=inline_formatting,
         image_path=image_path,
         track_changes=block_track_changes,
+        footnote_references=footnote_refs if footnote_refs else None,
     )
 
-    return block, image_counter, list_number_counter, previous_list_type, image_data
+    return block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter
 
 
 def extract_blocks(
     docx_path: str,
     track_changes: Optional[bool] = None,
+    *,
+    _doc: Any = None,
 ) -> tuple[list[Block], dict[str, bytes]]:
     """Extract blocks from a Word document.
 
@@ -1020,6 +1180,7 @@ def extract_blocks(
         track_changes: Track changes mode. If None, auto-detect based on document.
                       If True, extract track changes as CriticMarkup.
                       If False, accept all changes and extract plain text.
+        _doc: Pre-opened Document object (internal use by extract_document).
 
     Returns:
         Tuple of (blocks, image_data) where image_data maps filenames to image bytes
@@ -1027,7 +1188,7 @@ def extract_blocks(
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
-    doc = Document(docx_path)
+    doc = _doc if _doc is not None else Document(docx_path)
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
     content_position = 0
@@ -1037,6 +1198,7 @@ def extract_blocks(
     block_index = 0
     para_index = 0
     table_index = 0
+    footnote_counter = 0
 
     # Determine track changes mode
     # If not specified (None), auto-detect based on document content
@@ -1054,29 +1216,74 @@ def extract_blocks(
             # Create a Paragraph object from the XML element
             paragraph = Paragraph(child, doc)
 
-            block, image_counter, list_number_counter, previous_list_type, image_data = _process_paragraph(
-                paragraph=paragraph,
-                doc_part=doc.part,
-                block_index=block_index,
-                para_index=para_index,
-                content_position=content_position,
-                image_counter=image_counter,
-                list_number_counter=list_number_counter,
-                previous_list_type=previous_list_type,
-                image_data=image_data,
-                extract_track_changes=extract_track_changes,
-                track_changes_explicit=track_changes,
-            )
+            # Check for text boxes/shapes with text before other content
+            textbox_infos = extract_textbox_from_paragraph(paragraph)
+            if textbox_infos:
+                for tb_info in textbox_infos:
+                    inner_lines = "\n".join(tb_info["texts"])
+                    markdown_content = f"<!-- textbox -->\n{inner_lines}\n<!-- /textbox -->"
 
-            blocks.append(block)
-            content_position = block.content_end + 1
-            block_index += 1
-            para_index += 1
+                    content_start = content_position
+                    content_end = content_position + len(markdown_content)
 
-            # Reset list counters for non-list content
-            if block.type != "list":
+                    tb_metadata: dict[str, Any] = {
+                        "anchor_type": tb_info["anchor_type"],
+                        "width": tb_info["width"],
+                        "height": tb_info["height"],
+                        "drawing_xml": tb_info["drawing_xml"],
+                    }
+                    if tb_info["position_h"] is not None:
+                        tb_metadata["position_h"] = tb_info["position_h"]
+                    if tb_info["position_v"] is not None:
+                        tb_metadata["position_v"] = tb_info["position_v"]
+                    if tb_info["fill_color"] is not None:
+                        tb_metadata["fill_color"] = tb_info["fill_color"]
+                    if tb_info["border_color"] is not None:
+                        tb_metadata["border_color"] = tb_info["border_color"]
+
+                    block = Block(
+                        id=generate_block_id(block_index),
+                        type="textbox",
+                        content=markdown_content,
+                        docx_paragraph_index=para_index,
+                        content_start=content_start,
+                        content_end=content_end,
+                        content_hash=compute_content_hash(markdown_content),
+                        text_box_metadata=tb_metadata,
+                    )
+
+                    blocks.append(block)
+                    content_position = content_end + 1
+                    block_index += 1
+
+                para_index += 1
                 list_number_counter = 0
                 previous_list_type = None
+            else:
+                block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter = _process_paragraph(
+                    paragraph=paragraph,
+                    doc_part=doc.part,
+                    block_index=block_index,
+                    para_index=para_index,
+                    content_position=content_position,
+                    image_counter=image_counter,
+                    list_number_counter=list_number_counter,
+                    previous_list_type=previous_list_type,
+                    image_data=image_data,
+                    extract_track_changes=extract_track_changes,
+                    track_changes_explicit=track_changes,
+                    footnote_counter=footnote_counter,
+                )
+
+                blocks.append(block)
+                content_position = block.content_end + 1
+                block_index += 1
+                para_index += 1
+
+                # Reset list counters for non-list content
+                if block.type != "list":
+                    list_number_counter = 0
+                    previous_list_type = None
 
         elif tag == 'tbl':
             # Create a Table object from the XML element
@@ -1114,7 +1321,303 @@ def extract_blocks(
             list_number_counter = 0
             previous_list_type = None
 
+    # Append footnote/endnote definitions at the end
+    if footnote_counter > 0:
+        definitions = _extract_footnote_definitions(doc, blocks)
+        if definitions:
+            # Add as a special block
+            def_content = "\n".join(definitions)
+            block = Block(
+                id=generate_block_id(block_index),
+                type="paragraph",
+                content=def_content,
+                docx_paragraph_index=-1,
+                content_start=content_position,
+                content_end=content_position + len(def_content),
+                content_hash=compute_content_hash(def_content),
+            )
+            blocks.append(block)
+
     return blocks, image_data
+
+
+def _extract_footnote_definitions(doc: Any, blocks: list[Block]) -> list[str]:
+    """Extract footnote/endnote definitions from the document.
+
+    Builds a map from original note IDs to sequential markers, then
+    reads the footnotes/endnotes XML parts to extract text.
+
+    Returns:
+        List of definition strings like '[^1]: Footnote text.'
+    """
+
+    # Build map: (note_type, original_id) -> marker number
+    ref_map: dict[tuple[str, str], int] = {}
+    for block in blocks:
+        if block.footnote_references:
+            for ref in block.footnote_references:
+                key = (ref["note_type"], ref["original_id"])
+                ref_map[key] = ref["note_id"]
+
+    if not ref_map:
+        return []
+
+    definitions: list[tuple[int, str]] = []  # (marker_num, definition_string)
+    ns = {"w": WORDPROCESSINGML_NS}
+
+    # Access footnotes/endnotes parts via relationship iteration
+    FN_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+    EN_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+
+    for rel in doc.part.rels.values():
+        if rel.reltype == FN_RT:
+            _extract_notes_from_part(rel.target_part, "footnote", ref_map, definitions, ns)
+        elif rel.reltype == EN_RT:
+            _extract_notes_from_part(rel.target_part, "endnote", ref_map, definitions, ns)
+
+    # Sort by marker number and return
+    definitions.sort(key=lambda x: x[0])
+    return [d[1] for d in definitions]
+
+
+def _extract_notes_from_part(
+    part: Any,
+    note_type: str,
+    ref_map: dict[tuple[str, str], int],
+    definitions: list[tuple[int, str]],
+    ns: dict[str, str],
+) -> None:
+    """Extract note text from a footnotes or endnotes XML part."""
+
+    # python-docx loads footnotes as generic Part (with .blob) not XmlPart (with ._element)
+    if hasattr(part, '_element'):
+        root = part._element
+    elif hasattr(part, 'blob'):
+        root = etree.fromstring(part.blob)
+    else:
+        return
+
+    tag_name = f"w:{note_type}"
+    for note_elem in root.findall(tag_name, ns):
+        note_id = note_elem.get(f"{{{ns['w']}}}id")
+        if note_id is None:
+            continue
+        # Skip separator and continuationSeparator (IDs -1 and 0)
+        note_type_attr = note_elem.get(f"{{{ns['w']}}}type")
+        if note_type_attr in ("separator", "continuationSeparator"):
+            continue
+
+        key = (note_type, note_id)
+        marker_num = ref_map.get(key)
+        if marker_num is None:
+            continue
+
+        note_text = _extract_note_text(note_elem, ns)
+        if note_text:
+            definitions.append((marker_num, f"[^{marker_num}]: {note_text}"))
+
+
+def _extract_note_text(note_elem: Any, ns: dict[str, str]) -> str:
+    """Extract text content from a footnote/endnote element, preserving bold/italic.
+
+    Known limitation: the leading-space strip (OOXML convention after the ref mark)
+    only applies to the first run of the first paragraph. Multi-paragraph footnotes
+    may retain a leading space on subsequent paragraphs' first runs.
+    """
+    text_parts: list[str] = []
+    for para in note_elem.findall("w:p", ns):
+        for run in para.findall("w:r", ns):
+            # Skip the footnoteRef/endnoteRef marker run
+            if run.find("w:footnoteRef", ns) is not None:
+                continue
+            if run.find("w:endnoteRef", ns) is not None:
+                continue
+
+            run_text_parts = []
+            for t in run.findall("w:t", ns):
+                if t.text:
+                    run_text_parts.append(t.text)
+            run_text = "".join(run_text_parts)
+            if not run_text:
+                continue
+
+            # Strip leading space (OOXML convention: space after ref mark)
+            if not text_parts and run_text.startswith(" "):
+                run_text = run_text[1:]
+                if not run_text:
+                    continue
+
+            # Check formatting
+            rPr = run.find("w:rPr", ns)
+            is_bold = False
+            is_italic = False
+            if rPr is not None:
+                b = rPr.find("w:b", ns)
+                if b is not None and b.get(f"{{{ns['w']}}}val", "true") != "false":
+                    is_bold = True
+                i = rPr.find("w:i", ns)
+                if i is not None and i.get(f"{{{ns['w']}}}val", "true") != "false":
+                    is_italic = True
+
+            formatted = wrap_formatting(run_text, is_bold, is_italic)
+            text_parts.append(formatted)
+
+    return "".join(text_parts)
+
+
+def extract_document(
+    docx_path: str,
+    track_changes: Optional[bool] = None,
+) -> tuple[list[Block], dict[str, bytes], list[SectionProperties]]:
+    """Extract blocks and section properties from a Word document in one pass.
+
+    Opens the document once and shares the Document/body element between block
+    extraction and section extraction, ensuring block indices are consistent.
+
+    Args:
+        docx_path: Path to .docx file
+        track_changes: Track changes mode (see extract_blocks).
+
+    Returns:
+        Tuple of (blocks, image_data, sections)
+    """
+    doc = Document(docx_path)
+    blocks, image_data = extract_blocks(docx_path, track_changes=track_changes, _doc=doc)
+    sections = extract_sections(body=doc.element.body)
+    return blocks, image_data, sections
+
+
+def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
+    """Parse a w:cols element into a dict of column properties.
+
+    Args:
+        cols_elem: The w:cols XML element
+
+    Returns:
+        Dict with column_count, column_spacing, equal_width, and columns
+    """
+    try:
+        col_count = int(cols_elem.get(qn('w:num'), '1'))
+    except ValueError:
+        col_count = 1
+    col_space = cols_elem.get(qn('w:space'))
+    equal_width_val = cols_elem.get(qn('w:equalWidth'))
+
+    # equalWidth defaults to True when not specified
+    equal_width = equal_width_val != '0'
+
+    try:
+        column_spacing = int(col_space) if col_space else None
+    except ValueError:
+        column_spacing = None
+
+    columns = None
+    if not equal_width:
+        col_elems = cols_elem.findall(qn('w:col'))
+        if col_elems:
+            columns = []
+            for col_el in col_elems:
+                try:
+                    width = int(col_el.get(qn('w:w'), '0'))
+                except ValueError:
+                    width = 0
+                space = col_el.get(qn('w:space'))
+                try:
+                    space_val = int(space) if space else None
+                except ValueError:
+                    space_val = None
+                columns.append(ColumnDefinition(
+                    width=width,
+                    space=space_val,
+                ))
+
+    return {
+        'column_count': col_count,
+        'column_spacing': column_spacing,
+        'equal_width': equal_width,
+        'columns': columns,
+    }
+
+
+def _parse_sect_pr(sect_pr: Any) -> SectionProperties:
+    """Parse a w:sectPr element into SectionProperties.
+
+    Args:
+        sect_pr: The w:sectPr XML element
+
+    Returns:
+        SectionProperties with column data populated
+    """
+    props = SectionProperties()
+    cols_elem = sect_pr.find(qn('w:cols'))
+    if cols_elem is not None:
+        parsed = _parse_cols_element(cols_elem)
+        props.column_count = parsed['column_count']
+        props.column_spacing = parsed['column_spacing']
+        props.equal_width = parsed['equal_width']
+        props.columns = parsed['columns']
+    return props
+
+
+def extract_sections(docx_path: str | None = None, *, body: Any = None) -> list[SectionProperties]:
+    """Extract section properties (column layouts) from a Word document.
+
+    OOXML sections are defined by:
+    - Mid-document: w:sectPr inside the last w:pPr of a section's final paragraph
+    - Final section: w:sectPr as direct child of w:body
+
+    Args:
+        docx_path: Path to .docx file (used if body is not provided)
+        body: Pre-opened document body element. When provided, avoids
+              re-opening the document and ensures block indices stay
+              consistent with extract_blocks.
+
+    Returns:
+        List of SectionProperties in document order
+    """
+    if body is None:
+        if docx_path is None:
+            raise ValueError("Either docx_path or body must be provided")
+        doc = Document(docx_path)
+        body = doc.element.body
+    sections: list[SectionProperties] = []
+    block_index = 0
+
+    for child in body:
+        tag = child.tag.split('}')[-1]
+
+        if tag == 'p':
+            # Check for mid-document section break (sectPr inside pPr)
+            pPr = child.find(qn('w:pPr'))
+            if pPr is not None:
+                sect_pr = pPr.find(qn('w:sectPr'))
+                if sect_pr is not None:
+                    props = _parse_sect_pr(sect_pr)
+                    props.end_block_index = block_index
+                    prev_end = sections[-1].end_block_index if sections else None
+                    props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+                    sections.append(props)
+            block_index += 1
+
+        elif tag == 'tbl':
+            block_index += 1
+
+        elif tag == 'sectPr':
+            # Final section (body-level sectPr)
+            props = _parse_sect_pr(child)
+            props.end_block_index = block_index - 1 if block_index > 0 else 0
+            prev_end = sections[-1].end_block_index if sections else None
+            props.start_block_index = (prev_end + 1) if prev_end is not None else 0
+            sections.append(props)
+
+    # If no sections found, create a default single-column section
+    if not sections:
+        props = SectionProperties()
+        props.start_block_index = 0
+        props.end_block_index = max(block_index - 1, 0)
+        sections.append(props)
+
+    return sections
 
 
 def extract_cell_shading(cell: Any) -> str | None:
@@ -1304,6 +1807,20 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
         if tag == 'p':
             paragraph = Paragraph(child, doc)
 
+            # Check if this paragraph produced text box blocks
+            if block.type == "textbox":
+                while block_index < len(blocks) and blocks[block_index].type == "textbox":
+                    style = Style(
+                        block_id=blocks[block_index].id,
+                        docx_style="TextBox",
+                        font_name="Calibri",
+                        font_size=11,
+                        alignment="left",
+                    )
+                    styles.append(style)
+                    block_index += 1
+                continue
+
             # Get font properties
             font_name = "Calibri"
             font_size = 11
@@ -1400,7 +1917,7 @@ def _extract_header_footer_paragraphs(
     return paragraphs, image_data, image_counter
 
 
-def extract_sections(docx_path: str) -> tuple[list[dict], dict[str, bytes]]:
+def extract_section_metadata(docx_path: str) -> tuple[list[dict], dict[str, bytes]]:
     """Extract section metadata (headers, footers, page setup) from a Word document.
 
     Returns:

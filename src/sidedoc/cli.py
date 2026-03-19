@@ -18,12 +18,13 @@ from sidedoc.constants import (
     SIDEDOC_ZIP_EXTENSION,
     TRACKING_FILES,
 )
-from sidedoc.extract import extract_blocks, extract_styles, extract_sections, blocks_to_markdown
+from sidedoc.extract import extract_blocks, extract_document, extract_section_metadata, extract_sections, extract_styles, blocks_to_markdown
 from sidedoc.models import Block
 from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
 from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
 from sidedoc.store import SidedocStore, detect_sidedoc_format
 from sidedoc.sync import (
+    generate_updated_docx,
     match_blocks,
     sync_sidedoc_to_docx,
     update_sidedoc_metadata,
@@ -115,6 +116,15 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     ]
 
 
+def _build_output_docx(new_blocks: list[Block], old_structure: dict, styles_data: dict, output: str) -> None:
+    """Build output docx file from new blocks with formatting preserved."""
+    from sidedoc.sync import _deserialize_sections
+
+    old_blocks = _convert_structure_to_blocks(old_structure)
+    matches = match_blocks(old_blocks, new_blocks)
+    sections = _deserialize_sections(old_structure)
+    generate_updated_docx(new_blocks, matches, styles_data, output, sections=sections)
+    click.echo(f"✓ Built updated document: {output}")
 
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
@@ -143,6 +153,13 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
                 output = str(Path(input_file).with_suffix(SIDEDOC_ZIP_EXTENSION))
             else:
                 output = ensure_sdoc_extension(output)
+
+            blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
+            styles = extract_styles(input_file, blocks)
+            hf_sections, section_images = extract_section_metadata(input_file)
+            image_data.update(section_images)
+            content_md = blocks_to_markdown(blocks)
+            create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
         else:
             # Create directory with .sidedoc extension
             if output is None:
@@ -164,16 +181,12 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
                     sys.exit(EXIT_ERROR)
                 shutil.rmtree(output_path)
 
-        blocks, image_data = extract_blocks(input_file, track_changes=track_changes)
-        styles = extract_styles(input_file, blocks)
-        sections, section_images = extract_sections(input_file)
-        image_data.update(section_images)
-        content_md = blocks_to_markdown(blocks)
-
-        if pack:
-            create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data, sections)
-        else:
-            create_sidedoc_directory(output, content_md, blocks, styles, input_file, image_data, sections)
+            blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
+            styles = extract_styles(input_file, blocks)
+            hf_sections, section_images = extract_section_metadata(input_file)
+            image_data.update(section_images)
+            content_md = blocks_to_markdown(blocks)
+            create_sidedoc_directory(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
 
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)

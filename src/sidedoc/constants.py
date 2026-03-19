@@ -132,6 +132,26 @@ HEX_COLOR_PATTERN = r'^[0-9A-Fa-f]{6}$'
 MAX_BORDER_WIDTH = 96
 
 # =============================================================================
+# OOXML Footnote/Endnote Constants
+# =============================================================================
+
+# Relationship types for footnotes and endnotes parts
+FOOTNOTES_RT = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+)
+ENDNOTES_RT = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+)
+
+# Content types for footnotes and endnotes parts
+FOOTNOTES_CT = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
+)
+ENDNOTES_CT = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"
+)
+
+# =============================================================================
 # CriticMarkup Patterns
 # =============================================================================
 # These regex patterns parse CriticMarkup syntax for track changes.
