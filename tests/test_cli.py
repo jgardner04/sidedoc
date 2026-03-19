@@ -20,7 +20,7 @@ def test_cli_version_flag():
     runner = CliRunner()
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert "0.2.0" in result.output
 
 
 def test_cli_help_shows_commands():
@@ -114,7 +114,7 @@ def test_cli_executable_installed():
         text=True
     )
     assert result.returncode == 0
-    assert "0.1.0" in result.stdout or "0.1.0" in result.stderr
+    assert "0.2.0" in result.stdout or "0.2.0" in result.stderr
 
 
 def test_convert_structure_to_blocks_preserves_table_metadata():

@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-19
+
 ### Added
 
 - **Footnotes and endnotes** - Extract, store, and reconstruct footnotes and endnotes using standard markdown `[^N]` syntax with inline formatting preservation and footnote/endnote type distinction. ([JON-93](https://linear.app/jonathangardner/issue/JON-93/footnotes-and-endnotes-support), [#56](https://github.com/jgardner04/sidedoc/pull/56))
 - **Multi-column layouts** - Extract, store, and reconstruct column properties (count, spacing, widths) and column breaks from OOXML section definitions. ([JON-95](https://linear.app/jonathangardner/issue/JON-95/multi-column-layouts), [#53](https://github.com/jgardner04/sidedoc/pull/53))
+- **Headers and footers** - Extract, store, and reconstruct document headers and footers with section-level variants (default, first page, even page). ([JON-92](https://linear.app/jonathangardner/issue/JON-92))
 
 ## [0.1.0] - 2026-03-15
 
