@@ -340,6 +340,7 @@ def sync_sidedoc_to_docx(
     doc = create_docx_from_blocks(
         blocks, styles_data,
         default_tc_author=author, default_tc_date=sync_date,
+        content_md=content_md,
         sections=sections,
     )
     doc.save(output_path)

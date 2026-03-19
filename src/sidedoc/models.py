@@ -51,6 +51,7 @@ class Block:
     inline_formatting: Optional[list[dict[str, Any]]] = None
     table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
     track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
+    footnote_references: Optional[list[dict[str, Any]]] = None  # Footnote/endnote references in this block
     text_box_metadata: Optional[dict[str, Any]] = None  # For text boxes: anchor_type, width, height, position, border, fill, drawing_xml
 
 

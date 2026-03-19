@@ -524,7 +524,8 @@ def extract_paragraph_content(
     para_elem: Any,
     doc_part: Any = None,
     mode: Literal["normal", "accept_all", "track_changes"] = "normal",
-) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
+    footnote_counter: int = 0,
+) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None, list[dict[str, Any]], int]:
     """Extract content from a paragraph XML element.
 
     Unified function that handles all three extraction modes:
@@ -538,8 +539,12 @@ def extract_paragraph_content(
         mode: Extraction mode - "normal", "accept_all", or "track_changes"
 
     Returns:
-        Tuple of (markdown_content, inline_formatting, track_changes)
-        track_changes is only populated when mode == "track_changes"
+        Tuple of (markdown_content, inline_formatting, track_changes, footnote_refs, footnote_counter)
+        - markdown_content: The extracted markdown string
+        - inline_formatting: List of inline formatting dicts, or None
+        - track_changes: List of TrackChange objects (only populated when mode == "track_changes"), or None
+        - footnote_refs: List of footnote reference dicts found in this paragraph
+        - footnote_counter: Updated footnote counter after processing this paragraph
     """
     markdown_parts: list[str] = []
     inline_formatting: list[dict[str, Any]] = []
@@ -547,6 +552,7 @@ def extract_paragraph_content(
     if mode not in valid_modes:
         raise ValueError(f"Unknown mode: {mode!r}. Must be one of {valid_modes}")
     track_changes: list[TrackChange] = []
+    footnote_refs: list[dict[str, Any]] = []
     plain_text_position = 0
 
     for child in para_elem:
@@ -623,6 +629,38 @@ def extract_paragraph_content(
             plain_text_position += len(text)
 
         elif tag == f'{{{WORDPROCESSINGML_NS}}}r':
+            # Check for footnote/endnote references in this run
+            fn_ref = child.find(f'{{{WORDPROCESSINGML_NS}}}footnoteReference')
+            en_ref = child.find(f'{{{WORDPROCESSINGML_NS}}}endnoteReference')
+            if fn_ref is not None:
+                note_id = fn_ref.get(qn('w:id'))
+                if note_id and int(note_id) > 0:
+                    footnote_counter += 1
+                    marker = f"[^{footnote_counter}]"
+                    markdown_parts.append(marker)
+                    footnote_refs.append({
+                        "note_id": footnote_counter,
+                        "note_type": "footnote",
+                        "marker": marker,
+                        "original_id": note_id,
+                    })
+                    plain_text_position += len(marker)
+                continue
+            if en_ref is not None:
+                note_id = en_ref.get(qn('w:id'))
+                if note_id and int(note_id) > 0:
+                    footnote_counter += 1
+                    marker = f"[^{footnote_counter}]"
+                    markdown_parts.append(marker)
+                    footnote_refs.append({
+                        "note_id": footnote_counter,
+                        "note_type": "endnote",
+                        "marker": marker,
+                        "original_id": note_id,
+                    })
+                    plain_text_position += len(marker)
+                continue
+
             text_parts = []
             for run_child in child:
                 run_child_tag = run_child.tag
@@ -663,6 +701,8 @@ def extract_paragraph_content(
         markdown_content,
         inline_formatting if inline_formatting else None,
         track_changes if track_changes else None,
+        footnote_refs,
+        footnote_counter,
     )
 
 
@@ -671,19 +711,21 @@ def extract_paragraph_accept_all(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, accepting all track changes."""
-    return extract_paragraph_content(para_elem, doc_part, mode="accept_all")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
+    return content, fmt, tc
 
 
 def extract_paragraph_with_track_changes(
     para_elem: Any, doc_part: Any = None
 ) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
     """Extract content from a paragraph, including track changes as CriticMarkup."""
-    return extract_paragraph_content(para_elem, doc_part, mode="track_changes")
+    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
+    return content, fmt, tc
 
 
 def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
     """Extract inline formatting from paragraph runs, including hyperlinks."""
-    content, inline_fmt, _ = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
+    content, inline_fmt, _, _fn, _counter = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
     return content, inline_fmt
 
 
@@ -1008,7 +1050,8 @@ def _process_paragraph(
     image_data: dict[str, bytes],
     extract_track_changes: bool = False,
     track_changes_explicit: Optional[bool] = None,
-) -> tuple[Block, int, int, Optional[str], dict[str, bytes]]:
+    footnote_counter: int = 0,
+) -> tuple[Block, int, int, Optional[str], dict[str, bytes], int]:
     """Process a single paragraph element.
 
     Args:
@@ -1025,11 +1068,12 @@ def _process_paragraph(
         track_changes_explicit: The explicit track_changes parameter (None, True, or False)
 
     Returns:
-        Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data)
+        Tuple of (block, new_image_counter, new_list_counter, new_list_type, image_data, footnote_counter)
     """
     style_name = paragraph.style.name if paragraph.style else "Normal"
     image_path = None
     block_track_changes = None
+    footnote_refs: list[dict[str, Any]] = []
 
     image_info = extract_image_from_paragraph(paragraph, doc_part, image_counter)
     if image_info:
@@ -1062,8 +1106,8 @@ def _process_paragraph(
         else:
             mode = "normal"
 
-        text_content, inline_formatting, block_track_changes = extract_paragraph_content(
-            paragraph._element, doc_part, mode=mode
+        text_content, inline_formatting, block_track_changes, footnote_refs, footnote_counter = extract_paragraph_content(
+            paragraph._element, doc_part, mode=mode, footnote_counter=footnote_counter,
         )
 
         if style_name.startswith("Heading"):
@@ -1113,9 +1157,10 @@ def _process_paragraph(
         inline_formatting=inline_formatting,
         image_path=image_path,
         track_changes=block_track_changes,
+        footnote_references=footnote_refs if footnote_refs else None,
     )
 
-    return block, image_counter, list_number_counter, previous_list_type, image_data
+    return block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter
 
 
 def extract_blocks(
@@ -1152,6 +1197,7 @@ def extract_blocks(
     block_index = 0
     para_index = 0
     table_index = 0
+    footnote_counter = 0
 
     # Determine track changes mode
     # If not specified (None), auto-detect based on document content
@@ -1213,7 +1259,7 @@ def extract_blocks(
                 list_number_counter = 0
                 previous_list_type = None
             else:
-                block, image_counter, list_number_counter, previous_list_type, image_data = _process_paragraph(
+                block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter = _process_paragraph(
                     paragraph=paragraph,
                     doc_part=doc.part,
                     block_index=block_index,
@@ -1225,6 +1271,7 @@ def extract_blocks(
                     image_data=image_data,
                     extract_track_changes=extract_track_changes,
                     track_changes_explicit=track_changes,
+                    footnote_counter=footnote_counter,
                 )
 
                 blocks.append(block)
@@ -1273,7 +1320,148 @@ def extract_blocks(
             list_number_counter = 0
             previous_list_type = None
 
+    # Append footnote/endnote definitions at the end
+    if footnote_counter > 0:
+        definitions = _extract_footnote_definitions(doc, blocks)
+        if definitions:
+            # Add as a special block
+            def_content = "\n".join(definitions)
+            block = Block(
+                id=generate_block_id(block_index),
+                type="paragraph",
+                content=def_content,
+                docx_paragraph_index=-1,
+                content_start=content_position,
+                content_end=content_position + len(def_content),
+                content_hash=compute_content_hash(def_content),
+            )
+            blocks.append(block)
+
     return blocks, image_data
+
+
+def _extract_footnote_definitions(doc: Any, blocks: list[Block]) -> list[str]:
+    """Extract footnote/endnote definitions from the document.
+
+    Builds a map from original note IDs to sequential markers, then
+    reads the footnotes/endnotes XML parts to extract text.
+
+    Returns:
+        List of definition strings like '[^1]: Footnote text.'
+    """
+
+    # Build map: (note_type, original_id) -> marker number
+    ref_map: dict[tuple[str, str], int] = {}
+    for block in blocks:
+        if block.footnote_references:
+            for ref in block.footnote_references:
+                key = (ref["note_type"], ref["original_id"])
+                ref_map[key] = ref["note_id"]
+
+    if not ref_map:
+        return []
+
+    definitions: list[tuple[int, str]] = []  # (marker_num, definition_string)
+    ns = {"w": WORDPROCESSINGML_NS}
+
+    # Access footnotes/endnotes parts via relationship iteration
+    FN_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+    EN_RT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
+
+    for rel in doc.part.rels.values():
+        if rel.reltype == FN_RT:
+            _extract_notes_from_part(rel.target_part, "footnote", ref_map, definitions, ns)
+        elif rel.reltype == EN_RT:
+            _extract_notes_from_part(rel.target_part, "endnote", ref_map, definitions, ns)
+
+    # Sort by marker number and return
+    definitions.sort(key=lambda x: x[0])
+    return [d[1] for d in definitions]
+
+
+def _extract_notes_from_part(
+    part: Any,
+    note_type: str,
+    ref_map: dict[tuple[str, str], int],
+    definitions: list[tuple[int, str]],
+    ns: dict[str, str],
+) -> None:
+    """Extract note text from a footnotes or endnotes XML part."""
+
+    # python-docx loads footnotes as generic Part (with .blob) not XmlPart (with ._element)
+    if hasattr(part, '_element'):
+        root = part._element
+    elif hasattr(part, 'blob'):
+        root = etree.fromstring(part.blob)
+    else:
+        return
+
+    tag_name = f"w:{note_type}"
+    for note_elem in root.findall(tag_name, ns):
+        note_id = note_elem.get(f"{{{ns['w']}}}id")
+        if note_id is None:
+            continue
+        # Skip separator and continuationSeparator (IDs -1 and 0)
+        note_type_attr = note_elem.get(f"{{{ns['w']}}}type")
+        if note_type_attr in ("separator", "continuationSeparator"):
+            continue
+
+        key = (note_type, note_id)
+        marker_num = ref_map.get(key)
+        if marker_num is None:
+            continue
+
+        note_text = _extract_note_text(note_elem, ns)
+        if note_text:
+            definitions.append((marker_num, f"[^{marker_num}]: {note_text}"))
+
+
+def _extract_note_text(note_elem: Any, ns: dict[str, str]) -> str:
+    """Extract text content from a footnote/endnote element, preserving bold/italic.
+
+    Known limitation: the leading-space strip (OOXML convention after the ref mark)
+    only applies to the first run of the first paragraph. Multi-paragraph footnotes
+    may retain a leading space on subsequent paragraphs' first runs.
+    """
+    text_parts: list[str] = []
+    for para in note_elem.findall("w:p", ns):
+        for run in para.findall("w:r", ns):
+            # Skip the footnoteRef/endnoteRef marker run
+            if run.find("w:footnoteRef", ns) is not None:
+                continue
+            if run.find("w:endnoteRef", ns) is not None:
+                continue
+
+            run_text_parts = []
+            for t in run.findall("w:t", ns):
+                if t.text:
+                    run_text_parts.append(t.text)
+            run_text = "".join(run_text_parts)
+            if not run_text:
+                continue
+
+            # Strip leading space (OOXML convention: space after ref mark)
+            if not text_parts and run_text.startswith(" "):
+                run_text = run_text[1:]
+                if not run_text:
+                    continue
+
+            # Check formatting
+            rPr = run.find("w:rPr", ns)
+            is_bold = False
+            is_italic = False
+            if rPr is not None:
+                b = rPr.find("w:b", ns)
+                if b is not None and b.get(f"{{{ns['w']}}}val", "true") != "false":
+                    is_bold = True
+                i = rPr.find("w:i", ns)
+                if i is not None and i.get(f"{{{ns['w']}}}val", "true") != "false":
+                    is_italic = True
+
+            formatted = wrap_formatting(run_text, is_bold, is_italic)
+            text_parts.append(formatted)
+
+    return "".join(text_parts)
 
 
 def extract_document(
