@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
@@ -486,38 +487,27 @@ def extract_track_change_metadata(element: Any) -> tuple[str, str, str]:
     return author, date, revision_id
 
 
-def extract_insertion_text(ins_element: Any) -> str:
-    """Extract text content from a w:ins element.
+def _extract_element_text(element: Any, tag: str) -> str:
+    """Extract concatenated text from all matching child elements.
 
     Args:
-        ins_element: The w:ins XML element
+        element: Parent XML element to search within
+        tag: Local tag name (e.g. 't', 'delText')
 
     Returns:
-        The inserted text
+        Concatenated text content
     """
-    text_parts = []
-    # Find all w:t elements within the insertion
-    for text_elem in ins_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}t'):
-        if text_elem.text:
-            text_parts.append(text_elem.text)
-    return "".join(text_parts)
+    return "".join(t.text for t in element.findall(f'.//{{{WORDPROCESSINGML_NS}}}{tag}') if t.text)
+
+
+def extract_insertion_text(ins_element: Any) -> str:
+    """Extract text content from a w:ins element."""
+    return _extract_element_text(ins_element, "t")
 
 
 def extract_deletion_text(del_element: Any) -> str:
-    """Extract text content from a w:del element.
-
-    Args:
-        del_element: The w:del XML element
-
-    Returns:
-        The deleted text
-    """
-    text_parts = []
-    # Find all w:delText elements within the deletion
-    for del_text_elem in del_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}delText'):
-        if del_text_elem.text:
-            text_parts.append(del_text_elem.text)
-    return "".join(text_parts)
+    """Extract text content from a w:del element."""
+    return _extract_element_text(del_element, "delText")
 
 
 def extract_paragraph_content(
@@ -713,20 +703,6 @@ def extract_paragraph_accept_all(
     """Extract content from a paragraph, accepting all track changes."""
     content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
     return content, fmt, tc
-
-
-def extract_paragraph_with_track_changes(
-    para_elem: Any, doc_part: Any = None
-) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
-    """Extract content from a paragraph, including track changes as CriticMarkup."""
-    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
-    return content, fmt, tc
-
-
-def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
-    """Extract inline formatting from paragraph runs, including hyperlinks."""
-    content, inline_fmt, _, _fn, _counter = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
-    return content, inline_fmt
 
 
 def get_cell_alignment(cell: Any) -> str:
@@ -1486,6 +1462,16 @@ def extract_document(
     return blocks, image_data, sections
 
 
+def _safe_int(value: str | None, default: int | None = None) -> int | None:
+    """Convert a string to int, returning default on None or ValueError."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     """Parse a w:cols element into a dict of column properties.
 
@@ -1495,20 +1481,13 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     Returns:
         Dict with column_count, column_spacing, equal_width, and columns
     """
-    try:
-        col_count = int(cols_elem.get(qn('w:num'), '1'))
-    except ValueError:
-        col_count = 1
-    col_space = cols_elem.get(qn('w:space'))
+    col_count = _safe_int(cols_elem.get(qn('w:num'), '1'), 1) or 1
     equal_width_val = cols_elem.get(qn('w:equalWidth'))
 
     # equalWidth defaults to True when not specified
     equal_width = equal_width_val != '0'
 
-    try:
-        column_spacing = int(col_space) if col_space else None
-    except ValueError:
-        column_spacing = None
+    column_spacing = _safe_int(cols_elem.get(qn('w:space')))
 
     columns = None
     if not equal_width:
@@ -1516,15 +1495,8 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
         if col_elems:
             columns = []
             for col_el in col_elems:
-                try:
-                    width = int(col_el.get(qn('w:w'), '0'))
-                except ValueError:
-                    width = 0
-                space = col_el.get(qn('w:space'))
-                try:
-                    space_val = int(space) if space else None
-                except ValueError:
-                    space_val = None
+                width = _safe_int(col_el.get(qn('w:w'), '0'), 0) or 0
+                space_val = _safe_int(col_el.get(qn('w:space')))
                 columns.append(ColumnDefinition(
                     width=width,
                     space=space_val,
@@ -1865,6 +1837,118 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
             block_index += 1
 
     return styles
+
+
+def _extract_header_footer_paragraphs(
+    header_footer: Any, image_data: dict[str, bytes], image_counter: int,
+) -> tuple[list[dict], dict[str, bytes], int]:
+    """Extract paragraphs from a header or footer element.
+
+    Skips extraction if the header/footer is linked to the previous section.
+    Images are extracted using the header/footer's own part reference.
+
+    Args:
+        header_footer: A python-docx header or footer object.
+        image_data: Mutable dict mapping image filenames to their bytes.
+        image_counter: Current image counter for generating unique filenames.
+
+    Returns:
+        Tuple of (paragraphs, image_data, image_counter) where paragraphs is a
+        list of dicts with type/content/image_path keys.
+    """
+    paragraphs: list[dict] = []
+    if header_footer.is_linked_to_previous:
+        return paragraphs, image_data, image_counter
+    for para in header_footer.paragraphs:
+        text = para.text.strip()
+        image_info = extract_image_from_paragraph(
+            para, header_footer.part, image_counter
+        )
+        if image_info:
+            image_filename, image_extension, image_bytes, error_message = image_info
+            if error_message:
+                paragraphs.append({
+                    "type": "paragraph",
+                    "content": f"[Image {image_counter} skipped: {error_message}]",
+                })
+                image_counter += 1
+                continue
+            # Prefix prevents filename collision with body images (which use
+            # image1.png, image2.png, ...) regardless of counter values.
+            hf_filename = f"hf_{image_filename}"
+            image_data[hf_filename] = image_bytes
+            paragraphs.append({
+                "type": "image",
+                "content": "",
+                "image_path": f"assets/{hf_filename}",
+            })
+            image_counter += 1
+            continue
+        if not text:
+            continue
+        paragraphs.append({"type": "paragraph", "content": text})
+    return paragraphs, image_data, image_counter
+
+
+def extract_section_metadata(docx_path: str) -> tuple[list[dict], dict[str, bytes]]:
+    """Extract section metadata (headers, footers, page setup) from a Word document.
+
+    Returns:
+        Tuple of (sections_data, image_data) where image_data maps filenames to bytes.
+    """
+    doc = Document(docx_path)
+    sections_data = []
+    image_data: dict[str, bytes] = {}
+    image_counter = 1
+    odd_and_even = doc.settings.odd_and_even_pages_header_footer
+    for section in doc.sections:
+        section_dict: dict[str, Any] = {}
+        variants = [
+            ("header_default", section.header),
+            ("footer_default", section.footer),
+        ]
+        if section.different_first_page_header_footer:
+            variants.extend([
+                ("header_first", section.first_page_header),
+                ("footer_first", section.first_page_footer),
+            ])
+        if odd_and_even:
+            even_header = section.even_page_header
+            if not even_header.is_linked_to_previous:
+                variants.append(("header_even", even_header))
+            even_footer = section.even_page_footer
+            if not even_footer.is_linked_to_previous:
+                variants.append(("footer_even", even_footer))
+        for key, hf in variants:
+            paras, image_data, image_counter = _extract_header_footer_paragraphs(
+                hf, image_data, image_counter
+            )
+            section_dict[key] = paras
+        section_dict.setdefault("header_default", [])
+        section_dict.setdefault("footer_default", [])
+        if section.different_first_page_header_footer:
+            section_dict.setdefault("header_first", [])
+            section_dict.setdefault("footer_first", [])
+        if odd_and_even:
+            section_dict.setdefault("header_even", [])
+            section_dict.setdefault("footer_even", [])
+        orientation_val = section.orientation
+        orientation_str = "landscape" if orientation_val == WD_ORIENT.LANDSCAPE else "portrait"
+        section_dict["page_setup"] = {
+            "orientation": orientation_str,
+            "top_margin": section.top_margin,
+            "bottom_margin": section.bottom_margin,
+            "left_margin": section.left_margin,
+            "right_margin": section.right_margin,
+            "page_width": section.page_width,
+            "page_height": section.page_height,
+            "header_distance": section.header_distance,
+            "footer_distance": section.footer_distance,
+            "different_first_page": section.different_first_page_header_footer,
+            "odd_and_even_pages": odd_and_even,
+        }
+        sections_data.append(section_dict)
+    return sections_data, image_data
 
 
 def blocks_to_markdown(blocks: list[Block]) -> str:

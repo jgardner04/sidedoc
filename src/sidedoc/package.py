@@ -118,6 +118,7 @@ def _build_metadata(
     styles: list[Style],
     source_file: str,
     sections: list[SectionProperties] | None = None,
+    hf_sections: list[dict] | None = None,
 ) -> tuple[dict, dict, dict]:
     """Build structure, styles, and manifest dicts from extraction data.
 
@@ -127,9 +128,9 @@ def _build_metadata(
     structure_data: dict = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
-    # Only include sections when there's a non-trivial layout (multi-column
-    # or multi-section). A single default section with 1 column is omitted
-    # to keep structure.json clean for simple documents.
+    # Only include column-layout sections when there's a non-trivial layout
+    # (multi-column or multi-section). A single default section with 1 column
+    # is omitted to keep structure.json clean for simple documents.
     if sections and not (
         len(sections) == 1
         and sections[0].column_count == 1
@@ -138,6 +139,10 @@ def _build_metadata(
         structure_data["sections"] = [
             section_to_structure_dict(s) for s in sections
         ]
+
+    # Header/footer section metadata
+    if hf_sections:
+        structure_data["hf_sections"] = hf_sections
 
     # Build top-level footnotes metadata from blocks and content
     footnotes_meta = _collect_footnotes_metadata(content_md, blocks)
@@ -198,6 +203,7 @@ def create_sidedoc_archive(
     source_file: str,
     image_data: dict[str, bytes] | None = None,
     sections: list[SectionProperties] | None = None,
+    hf_sections: list[dict] | None = None,
 ) -> None:
     """Create a .sidedoc/.sdoc ZIP archive.
 
@@ -209,9 +215,10 @@ def create_sidedoc_archive(
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
         sections: Optional list of SectionProperties for column layouts
+        hf_sections: Optional list of header/footer section metadata dicts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file, sections
+        content_md, blocks, styles, source_file, sections, hf_sections
     )
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -233,6 +240,7 @@ def create_sidedoc_directory(
     source_file: str,
     image_data: dict[str, bytes] | None = None,
     sections: list[SectionProperties] | None = None,
+    hf_sections: list[dict] | None = None,
 ) -> None:
     """Create a .sidedoc directory.
 
@@ -244,9 +252,10 @@ def create_sidedoc_directory(
         source_file: Original source file path
         image_data: Optional dict mapping image filenames to image bytes
         sections: Optional list of SectionProperties for column layouts
+        hf_sections: Optional list of header/footer section metadata dicts
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file, sections
+        content_md, blocks, styles, source_file, sections, hf_sections
     )
 
     out = Path(output_path)

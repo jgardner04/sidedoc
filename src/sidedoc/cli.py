@@ -18,13 +18,12 @@ from sidedoc.constants import (
     SIDEDOC_ZIP_EXTENSION,
     TRACKING_FILES,
 )
-from sidedoc.extract import extract_blocks, extract_document, extract_sections, extract_styles, blocks_to_markdown
+from sidedoc.extract import extract_blocks, extract_document, extract_section_metadata, extract_sections, extract_styles, blocks_to_markdown
 from sidedoc.models import Block
 from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
 from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
 from sidedoc.store import SidedocStore, detect_sidedoc_format
 from sidedoc.sync import (
-    generate_updated_docx,
     match_blocks,
     sync_sidedoc_to_docx,
     update_sidedoc_metadata,
@@ -38,6 +37,31 @@ EXIT_ERROR = 1
 EXIT_NOT_FOUND = 2
 EXIT_INVALID_FORMAT = 3
 EXIT_SYNC_CONFLICT = 4
+
+
+def _reject_if_zip(input_path: Path, command_name: str) -> None:
+    """Exit with error if input_path is a ZIP archive."""
+    if input_path.is_file() and zipfile.is_zipfile(input_path):
+        click.echo(
+            f"Error: Cannot {command_name} a ZIP archive. "
+            "Run `sidedoc unpack` to convert to directory format first.",
+            err=True,
+        )
+        sys.exit(EXIT_INVALID_FORMAT)
+
+
+def _block_description(block: Block) -> str:
+    """Return a short description like 'heading (level 2)' for diff output."""
+    desc = block.type
+    if block.level:
+        desc += f" (level {block.level})"
+    return desc
+
+
+def _content_preview(block: Block) -> str:
+    """Return a truncated content preview for diff output."""
+    preview = block.content[:CONTENT_PREVIEW_LENGTH]
+    return preview + "..." if len(block.content) > CONTENT_PREVIEW_LENGTH else preview
 
 
 @click.group()
@@ -116,17 +140,6 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     ]
 
 
-def _build_output_docx(new_blocks: list[Block], old_structure: dict, styles_data: dict, output: str) -> None:
-    """Build output docx file from new blocks with formatting preserved."""
-    from sidedoc.sync import _deserialize_sections
-
-    old_blocks = _convert_structure_to_blocks(old_structure)
-    matches = match_blocks(old_blocks, new_blocks)
-    sections = _deserialize_sections(old_structure)
-    generate_updated_docx(new_blocks, matches, styles_data, output, sections=sections)
-    click.echo(f"✓ Built updated document: {output}")
-
-
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", help="Output path")
@@ -157,8 +170,10 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
 
             blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
             styles = extract_styles(input_file, blocks)
+            hf_sections, section_images = extract_section_metadata(input_file)
+            image_data.update(section_images)
             content_md = blocks_to_markdown(blocks)
-            create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data, sections)
+            create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
         else:
             # Create directory with .sidedoc extension
             if output is None:
@@ -171,20 +186,21 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
                 click.echo("Error: output path is a symlink.", err=True)
                 sys.exit(EXIT_ERROR)
 
-            if output_path.exists() and not force:
-                click.echo(
-                    f"Error: {output} already exists. Use --force to overwrite.",
-                    err=True,
-                )
-                sys.exit(EXIT_ERROR)
-
-            if output_path.exists() and force:
+            if output_path.exists():
+                if not force:
+                    click.echo(
+                        f"Error: {output} already exists. Use --force to overwrite.",
+                        err=True,
+                    )
+                    sys.exit(EXIT_ERROR)
                 shutil.rmtree(output_path)
 
             blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
             styles = extract_styles(input_file, blocks)
+            hf_sections, section_images = extract_section_metadata(input_file)
+            image_data.update(section_images)
             content_md = blocks_to_markdown(blocks)
-            create_sidedoc_directory(output, content_md, blocks, styles, input_file, image_data, sections)
+            create_sidedoc_directory(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
 
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)
@@ -236,14 +252,7 @@ def sync(input_file: str, output: str | None, author: str) -> None:
     will be converted to track changes in the output docx with the specified author.
     """
     try:
-        # Reject ZIP input
-        input_path = Path(input_file)
-        if input_path.is_file() and zipfile.is_zipfile(input_path):
-            click.echo(
-                "Error: Cannot sync a ZIP archive. Run `sidedoc unpack` to convert to directory format first.",
-                err=True,
-            )
-            sys.exit(EXIT_INVALID_FORMAT)
+        _reject_if_zip(Path(input_file), "sync")
 
         content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
         new_blocks = parse_markdown_to_blocks(content_md)
@@ -636,14 +645,7 @@ def diff(input_file: str) -> None:
     Only works with .sidedoc/ directories.
     """
     try:
-        # Reject ZIP input
-        input_path = Path(input_file)
-        if input_path.is_file() and zipfile.is_zipfile(input_path):
-            click.echo(
-                "Error: Cannot diff a ZIP archive. Run `sidedoc unpack` to convert to directory format first.",
-                err=True,
-            )
-            sys.exit(EXIT_INVALID_FORMAT)
+        _reject_if_zip(Path(input_file), "diff")
 
         with SidedocStore.open(input_file) as store:
             try:
@@ -692,36 +694,21 @@ def diff(input_file: str) -> None:
                 if deleted_blocks:
                     click.echo(click.style("Removed blocks:", fg="red", bold=True))
                     for block in deleted_blocks:
-                        block_desc = f"{block.type}"
-                        if block.level:
-                            block_desc += f" (level {block.level})"
-                        click.echo(click.style(f"  - [{block_desc}] ", fg="red"))
+                        click.echo(click.style(f"  - [{_block_description(block)}] ", fg="red"))
 
                 if added_blocks:
                     if deleted_blocks:
                         click.echo()
                     click.echo(click.style("Added blocks:", fg="green", bold=True))
                     for block in added_blocks:
-                        block_desc = f"{block.type}"
-                        if block.level:
-                            block_desc += f" (level {block.level})"
-                        content_preview = block.content[:CONTENT_PREVIEW_LENGTH]
-                        if len(block.content) > CONTENT_PREVIEW_LENGTH:
-                            content_preview += "..."
-                        click.echo(click.style(f"  + [{block_desc}] {content_preview}", fg="green"))
+                        click.echo(click.style(f"  + [{_block_description(block)}] {_content_preview(block)}", fg="green"))
 
                 if modified_blocks:
                     if deleted_blocks or added_blocks:
                         click.echo()
                     click.echo(click.style("Modified blocks:", fg="yellow", bold=True))
                     for old_block, new_block in modified_blocks:
-                        block_desc = f"{new_block.type}"
-                        if new_block.level:
-                            block_desc += f" (level {new_block.level})"
-                        content_preview = new_block.content[:CONTENT_PREVIEW_LENGTH]
-                        if len(new_block.content) > CONTENT_PREVIEW_LENGTH:
-                            content_preview += "..."
-                        click.echo(click.style(f"  ~ [{block_desc}] {content_preview}", fg="yellow"))
+                        click.echo(click.style(f"  ~ [{_block_description(new_block)}] {_content_preview(new_block)}", fg="yellow"))
 
             sys.exit(EXIT_SUCCESS)
 

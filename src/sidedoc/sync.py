@@ -4,12 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Optional, Any
-from sidedoc.models import Block, ColumnDefinition, SectionProperties
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, deserialize_sections
 from sidedoc.utils import get_iso_timestamp, compute_similarity
 from sidedoc.constants import (
     SIMILARITY_THRESHOLD,
 )
-from sidedoc.reconstruct import create_docx_from_blocks
+from sidedoc.reconstruct import apply_sections_to_document, create_docx_from_blocks
 
 # Default author for new track changes created during sync
 DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
@@ -127,38 +127,6 @@ def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
     return {new_block.id: old_id for old_id, new_block in matches.items()}
 
 
-
-def _deserialize_sections(structure_data: dict) -> list[SectionProperties] | None:
-    """Deserialize sections from structure.json data.
-
-    Args:
-        structure_data: Parsed structure.json dictionary
-
-    Returns:
-        List of SectionProperties or None if no sections present
-    """
-    section_dicts = structure_data.get("sections", [])
-    if not section_dicts:
-        return None
-    sections = []
-    for sd in section_dicts:
-        cols = None
-        if sd.get("columns"):
-            cols = [
-                ColumnDefinition(width=c["width"], space=c.get("space"))
-                for c in sd["columns"]
-            ]
-        sections.append(SectionProperties(
-            column_count=sd.get("column_count", 1),
-            column_spacing=sd.get("column_spacing"),
-            equal_width=sd.get("equal_width", True),
-            columns=cols,
-            start_block_index=sd.get("start_block_index"),
-            end_block_index=sd.get("end_block_index"),
-        ))
-    return sections
-
-
 def generate_updated_docx(
     new_blocks: list[Block],
     matches: dict[str, Block],
@@ -214,15 +182,18 @@ def update_sidedoc_metadata(
 
 
 def _build_structure_data(new_blocks: list[Block], existing_structure: dict | None = None) -> dict:
-    """Build structure.json data from blocks, preserving existing sections."""
+    """Build structure.json data from blocks, preserving all non-block metadata."""
     from sidedoc.package import block_to_structure_dict
 
     result: dict = {
         "blocks": [block_to_structure_dict(block) for block in new_blocks]
     }
-    # Preserve section properties from existing structure.json
-    if existing_structure and "sections" in existing_structure:
-        result["sections"] = existing_structure["sections"]
+    # Preserve all non-block metadata from existing structure (sections,
+    # hf_sections, footnotes, etc.). Only blocks are rebuilt from content.md.
+    if existing_structure:
+        for key, value in existing_structure.items():
+            if key != "blocks":
+                result[key] = value
     return result
 
 
@@ -330,9 +301,11 @@ def sync_sidedoc_to_docx(
         content_md = store.read_text("content.md")
         styles_data = store.read_json("styles.json")
         structure_data = store.read_json("structure.json") if store.has_file("structure.json") else {}
+        assets_dir = store.assets_dir if store.list_assets() else None
+        hf_sections_data = structure_data.get("hf_sections", [])
 
     blocks = parse_markdown_to_blocks(content_md)
-    sections = _deserialize_sections(structure_data)
+    sections = deserialize_sections(structure_data)
 
     # Note: no style_id_remap needed here because update_sidedoc_metadata()
     # (called before this function in the CLI sync command) already remaps
@@ -343,4 +316,8 @@ def sync_sidedoc_to_docx(
         content_md=content_md,
         sections=sections,
     )
+
+    if hf_sections_data:
+        apply_sections_to_document(doc, hf_sections_data, assets_dir)
+
     doc.save(output_path)

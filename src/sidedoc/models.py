@@ -100,6 +100,37 @@ class SectionProperties:
     end_block_index: Optional[int] = None  # Last block index in this section (inclusive)
 
 
+def deserialize_sections(structure_data: dict) -> list["SectionProperties"] | None:
+    """Deserialize sections from structure.json data.
+
+    Args:
+        structure_data: Parsed structure.json dictionary
+
+    Returns:
+        List of SectionProperties or None if no sections present
+    """
+    section_dicts = structure_data.get("sections", [])
+    if not section_dicts:
+        return None
+    sections = []
+    for sd in section_dicts:
+        cols = None
+        if sd.get("columns"):
+            cols = [
+                ColumnDefinition(width=c["width"], space=c.get("space"))
+                for c in sd["columns"]
+            ]
+        sections.append(SectionProperties(
+            column_count=sd.get("column_count", 1),
+            column_spacing=sd.get("column_spacing"),
+            equal_width=sd.get("equal_width", True),
+            columns=cols,
+            start_block_index=sd.get("start_block_index"),
+            end_block_index=sd.get("end_block_index"),
+        ))
+    return sections
+
+
 @dataclass
 class Manifest:
     """Represents metadata for a sidedoc document.
