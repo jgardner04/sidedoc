@@ -106,7 +106,7 @@ src/sidedoc/
 
 - **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
 - **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
-- **Sync:** After editing content.md, update the .docx while preserving original formatting
+- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content.
 
 ### Block Types
 

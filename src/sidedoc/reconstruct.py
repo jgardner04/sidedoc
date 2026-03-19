@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+import warnings
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
@@ -15,7 +16,7 @@ from docx.opc.packuri import PackURI
 from docx.oxml import OxmlElement
 from lxml import etree  # type: ignore[import-untyped]
 import click
-from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange, deserialize_sections
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
@@ -1465,10 +1466,8 @@ def _build_cols_element(section: SectionProperties) -> Any:
     cols.set(qn('w:num'), str(section.column_count))
     if section.column_spacing is not None:
         cols.set(qn('w:space'), str(section.column_spacing))
-    if section.equal_width:
-        cols.set(qn('w:equalWidth'), '1')
-    else:
-        cols.set(qn('w:equalWidth'), '0')
+    cols.set(qn('w:equalWidth'), '1' if section.equal_width else '0')
+    if not section.equal_width:
         if section.columns:
             for col_def in section.columns:
                 col_elem = OxmlElement('w:col')
@@ -1685,7 +1684,7 @@ def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_d
                     run = para.add_run()
                     run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                     continue
-            click.echo(f"Warning: header/footer image not found: {image_filename}", err=True)
+            warnings.warn(f"header/footer image not found: {image_filename}", RuntimeWarning, stacklevel=2)
             para.text = f"[Image: {para_dict.get('content', '')}]"
         else:
             para.text = para_dict.get("content", "")
@@ -1702,6 +1701,7 @@ def apply_sections_to_document(doc: DocumentType, sections_data: list[dict], ass
         if section_idx < len(doc.sections):
             section = doc.sections[section_idx]
         else:
+            # Defensive: metadata has more sections than document (e.g. mismatched structure.json)
             section = doc.add_section()
         page_setup = section_meta.get("page_setup", {})
         if page_setup:
@@ -1715,8 +1715,7 @@ def apply_sections_to_document(doc: DocumentType, sections_data: list[dict], ass
                 value = page_setup.get(attr)
                 if value is not None:
                     setattr(section, attr, value)
-            if page_setup.get("different_first_page", False):
-                section.different_first_page_header_footer = True
+            section.different_first_page_header_footer = page_setup.get("different_first_page", False)
         variants = [
             ("header_default", section.header),
             ("header_first", section.first_page_header),
@@ -1794,27 +1793,7 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                     block.text_box_metadata = struct_block["text_box_metadata"]
 
             # Read section properties (column layouts)
-            section_dicts = structure_data.get("sections", [])
-            if section_dicts:
-                sections = []
-                for sd in section_dicts:
-                    cols = None
-                    if sd.get("columns"):
-                        cols = [
-                            ColumnDefinition(
-                                width=c["width"],
-                                space=c.get("space"),
-                            )
-                            for c in sd["columns"]
-                        ]
-                    sections.append(SectionProperties(
-                        column_count=sd.get("column_count", 1),
-                        column_spacing=sd.get("column_spacing"),
-                        equal_width=sd.get("equal_width", True),
-                        columns=cols,
-                        start_block_index=sd.get("start_block_index"),
-                        end_block_index=sd.get("end_block_index"),
-                    ))
+            sections = deserialize_sections(structure_data)
 
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir, footnote_defs=footnote_defs, footnote_meta=footnote_meta, content_md=content_md, sections=sections)
 

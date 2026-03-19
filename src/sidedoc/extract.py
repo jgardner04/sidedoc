@@ -5,11 +5,11 @@ import io
 from pathlib import Path
 from typing import Any, Literal, Optional
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
-from docx.enum.section import WD_ORIENT
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
@@ -487,38 +487,27 @@ def extract_track_change_metadata(element: Any) -> tuple[str, str, str]:
     return author, date, revision_id
 
 
-def extract_insertion_text(ins_element: Any) -> str:
-    """Extract text content from a w:ins element.
+def _extract_element_text(element: Any, tag: str) -> str:
+    """Extract concatenated text from all matching child elements.
 
     Args:
-        ins_element: The w:ins XML element
+        element: Parent XML element to search within
+        tag: Local tag name (e.g. 't', 'delText')
 
     Returns:
-        The inserted text
+        Concatenated text content
     """
-    text_parts = []
-    # Find all w:t elements within the insertion
-    for text_elem in ins_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}t'):
-        if text_elem.text:
-            text_parts.append(text_elem.text)
-    return "".join(text_parts)
+    return "".join(t.text for t in element.findall(f'.//{{{WORDPROCESSINGML_NS}}}{tag}') if t.text)
+
+
+def extract_insertion_text(ins_element: Any) -> str:
+    """Extract text content from a w:ins element."""
+    return _extract_element_text(ins_element, "t")
 
 
 def extract_deletion_text(del_element: Any) -> str:
-    """Extract text content from a w:del element.
-
-    Args:
-        del_element: The w:del XML element
-
-    Returns:
-        The deleted text
-    """
-    text_parts = []
-    # Find all w:delText elements within the deletion
-    for del_text_elem in del_element.findall(f'.//{{{WORDPROCESSINGML_NS}}}delText'):
-        if del_text_elem.text:
-            text_parts.append(del_text_elem.text)
-    return "".join(text_parts)
+    """Extract text content from a w:del element."""
+    return _extract_element_text(del_element, "delText")
 
 
 def extract_paragraph_content(
@@ -714,20 +703,6 @@ def extract_paragraph_accept_all(
     """Extract content from a paragraph, accepting all track changes."""
     content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="accept_all")
     return content, fmt, tc
-
-
-def extract_paragraph_with_track_changes(
-    para_elem: Any, doc_part: Any = None
-) -> tuple[str, list[dict[str, Any]] | None, list[TrackChange] | None]:
-    """Extract content from a paragraph, including track changes as CriticMarkup."""
-    content, fmt, tc, _fn, _counter = extract_paragraph_content(para_elem, doc_part, mode="track_changes")
-    return content, fmt, tc
-
-
-def extract_inline_formatting(paragraph: Any, doc_part: Any = None) -> tuple[str, list[dict[str, Any]] | None]:
-    """Extract inline formatting from paragraph runs, including hyperlinks."""
-    content, inline_fmt, _, _fn, _counter = extract_paragraph_content(paragraph._element, doc_part, mode="normal")
-    return content, inline_fmt
 
 
 def get_cell_alignment(cell: Any) -> str:
@@ -1487,6 +1462,16 @@ def extract_document(
     return blocks, image_data, sections
 
 
+def _safe_int(value: str | None, default: int | None = None) -> int | None:
+    """Convert a string to int, returning default on None or ValueError."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     """Parse a w:cols element into a dict of column properties.
 
@@ -1496,20 +1481,13 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
     Returns:
         Dict with column_count, column_spacing, equal_width, and columns
     """
-    try:
-        col_count = int(cols_elem.get(qn('w:num'), '1'))
-    except ValueError:
-        col_count = 1
-    col_space = cols_elem.get(qn('w:space'))
+    col_count = _safe_int(cols_elem.get(qn('w:num'), '1'), 1) or 1
     equal_width_val = cols_elem.get(qn('w:equalWidth'))
 
     # equalWidth defaults to True when not specified
     equal_width = equal_width_val != '0'
 
-    try:
-        column_spacing = int(col_space) if col_space else None
-    except ValueError:
-        column_spacing = None
+    column_spacing = _safe_int(cols_elem.get(qn('w:space')))
 
     columns = None
     if not equal_width:
@@ -1517,15 +1495,8 @@ def _parse_cols_element(cols_elem: Any) -> dict[str, Any]:
         if col_elems:
             columns = []
             for col_el in col_elems:
-                try:
-                    width = int(col_el.get(qn('w:w'), '0'))
-                except ValueError:
-                    width = 0
-                space = col_el.get(qn('w:space'))
-                try:
-                    space_val = int(space) if space else None
-                except ValueError:
-                    space_val = None
+                width = _safe_int(col_el.get(qn('w:w'), '0'), 0) or 0
+                space_val = _safe_int(col_el.get(qn('w:space')))
                 columns.append(ColumnDefinition(
                     width=width,
                     space=space_val,

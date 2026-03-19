@@ -643,8 +643,10 @@ class TestEvenPageHeaderFooter:
             docx_path = _create_docx_with_even_page_variant()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
-            runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
+            result_extract = runner.invoke(main, ["extract", "test.docx"])
+            assert result_extract.exit_code == 0
+            result_build = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
+            assert result_build.exit_code == 0
 
             rebuilt = Document("rebuilt.docx")
             assert rebuilt.settings.odd_and_even_pages_header_footer is True

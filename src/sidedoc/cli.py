@@ -39,6 +39,31 @@ EXIT_INVALID_FORMAT = 3
 EXIT_SYNC_CONFLICT = 4
 
 
+def _reject_if_zip(input_path: Path, command_name: str) -> None:
+    """Exit with error if input_path is a ZIP archive."""
+    if input_path.is_file() and zipfile.is_zipfile(input_path):
+        click.echo(
+            f"Error: Cannot {command_name} a ZIP archive. "
+            "Run `sidedoc unpack` to convert to directory format first.",
+            err=True,
+        )
+        sys.exit(EXIT_INVALID_FORMAT)
+
+
+def _block_description(block: Block) -> str:
+    """Return a short description like 'heading (level 2)' for diff output."""
+    desc = block.type
+    if block.level:
+        desc += f" (level {block.level})"
+    return desc
+
+
+def _content_preview(block: Block) -> str:
+    """Return a truncated content preview for diff output."""
+    preview = block.content[:CONTENT_PREVIEW_LENGTH]
+    return preview + "..." if len(block.content) > CONTENT_PREVIEW_LENGTH else preview
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="sidedoc")
 def main() -> None:
@@ -227,14 +252,7 @@ def sync(input_file: str, output: str | None, author: str) -> None:
     will be converted to track changes in the output docx with the specified author.
     """
     try:
-        # Reject ZIP input
-        input_path = Path(input_file)
-        if input_path.is_file() and zipfile.is_zipfile(input_path):
-            click.echo(
-                "Error: Cannot sync a ZIP archive. Run `sidedoc unpack` to convert to directory format first.",
-                err=True,
-            )
-            sys.exit(EXIT_INVALID_FORMAT)
+        _reject_if_zip(Path(input_file), "sync")
 
         content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
         new_blocks = parse_markdown_to_blocks(content_md)
@@ -627,14 +645,7 @@ def diff(input_file: str) -> None:
     Only works with .sidedoc/ directories.
     """
     try:
-        # Reject ZIP input
-        input_path = Path(input_file)
-        if input_path.is_file() and zipfile.is_zipfile(input_path):
-            click.echo(
-                "Error: Cannot diff a ZIP archive. Run `sidedoc unpack` to convert to directory format first.",
-                err=True,
-            )
-            sys.exit(EXIT_INVALID_FORMAT)
+        _reject_if_zip(Path(input_file), "diff")
 
         with SidedocStore.open(input_file) as store:
             try:
@@ -683,36 +694,21 @@ def diff(input_file: str) -> None:
                 if deleted_blocks:
                     click.echo(click.style("Removed blocks:", fg="red", bold=True))
                     for block in deleted_blocks:
-                        block_desc = f"{block.type}"
-                        if block.level:
-                            block_desc += f" (level {block.level})"
-                        click.echo(click.style(f"  - [{block_desc}] ", fg="red"))
+                        click.echo(click.style(f"  - [{_block_description(block)}] ", fg="red"))
 
                 if added_blocks:
                     if deleted_blocks:
                         click.echo()
                     click.echo(click.style("Added blocks:", fg="green", bold=True))
                     for block in added_blocks:
-                        block_desc = f"{block.type}"
-                        if block.level:
-                            block_desc += f" (level {block.level})"
-                        content_preview = block.content[:CONTENT_PREVIEW_LENGTH]
-                        if len(block.content) > CONTENT_PREVIEW_LENGTH:
-                            content_preview += "..."
-                        click.echo(click.style(f"  + [{block_desc}] {content_preview}", fg="green"))
+                        click.echo(click.style(f"  + [{_block_description(block)}] {_content_preview(block)}", fg="green"))
 
                 if modified_blocks:
                     if deleted_blocks or added_blocks:
                         click.echo()
                     click.echo(click.style("Modified blocks:", fg="yellow", bold=True))
                     for old_block, new_block in modified_blocks:
-                        block_desc = f"{new_block.type}"
-                        if new_block.level:
-                            block_desc += f" (level {new_block.level})"
-                        content_preview = new_block.content[:CONTENT_PREVIEW_LENGTH]
-                        if len(new_block.content) > CONTENT_PREVIEW_LENGTH:
-                            content_preview += "..."
-                        click.echo(click.style(f"  ~ [{block_desc}] {content_preview}", fg="yellow"))
+                        click.echo(click.style(f"  ~ [{_block_description(new_block)}] {_content_preview(new_block)}", fg="yellow"))
 
             sys.exit(EXIT_SUCCESS)
 
