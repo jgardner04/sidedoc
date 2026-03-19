@@ -539,8 +539,12 @@ def extract_paragraph_content(
         mode: Extraction mode - "normal", "accept_all", or "track_changes"
 
     Returns:
-        Tuple of (markdown_content, inline_formatting, track_changes)
-        track_changes is only populated when mode == "track_changes"
+        Tuple of (markdown_content, inline_formatting, track_changes, footnote_refs, footnote_counter)
+        - markdown_content: The extracted markdown string
+        - inline_formatting: List of inline formatting dicts, or None
+        - track_changes: List of TrackChange objects (only populated when mode == "track_changes"), or None
+        - footnote_refs: List of footnote reference dicts found in this paragraph
+        - footnote_counter: Updated footnote counter after processing this paragraph
     """
     markdown_parts: list[str] = []
     inline_formatting: list[dict[str, Any]] = []

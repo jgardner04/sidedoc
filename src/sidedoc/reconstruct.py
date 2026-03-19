@@ -32,12 +32,18 @@ from sidedoc.constants import (
     VALID_PATTERN_FILLS,
     HEX_COLOR_PATTERN,
     MAX_BORDER_WIDTH,
+    FOOTNOTES_RT,
+    ENDNOTES_RT,
+    FOOTNOTES_CT,
+    ENDNOTES_CT,
 )
 from sidedoc.store import SidedocStore
-from lxml import etree
 
 import mistune
 
+# Known limitation: multi-line footnote definitions not supported.
+# Only single-line [^N]: text definitions are captured; indented continuation
+# lines (per Markdown spec) are silently dropped.
 FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^(\d+)\]:\s*(.+)$')
 # Note: only numeric markers are supported. Alphanumeric labels like [^label]
 # (valid in standard Markdown) will be left as literal text. This is consistent
@@ -47,19 +53,6 @@ FOOTNOTE_REF_PATTERN = re.compile(r'\[\^(\d+)\]')
 # Pattern for parsing inline markdown formatting (bold/italic) in footnote text.
 # Matches ***bold italic***, **bold**, or *italic* spans.
 _INLINE_FORMAT_PATTERN = re.compile(r'(\*{1,3})(.*?)\1')
-
-FOOTNOTES_RT = (
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
-)
-ENDNOTES_RT = (
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes"
-)
-FOOTNOTES_CT = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"
-)
-ENDNOTES_CT = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"
-)
 
 # Cache the mistune parser at module level to avoid recreating per paragraph
 _MARKDOWN_PARSER = mistune.create_markdown(renderer=None)
@@ -1244,7 +1237,8 @@ def _get_or_create_notes_part(doc, note_tag, rel_type, content_type, part_path):
         if rel.reltype == rel_type:
             return rel.target_part
 
-    note_singular = note_tag.replace("s", "", 1)  # w:footnotes -> w:footnote
+    _NOTE_SINGULAR = {"w:footnotes": "w:footnote", "w:endnotes": "w:endnote"}
+    note_singular = _NOTE_SINGULAR[note_tag]
     nsmap = {"w": WORDPROCESSINGML_NS, "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships"}
     root = etree.Element(qn(note_tag), nsmap=nsmap)
     for sep_id, sep_type in [("-1", "separator"), ("0", "continuationSeparator")]:
@@ -1707,8 +1701,8 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                 if refs:
                     for ref in refs:
                         mid = ref.get("note_id")
-                        if mid and mid not in footnote_meta:
-                            footnote_meta[mid] = {"note_type": ref.get("note_type", "footnote")}
+                        if mid and int(mid) not in footnote_meta:
+                            footnote_meta[int(mid)] = {"note_type": ref.get("note_type", "footnote")}
 
             for block, struct_block in zip(blocks, structure_blocks):
                 if "track_changes" in struct_block and struct_block["track_changes"]:

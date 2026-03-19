@@ -8,6 +8,9 @@ from sidedoc.models import Block, SectionProperties, Style, Manifest
 from sidedoc.utils import compute_file_hash, get_iso_timestamp
 from sidedoc import __version__
 
+# Known limitation: multi-line footnote definitions not supported.
+# Only single-line [^N]: text definitions are captured; indented continuation
+# lines (per Markdown spec) are silently dropped.
 _FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^(\d+)\]:\s*(.+)$', re.MULTILINE)
 
 

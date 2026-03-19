@@ -585,8 +585,10 @@ class TestFootnoteSync:
 
         # Verify footnotes.xml has no user footnotes (only separator elements if present)
         footnotes_rt = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes"
+        has_footnotes_part = False
         for rel in rebuilt.part.rels.values():
             if rel.reltype == footnotes_rt:
+                has_footnotes_part = True
                 from lxml import etree as et
                 root = et.fromstring(rel.target_part.blob)
                 ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
@@ -595,7 +597,11 @@ class TestFootnoteSync:
                     if fn.get(et.QName(ns["w"], "type")) is None  # separator notes have a type attr
                 ]
                 assert len(user_notes) == 0, f"Expected no user footnotes, found {len(user_notes)}"
-                break  # found the part, assertion ran
+                break
+
+        if not has_footnotes_part:
+            # Part was removed entirely — also a valid outcome
+            pass
 
 
 # ============================================================================
