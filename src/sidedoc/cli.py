@@ -24,7 +24,6 @@ from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
 from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
 from sidedoc.store import SidedocStore, detect_sidedoc_format
 from sidedoc.sync import (
-    generate_updated_docx,
     match_blocks,
     sync_sidedoc_to_docx,
     update_sidedoc_metadata,
@@ -115,16 +114,6 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
         for block_data in old_structure.get("blocks", [])
     ]
 
-
-def _build_output_docx(new_blocks: list[Block], old_structure: dict, styles_data: dict, output: str) -> None:
-    """Build output docx file from new blocks with formatting preserved."""
-    from sidedoc.sync import _deserialize_sections
-
-    old_blocks = _convert_structure_to_blocks(old_structure)
-    matches = match_blocks(old_blocks, new_blocks)
-    sections = _deserialize_sections(old_structure)
-    generate_updated_docx(new_blocks, matches, styles_data, output, sections=sections)
-    click.echo(f"✓ Built updated document: {output}")
 
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))

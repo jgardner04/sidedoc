@@ -127,6 +127,30 @@ def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
     return {new_block.id: old_id for old_id, new_block in matches.items()}
 
 
+def generate_updated_docx(
+    new_blocks: list[Block],
+    matches: dict[str, Block],
+    styles: dict[str, Any],
+    output_path: str,
+    sections: list[SectionProperties] | None = None,
+) -> None:
+    """Generate an updated docx file from new blocks.
+
+    Delegates to create_docx_from_blocks with style ID remapping so matched
+    blocks preserve their formatting. Handles images, hyperlinks, CriticMarkup,
+    inline formatting, and table blocks.
+
+    Args:
+        new_blocks: List of new Block objects from edited content.md
+        matches: Dictionary mapping old block IDs to new blocks
+        styles: Style information dictionary with block_styles
+        output_path: Path where docx should be saved
+        sections: Optional list of SectionProperties for column layouts
+    """
+    new_to_old = _create_reverse_mapping(matches)
+    doc = create_docx_from_blocks(new_blocks, styles, style_id_remap=new_to_old, sections=sections)
+    doc.save(output_path)
+
 
 def _deserialize_sections(structure_data: dict) -> list[SectionProperties] | None:
     """Deserialize sections from structure.json data.
@@ -159,31 +183,6 @@ def _deserialize_sections(structure_data: dict) -> list[SectionProperties] | Non
     return sections
 
 
-def generate_updated_docx(
-    new_blocks: list[Block],
-    matches: dict[str, Block],
-    styles: dict[str, Any],
-    output_path: str,
-    sections: list[SectionProperties] | None = None,
-) -> None:
-    """Generate an updated docx file from new blocks.
-
-    Delegates to create_docx_from_blocks with style ID remapping so matched
-    blocks preserve their formatting. Handles images, hyperlinks, CriticMarkup,
-    inline formatting, and table blocks.
-
-    Args:
-        new_blocks: List of new Block objects from edited content.md
-        matches: Dictionary mapping old block IDs to new blocks
-        styles: Style information dictionary with block_styles
-        output_path: Path where docx should be saved
-        sections: Optional list of SectionProperties for column layouts
-    """
-    new_to_old = _create_reverse_mapping(matches)
-    doc = create_docx_from_blocks(new_blocks, styles, style_id_remap=new_to_old, sections=sections)
-    doc.save(output_path)
-
-
 def update_sidedoc_metadata(
     sidedoc_path: str,
     new_blocks: list[Block],
@@ -214,15 +213,16 @@ def update_sidedoc_metadata(
 
 
 def _build_structure_data(new_blocks: list[Block], existing_structure: dict | None = None) -> dict:
-    """Build structure.json data from blocks, preserving existing sections."""
+    """Build structure.json data from blocks, preserving all non-block metadata."""
     from sidedoc.package import block_to_structure_dict
 
     result: dict = {
         "blocks": [block_to_structure_dict(block) for block in new_blocks]
     }
-    # Preserve section properties from existing structure.json
-    if existing_structure and "sections" in existing_structure:
-        result["sections"] = existing_structure["sections"]
+    if existing_structure:
+        for key, value in existing_structure.items():
+            if key != "blocks":
+                result[key] = value
     return result
 
 
@@ -330,6 +330,8 @@ def sync_sidedoc_to_docx(
         content_md = store.read_text("content.md")
         styles_data = store.read_json("styles.json")
         structure_data = store.read_json("structure.json") if store.has_file("structure.json") else {}
+        assets_dir = store.assets_dir if store.list_assets() else None
+        hf_sections_data = structure_data.get("hf_sections", [])
 
     blocks = parse_markdown_to_blocks(content_md)
     sections = _deserialize_sections(structure_data)
@@ -343,4 +345,9 @@ def sync_sidedoc_to_docx(
         content_md=content_md,
         sections=sections,
     )
+
+    if hf_sections_data:
+        from sidedoc.reconstruct import apply_sections_to_document
+        apply_sections_to_document(doc, hf_sections_data, assets_dir)
+
     doc.save(output_path)

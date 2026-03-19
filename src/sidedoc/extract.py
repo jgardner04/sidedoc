@@ -1902,6 +1902,8 @@ def _extract_header_footer_paragraphs(
                 })
                 image_counter += 1
                 continue
+            # Prefix prevents filename collision with body images (which use
+            # image1.png, image2.png, ...) regardless of counter values.
             hf_filename = f"hf_{image_filename}"
             image_data[hf_filename] = image_bytes
             paragraphs.append({

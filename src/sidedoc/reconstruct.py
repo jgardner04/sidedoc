@@ -1685,6 +1685,7 @@ def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_d
                     run = para.add_run()
                     run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                     continue
+            click.echo(f"Warning: header/footer image not found: {image_filename}", err=True)
             para.text = f"[Image: {para_dict.get('content', '')}]"
         else:
             para.text = para_dict.get("content", "")

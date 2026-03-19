@@ -727,3 +727,82 @@ class TestConditionalSetdefault:
             assert "footer_even" in section_dict
         finally:
             Path(docx_path).unlink()
+
+
+# ============================================================
+# Sync round-trip tests
+# ============================================================
+
+
+class TestSyncPreservesHeadersFooters:
+    """Test that sync preserves headers/footers in structure.json and rebuilt docx."""
+
+    def test_sync_preserves_hf_sections_in_structure_json(self):
+        """Extract → trivial edit → sync → hf_sections still in structure.json."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            docx_path = _create_docx_with_headers_footers()
+            Path(docx_path).rename("test.docx")
+
+            result = runner.invoke(main, ["extract", "test.docx"])
+            assert result.exit_code == 0
+
+            # Verify hf_sections present before sync
+            structure = json.loads(Path("test.sidedoc/structure.json").read_text())
+            assert "hf_sections" in structure
+
+            # Trivial edit: append a paragraph
+            content_path = Path("test.sidedoc/content.md")
+            content = content_path.read_text()
+            content_path.write_text(content + "\nNew paragraph added by sync test.\n")
+
+            # Run sync
+            result = runner.invoke(main, ["sync", "test.sidedoc"])
+            assert result.exit_code == 0
+
+            # Verify hf_sections preserved after sync
+            structure = json.loads(Path("test.sidedoc/structure.json").read_text())
+            assert "hf_sections" in structure
+            hf_sections = structure["hf_sections"]
+            assert len(hf_sections) >= 1
+            assert hf_sections[0]["header_default"][0]["content"] == "Default Header"
+            assert hf_sections[0]["footer_default"][0]["content"] == "Default Footer"
+
+    def test_sync_to_docx_preserves_headers_footers(self):
+        """Extract → sync -o output.docx → rebuilt doc has headers/footers."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            docx_path = _create_docx_with_headers_footers()
+            Path(docx_path).rename("test.docx")
+
+            result = runner.invoke(main, ["extract", "test.docx"])
+            assert result.exit_code == 0
+
+            # Run sync with output docx
+            result = runner.invoke(main, ["sync", "test.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0
+
+            rebuilt = Document("synced.docx")
+            section = rebuilt.sections[0]
+            assert section.header.paragraphs[0].text == "Default Header"
+            assert section.footer.paragraphs[0].text == "Default Footer"
+
+    def test_sync_to_docx_preserves_header_images(self):
+        """Extract doc with header image → sync -o → image in rebuilt header."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            docx_path = _create_docx_with_header_image()
+            Path(docx_path).rename("test.docx")
+
+            result = runner.invoke(main, ["extract", "test.docx"])
+            assert result.exit_code == 0
+
+            # Run sync with output docx
+            result = runner.invoke(main, ["sync", "test.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0
+
+            rebuilt = Document("synced.docx")
+            header = rebuilt.sections[0].header
+            from docx.oxml.ns import qn
+            drawings = header._element.findall(f".//{qn('w:drawing')}")
+            assert len(drawings) >= 1
