@@ -8,6 +8,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from PIL import Image
 from sidedoc.models import Block, Style, TrackChange
+from docx.enum.section import WD_ORIENT
 from sidedoc.constants import (
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
@@ -1351,10 +1352,23 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
 
 
 def _extract_header_footer_paragraphs(
-    header_footer, doc_part, image_data, image_counter,
-):
-    """Extract paragraphs from a header or footer element."""
-    paragraphs = []
+    header_footer: Any, image_data: dict[str, bytes], image_counter: int,
+) -> tuple[list[dict], dict[str, bytes], int]:
+    """Extract paragraphs from a header or footer element.
+
+    Skips extraction if the header/footer is linked to the previous section.
+    Images are extracted using the header/footer's own part reference.
+
+    Args:
+        header_footer: A python-docx header or footer object.
+        image_data: Mutable dict mapping image filenames to their bytes.
+        image_counter: Current image counter for generating unique filenames.
+
+    Returns:
+        Tuple of (paragraphs, image_data, image_counter) where paragraphs is a
+        list of dicts with type/content/image_path keys.
+    """
+    paragraphs: list[dict] = []
     if header_footer.is_linked_to_previous:
         return paragraphs, image_data, image_counter
     for para in header_footer.paragraphs:
@@ -1363,12 +1377,20 @@ def _extract_header_footer_paragraphs(
             para, header_footer.part, image_counter
         )
         if image_info:
-            filename, alt_text, img_bytes, extension = image_info
-            image_data[filename] = img_bytes
+            image_filename, image_extension, image_bytes, error_message = image_info
+            if error_message:
+                paragraphs.append({
+                    "type": "paragraph",
+                    "content": f"[Image {image_counter} skipped: {error_message}]",
+                })
+                image_counter += 1
+                continue
+            hf_filename = f"hf_{image_filename}"
+            image_data[hf_filename] = image_bytes
             paragraphs.append({
                 "type": "image",
-                "content": alt_text or "",
-                "image_path": f"assets/{filename}",
+                "content": "",
+                "image_path": f"assets/{hf_filename}",
             })
             image_counter += 1
             continue
@@ -1378,14 +1400,19 @@ def _extract_header_footer_paragraphs(
     return paragraphs, image_data, image_counter
 
 
-def extract_sections(docx_path):
-    """Extract section metadata (headers, footers, page setup) from a Word document."""
+def extract_sections(docx_path: str) -> tuple[list[dict], dict[str, bytes]]:
+    """Extract section metadata (headers, footers, page setup) from a Word document.
+
+    Returns:
+        Tuple of (sections_data, image_data) where image_data maps filenames to bytes.
+    """
     doc = Document(docx_path)
     sections_data = []
-    image_data = {}
-    image_counter = 1000
+    image_data: dict[str, bytes] = {}
+    image_counter = 1
+    odd_and_even = doc.settings.odd_and_even_pages_header_footer
     for section in doc.sections:
-        section_dict = {}
+        section_dict: dict[str, Any] = {}
         variants = [
             ("header_default", section.header),
             ("footer_default", section.footer),
@@ -1395,23 +1422,28 @@ def extract_sections(docx_path):
                 ("header_first", section.first_page_header),
                 ("footer_first", section.first_page_footer),
             ])
-        even_header = section.even_page_header
-        if not even_header.is_linked_to_previous:
-            variants.append(("header_even", even_header))
-        even_footer = section.even_page_footer
-        if not even_footer.is_linked_to_previous:
-            variants.append(("footer_even", even_footer))
+        if odd_and_even:
+            even_header = section.even_page_header
+            if not even_header.is_linked_to_previous:
+                variants.append(("header_even", even_header))
+            even_footer = section.even_page_footer
+            if not even_footer.is_linked_to_previous:
+                variants.append(("footer_even", even_footer))
         for key, hf in variants:
             paras, image_data, image_counter = _extract_header_footer_paragraphs(
-                hf, doc.part, image_data, image_counter
+                hf, image_data, image_counter
             )
             section_dict[key] = paras
-        for key in ("header_default", "footer_default",
-                     "header_first", "footer_first",
-                     "header_even", "footer_even"):
-            section_dict.setdefault(key, [])
+        section_dict.setdefault("header_default", [])
+        section_dict.setdefault("footer_default", [])
+        if section.different_first_page_header_footer:
+            section_dict.setdefault("header_first", [])
+            section_dict.setdefault("footer_first", [])
+        if odd_and_even:
+            section_dict.setdefault("header_even", [])
+            section_dict.setdefault("footer_even", [])
         orientation_val = section.orientation
-        orientation_str = "landscape" if orientation_val == 1 else "portrait"
+        orientation_str = "landscape" if orientation_val == WD_ORIENT.LANDSCAPE else "portrait"
         section_dict["page_setup"] = {
             "orientation": orientation_str,
             "top_margin": section.top_margin,
@@ -1423,31 +1455,10 @@ def extract_sections(docx_path):
             "header_distance": section.header_distance,
             "footer_distance": section.footer_distance,
             "different_first_page": section.different_first_page_header_footer,
+            "odd_and_even_pages": odd_and_even,
         }
         sections_data.append(section_dict)
-    return sections_data
-
-
-def extract_section_image_data(docx_path):
-    """Extract image data from headers/footers."""
-    doc = Document(docx_path)
-    image_data = {}
-    image_counter = 1000
-    for section in doc.sections:
-        hf_objects = [section.header, section.footer]
-        if section.different_first_page_header_footer:
-            hf_objects.extend([section.first_page_header, section.first_page_footer])
-        even_header = section.even_page_header
-        if not even_header.is_linked_to_previous:
-            hf_objects.append(even_header)
-        even_footer = section.even_page_footer
-        if not even_footer.is_linked_to_previous:
-            hf_objects.append(even_footer)
-        for hf in hf_objects:
-            _, image_data, image_counter = _extract_header_footer_paragraphs(
-                hf, doc.part, image_data, image_counter
-            )
-    return image_data
+    return sections_data, image_data
 
 
 def blocks_to_markdown(blocks: list[Block]) -> str:

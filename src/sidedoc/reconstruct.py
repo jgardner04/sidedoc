@@ -8,6 +8,7 @@ from urllib.parse import unquote
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
+from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import click
@@ -1219,8 +1220,12 @@ def create_docx_from_blocks(
     return doc
 
 
-def _populate_header_footer(header_footer, paragraphs, assets_dir=None):
-    """Populate a header or footer with paragraph content."""
+def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_dir: Optional[Path] = None) -> None:
+    """Populate a header or footer with paragraph content.
+
+    Plain text only — inline formatting (bold, italic, hyperlinks) is not
+    currently preserved in header/footer content.
+    """
     if not paragraphs:
         return
     header_footer.is_linked_to_previous = False
@@ -1242,12 +1247,13 @@ def _populate_header_footer(header_footer, paragraphs, assets_dir=None):
             para.text = para_dict.get("content", "")
 
 
-def apply_sections_to_document(doc, sections_data, assets_dir=None):
+def apply_sections_to_document(doc: DocumentType, sections_data: list[dict], assets_dir: Optional[Path] = None) -> None:
     """Apply section metadata (headers, footers, page setup) to a document."""
-    from docx.enum.section import WD_ORIENT
 
     if not sections_data:
         return
+    if any(s.get("page_setup", {}).get("odd_and_even_pages") for s in sections_data):
+        doc.settings.odd_and_even_pages_header_footer = True
     for section_idx, section_meta in enumerate(sections_data):
         if section_idx < len(doc.sections):
             section = doc.sections[section_idx]
@@ -1267,26 +1273,18 @@ def apply_sections_to_document(doc, sections_data, assets_dir=None):
                     setattr(section, attr, value)
             if page_setup.get("different_first_page", False):
                 section.different_first_page_header_footer = True
-        header_default = section_meta.get("header_default", [])
-        if header_default:
-            _populate_header_footer(section.header, header_default, assets_dir)
-        header_first = section_meta.get("header_first", [])
-        if header_first:
-            section.different_first_page_header_footer = True
-            _populate_header_footer(section.first_page_header, header_first, assets_dir)
-        header_even = section_meta.get("header_even", [])
-        if header_even:
-            _populate_header_footer(section.even_page_header, header_even, assets_dir)
-        footer_default = section_meta.get("footer_default", [])
-        if footer_default:
-            _populate_header_footer(section.footer, footer_default, assets_dir)
-        footer_first = section_meta.get("footer_first", [])
-        if footer_first:
-            section.different_first_page_header_footer = True
-            _populate_header_footer(section.first_page_footer, footer_first, assets_dir)
-        footer_even = section_meta.get("footer_even", [])
-        if footer_even:
-            _populate_header_footer(section.even_page_footer, footer_even, assets_dir)
+        variants = [
+            ("header_default", section.header),
+            ("header_first", section.first_page_header),
+            ("header_even", section.even_page_header),
+            ("footer_default", section.footer),
+            ("footer_first", section.first_page_footer),
+            ("footer_even", section.even_page_footer),
+        ]
+        for key, target in variants:
+            content = section_meta.get(key, [])
+            if content:
+                _populate_header_footer(target, content, assets_dir)
 
 
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:

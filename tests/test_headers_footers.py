@@ -1,13 +1,19 @@
 """Test headers and footers extraction, storage, and reconstruction."""
 
+import io
 import json
 import tempfile
+import zipfile
 from pathlib import Path
+
+from click.testing import CliRunner
 from docx import Document
-from docx.shared import Emu, Inches
+from docx.shared import Inches
 from docx.enum.section import WD_ORIENT
-from sidedoc.extract import extract_blocks, extract_styles, extract_sections
-from sidedoc.models import Block
+from PIL import Image as PILImage
+
+from sidedoc.cli import main
+from sidedoc.extract import extract_blocks, extract_sections
 
 
 def _create_docx_with_headers_footers() -> str:
@@ -134,7 +140,7 @@ class TestExtractSections:
         """extract_sections returns a list of section dicts."""
         docx_path = _create_docx_with_headers_footers()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             assert isinstance(sections, list)
             assert len(sections) >= 1
         finally:
@@ -144,7 +150,7 @@ class TestExtractSections:
         """Default header text is extracted."""
         docx_path = _create_docx_with_headers_footers()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             assert "header_default" in section
             paragraphs = section["header_default"]
@@ -157,7 +163,7 @@ class TestExtractSections:
         """Default footer text is extracted."""
         docx_path = _create_docx_with_headers_footers()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             assert "footer_default" in section
             paragraphs = section["footer_default"]
@@ -170,7 +176,7 @@ class TestExtractSections:
         """First page header variant is extracted."""
         docx_path = _create_docx_with_first_page_variant()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             assert "header_first" in section
             assert section["header_first"][0]["content"] == "First Page Header"
@@ -181,7 +187,7 @@ class TestExtractSections:
         """First page footer variant is extracted."""
         docx_path = _create_docx_with_first_page_variant()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             assert "footer_first" in section
             assert section["footer_first"][0]["content"] == "First Page Footer"
@@ -192,7 +198,7 @@ class TestExtractSections:
         """Multiple sections with different headers are extracted."""
         docx_path = _create_docx_with_multi_section()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             assert len(sections) == 2
             assert sections[0]["header_default"][0]["content"] == "Section 1 Header"
             assert sections[1]["header_default"][0]["content"] == "Section 2 Header"
@@ -205,7 +211,7 @@ class TestExtractSections:
         """Section properties (margins, orientation) are extracted."""
         docx_path = _create_docx_with_section_properties()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             assert "page_setup" in section
             setup = section["page_setup"]
@@ -225,7 +231,7 @@ class TestExtractSections:
         doc.save(temp.name)
         temp.close()
         try:
-            sections = extract_sections(temp.name)
+            sections, _ = extract_sections(temp.name)
             section = sections[0]
             assert section["header_default"] == []
             assert section["footer_default"] == []
@@ -260,7 +266,7 @@ class TestExtractSections:
         doc.save(temp.name)
         temp.close()
         try:
-            sections = extract_sections(temp.name)
+            sections, _ = extract_sections(temp.name)
             paragraphs = sections[0]["header_default"]
             assert len(paragraphs) == 2
             assert paragraphs[0]["content"] == "Line 1"
@@ -272,7 +278,7 @@ class TestExtractSections:
         """Header paragraphs include type field."""
         docx_path = _create_docx_with_headers_footers()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             para = sections[0]["header_default"][0]
             assert para["type"] == "paragraph"
         finally:
@@ -289,9 +295,6 @@ class TestSectionMetadataPackaging:
 
     def test_sections_in_structure_json(self):
         """Section metadata appears in structure.json."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_headers_footers()
@@ -308,9 +311,6 @@ class TestSectionMetadataPackaging:
 
     def test_sections_in_sdoc_zip(self):
         """Section metadata in structure.json within .sdoc ZIP."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_headers_footers()
@@ -319,7 +319,6 @@ class TestSectionMetadataPackaging:
             result = runner.invoke(main, ["extract", "test.docx", "--pack"])
             assert result.exit_code == 0
 
-            import zipfile
             with zipfile.ZipFile("test.sdoc", "r") as zf:
                 structure = json.loads(zf.read("structure.json"))
             assert "sections" in structure
@@ -335,15 +334,13 @@ class TestHeaderFooterReconstruction:
 
     def test_roundtrip_default_header_footer(self):
         """Extract -> build preserves default header and footer."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_headers_footers()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -356,15 +353,13 @@ class TestHeaderFooterReconstruction:
 
     def test_roundtrip_first_page_variant(self):
         """Extract -> build preserves first page header/footer variants."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_first_page_variant()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -378,15 +373,13 @@ class TestHeaderFooterReconstruction:
 
     def test_roundtrip_multi_section(self):
         """Extract -> build preserves headers across multiple sections."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_multi_section()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -397,15 +390,13 @@ class TestHeaderFooterReconstruction:
 
     def test_roundtrip_section_properties(self):
         """Extract -> build preserves section properties."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_section_properties()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -419,15 +410,13 @@ class TestHeaderFooterReconstruction:
 
     def test_roundtrip_body_content_preserved(self):
         """Extract -> build preserves body content alongside headers/footers."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
             docx_path = _create_docx_with_headers_footers()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -442,40 +431,38 @@ class TestHeaderFooterReconstruction:
 # ============================================================
 
 
+def _create_docx_with_header_image() -> str:
+    """Create docx with an image in the header (logo)."""
+    doc = Document()
+    section = doc.sections[0]
+
+    img = PILImage.new("RGB", (50, 50), color="red")
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="PNG")
+    img_bytes.seek(0)
+
+    header = section.header
+    header.is_linked_to_previous = False
+    paragraph = header.paragraphs[0]
+    run = paragraph.add_run()
+    run.add_picture(img_bytes, width=Inches(0.5))
+
+    doc.add_paragraph("Body with header image.")
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp.name)
+    temp.close()
+    return temp.name
+
+
 class TestHeaderFooterImages:
     """Test images in headers/footers."""
 
-    def _create_docx_with_header_image(self) -> str:
-        """Create docx with an image in the header (logo)."""
-        from PIL import Image as PILImage
-        import io
-
-        doc = Document()
-        section = doc.sections[0]
-
-        img = PILImage.new("RGB", (50, 50), color="red")
-        img_bytes = io.BytesIO()
-        img.save(img_bytes, format="PNG")
-        img_bytes.seek(0)
-
-        header = section.header
-        header.is_linked_to_previous = False
-        paragraph = header.paragraphs[0]
-        run = paragraph.add_run()
-        run.add_picture(img_bytes, width=Inches(0.5))
-
-        doc.add_paragraph("Body with header image.")
-
-        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-        doc.save(temp.name)
-        temp.close()
-        return temp.name
-
     def test_header_image_extracted(self):
         """Images in headers are extracted to assets."""
-        docx_path = self._create_docx_with_header_image()
+        docx_path = _create_docx_with_header_image()
         try:
-            sections = extract_sections(docx_path)
+            sections, _ = extract_sections(docx_path)
             section = sections[0]
             header_paras = section["header_default"]
             has_image = any(
@@ -486,17 +473,68 @@ class TestHeaderFooterImages:
         finally:
             Path(docx_path).unlink()
 
+    def test_header_image_content_is_empty_string(self):
+        """Image paragraphs in headers should have empty string content, not file extension."""
+        docx_path = _create_docx_with_header_image()
+        try:
+            sections, _ = extract_sections(docx_path)
+            section = sections[0]
+            header_paras = section["header_default"]
+            image_paras = [p for p in header_paras if p.get("type") == "image"]
+            assert len(image_paras) >= 1
+            assert image_paras[0]["content"] == ""
+        finally:
+            Path(docx_path).unlink()
+
+    def test_extract_sections_returns_image_data(self):
+        """extract_sections returns a (list, dict) tuple with image data."""
+        docx_path = _create_docx_with_header_image()
+        try:
+            sections, image_data = extract_sections(docx_path)
+            assert isinstance(sections, list)
+            assert isinstance(image_data, dict)
+            assert len(image_data) > 0
+        finally:
+            Path(docx_path).unlink()
+
+    def test_header_image_has_hf_prefix(self):
+        """Header/footer image filenames start with hf_ prefix."""
+        docx_path = _create_docx_with_header_image()
+        try:
+            sections, image_data = extract_sections(docx_path)
+            header_paras = sections[0]["header_default"]
+            image_paras = [p for p in header_paras if p.get("type") == "image"]
+            assert len(image_paras) >= 1
+            image_path = image_paras[0]["image_path"]
+            filename = image_path.split("/")[-1]
+            assert filename.startswith("hf_"), f"Expected hf_ prefix, got {filename}"
+            # Also check image_data keys
+            for key in image_data:
+                assert key.startswith("hf_"), f"Expected hf_ prefix in image_data key, got {key}"
+        finally:
+            Path(docx_path).unlink()
+
+    def test_no_image_key_collision_with_body_images(self):
+        """Header/footer and body images cannot have colliding filenames."""
+        docx_path = _create_docx_with_header_image()
+        try:
+            _, body_image_data = extract_blocks(docx_path)
+            sections, hf_image_data = extract_sections(docx_path)
+            # Verify no key overlap
+            overlap = set(body_image_data.keys()) & set(hf_image_data.keys())
+            assert len(overlap) == 0, f"Image key collision: {overlap}"
+        finally:
+            Path(docx_path).unlink()
+
     def test_roundtrip_header_image(self):
         """Extract -> build preserves images in headers."""
-        from click.testing import CliRunner
-        from sidedoc.cli import main
-
         runner = CliRunner()
         with runner.isolated_filesystem():
-            docx_path = self._create_docx_with_header_image()
+            docx_path = _create_docx_with_header_image()
             Path(docx_path).rename("test.docx")
 
-            runner.invoke(main, ["extract", "test.docx"])
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
             result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -505,3 +543,187 @@ class TestHeaderFooterImages:
             from docx.oxml.ns import qn
             drawings = header._element.findall(f".//{qn('w:drawing')}")
             assert len(drawings) >= 1
+
+
+# ============================================================
+# Even-page header/footer tests
+# ============================================================
+
+
+def _create_docx_with_even_page_variant() -> str:
+    """Create a test docx with even-page headers/footers."""
+    doc = Document()
+    section = doc.sections[0]
+
+    doc.settings.odd_and_even_pages_header_footer = True
+
+    header = section.header
+    header.is_linked_to_previous = False
+    header.paragraphs[0].text = "Default Header"
+
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    footer.paragraphs[0].text = "Default Footer"
+
+    even_header = section.even_page_header
+    even_header.is_linked_to_previous = False
+    even_header.paragraphs[0].text = "Even Page Header"
+
+    even_footer = section.even_page_footer
+    even_footer.is_linked_to_previous = False
+    even_footer.paragraphs[0].text = "Even Page Footer"
+
+    doc.add_paragraph("Body content.")
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp.name)
+    temp.close()
+    return temp.name
+
+
+class TestEvenPageHeaderFooter:
+    """Test even-page header/footer extraction and reconstruction."""
+
+    def test_extract_even_page_header(self):
+        """Even page header variant is extracted."""
+        docx_path = _create_docx_with_even_page_variant()
+        try:
+            sections, _ = extract_sections(docx_path)
+            section = sections[0]
+            assert "header_even" in section
+            assert section["header_even"][0]["content"] == "Even Page Header"
+        finally:
+            Path(docx_path).unlink()
+
+    def test_extract_even_page_footer(self):
+        """Even page footer variant is extracted."""
+        docx_path = _create_docx_with_even_page_variant()
+        try:
+            sections, _ = extract_sections(docx_path)
+            section = sections[0]
+            assert "footer_even" in section
+            assert section["footer_even"][0]["content"] == "Even Page Footer"
+        finally:
+            Path(docx_path).unlink()
+
+    def test_roundtrip_even_page_variant(self):
+        """Extract -> build preserves even page header/footer variants."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            docx_path = _create_docx_with_even_page_variant()
+            Path(docx_path).rename("test.docx")
+
+            extract_result = runner.invoke(main, ["extract", "test.docx"])
+            assert extract_result.exit_code == 0
+            result = runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0
+
+            rebuilt = Document("rebuilt.docx")
+            section = rebuilt.sections[0]
+            assert section.even_page_header.paragraphs[0].text == "Even Page Header"
+            assert section.even_page_footer.paragraphs[0].text == "Even Page Footer"
+            assert section.header.paragraphs[0].text == "Default Header"
+            assert section.footer.paragraphs[0].text == "Default Footer"
+
+    def test_odd_and_even_pages_stored_in_page_setup(self):
+        """extract_sections stores odd_and_even_pages in page_setup."""
+        docx_path = _create_docx_with_even_page_variant()
+        try:
+            sections, _ = extract_sections(docx_path)
+            setup = sections[0]["page_setup"]
+            assert "odd_and_even_pages" in setup
+            assert setup["odd_and_even_pages"] is True
+        finally:
+            Path(docx_path).unlink()
+
+    def test_roundtrip_preserves_odd_and_even_pages_setting(self):
+        """Extract -> build preserves the odd_and_even_pages document setting."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            docx_path = _create_docx_with_even_page_variant()
+            Path(docx_path).rename("test.docx")
+
+            runner.invoke(main, ["extract", "test.docx"])
+            runner.invoke(main, ["build", "test.sidedoc", "-o", "rebuilt.docx"])
+
+            rebuilt = Document("rebuilt.docx")
+            assert rebuilt.settings.odd_and_even_pages_header_footer is True
+
+    def test_even_page_not_extracted_when_setting_disabled(self):
+        """Even-page content is NOT extracted when odd_and_even_pages is False."""
+        doc = Document()
+        section = doc.sections[0]
+        # Do NOT set odd_and_even_pages_header_footer
+        header = section.header
+        header.is_linked_to_previous = False
+        header.paragraphs[0].text = "Default Header"
+        even_header = section.even_page_header
+        even_header.is_linked_to_previous = False
+        even_header.paragraphs[0].text = "Even Page Header"
+        doc.add_paragraph("Body.")
+        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(temp.name)
+        temp.close()
+        try:
+            sections, _ = extract_sections(temp.name)
+            section_dict = sections[0]
+            assert "header_even" not in section_dict
+        finally:
+            Path(temp.name).unlink()
+
+
+# ============================================================
+# Conditional setdefault tests
+# ============================================================
+
+
+class TestConditionalSetdefault:
+    """Test that only relevant header/footer keys are defaulted."""
+
+    def test_simple_doc_no_first_or_even_keys(self):
+        """Simple doc (no first-page, no even-page) omits those keys."""
+        doc = Document()
+        section = doc.sections[0]
+        header = section.header
+        header.is_linked_to_previous = False
+        header.paragraphs[0].text = "Header"
+        footer = section.footer
+        footer.is_linked_to_previous = False
+        footer.paragraphs[0].text = "Footer"
+        doc.add_paragraph("Body.")
+        temp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(temp.name)
+        temp.close()
+        try:
+            sections, _ = extract_sections(temp.name)
+            section_dict = sections[0]
+            assert "header_default" in section_dict
+            assert "footer_default" in section_dict
+            assert "header_first" not in section_dict
+            assert "footer_first" not in section_dict
+            assert "header_even" not in section_dict
+            assert "footer_even" not in section_dict
+        finally:
+            Path(temp.name).unlink()
+
+    def test_first_page_doc_has_first_keys(self):
+        """Doc with different_first_page has first-page keys defaulted."""
+        docx_path = _create_docx_with_first_page_variant()
+        try:
+            sections, _ = extract_sections(docx_path)
+            section_dict = sections[0]
+            assert "header_first" in section_dict
+            assert "footer_first" in section_dict
+        finally:
+            Path(docx_path).unlink()
+
+    def test_even_page_doc_has_even_keys(self):
+        """Doc with odd_and_even_pages has even-page keys defaulted."""
+        docx_path = _create_docx_with_even_page_variant()
+        try:
+            sections, _ = extract_sections(docx_path)
+            section_dict = sections[0]
+            assert "header_even" in section_dict
+            assert "footer_even" in section_dict
+        finally:
+            Path(docx_path).unlink()
