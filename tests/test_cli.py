@@ -4,6 +4,7 @@ import subprocess
 import sys
 import pytest
 from click.testing import CliRunner
+from sidedoc import __version__
 from sidedoc.cli import main, extract, build, sync, validate, info, unpack, pack, diff
 
 
@@ -20,7 +21,7 @@ def test_cli_version_flag():
     runner = CliRunner()
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0" in result.output
+    assert __version__ in result.output
 
 
 def test_cli_help_shows_commands():
@@ -105,16 +106,15 @@ def test_diff_command_exists():
     assert "diff" in result.output.lower()
 
 
-@pytest.mark.xfail(reason="sidedoc not on PATH in dev; use 'python -m sidedoc' or CliRunner instead")
 def test_cli_executable_installed():
-    """Test that sidedoc command is installed and executable."""
+    """Test that sidedoc is importable and callable as a module."""
     result = subprocess.run(
-        ["sidedoc", "--version"],
+        [sys.executable, "-m", "sidedoc", "--version"],
         capture_output=True,
         text=True
     )
     assert result.returncode == 0
-    assert "0.2.0" in result.stdout or "0.2.0" in result.stderr
+    assert __version__ in result.stdout or __version__ in result.stderr
 
 
 def test_convert_structure_to_blocks_preserves_table_metadata():
