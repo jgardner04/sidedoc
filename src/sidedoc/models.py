@@ -40,7 +40,7 @@ class Block:
     """
 
     id: str
-    type: str  # "heading", "paragraph", "list", "image", "table"
+    type: str  # "heading", "paragraph", "list", "image", "table", "textbox", "chart"
     content: str
     docx_paragraph_index: int
     content_start: int
@@ -53,6 +53,7 @@ class Block:
     track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
     footnote_references: Optional[list[dict[str, Any]]] = None  # Footnote/endnote references in this block
     text_box_metadata: Optional[dict[str, Any]] = None  # For text boxes: anchor_type, width, height, position, border, fill, drawing_xml
+    chart_metadata: Optional[dict[str, Any]] = None  # For charts: chart type, data series, title (populated in JON-107)
 
 
 @dataclass

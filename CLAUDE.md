@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. The canonical format is a `.sidedoc/` directory containing markdown content and formatting metadata. A `.sdoc` ZIP archive is used for distribution and sharing.
 
-**Status:** MVP complete with hyperlink, track changes, table, and headers/footers support (extraction, reconstruction).
+**Status:** MVP complete with hyperlink, track changes, table, headers/footers, and chart support (extraction, reconstruction).
 
 ## Development Philosophy
 
@@ -93,7 +93,7 @@ src/sidedoc/
 ├── __init__.py
 ├── cli.py              # CLI entry points (click), includes validate command
 ├── constants.py        # Shared constants (extensions, limits, patterns)
-├── extract.py          # docx → sidedoc (paragraphs, tables, images, headers/footers)
+├── extract.py          # docx → sidedoc (paragraphs, tables, images, charts, headers/footers)
 ├── models.py           # Block, Style, Manifest, TrackChange dataclasses
 ├── package.py          # Archive/directory creation helpers, block serialization
 ├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling, header/footer reconstruction
@@ -118,12 +118,24 @@ src/sidedoc/
 | `image` | `![alt](assets/image.png)` | |
 | `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
 | `hyperlink` | `[text](url)` | Inline within other blocks |
+| `chart` | `![Chart: Title](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
 
 ### Headers and Footers
 
 Headers and footers are stored as section metadata in `structure.json` (not as blocks in `content.md`). Each section can have up to six variants: `header_default`, `header_first`, `header_even`, `footer_default`, `footer_first`, `footer_even`.
 
 **Limitation:** Header/footer content is extracted and reconstructed as **plain text only**. Inline formatting (bold, italic, hyperlinks) within header/footer paragraphs is silently dropped. Images in headers/footers are extracted to `assets/` and restored on build.
+
+### Chart Support
+
+Charts are extracted using their cached PNG/EMF fallback image from the `mc:AlternateContent` OOXML wrapper. The live chart XML is not round-tripped in this phase.
+
+- **Detection:** `extract_chart_from_paragraph()` looks for `mc:AlternateContent` with `mc:Choice Requires="c"` containing `c:chart`, then extracts the blip from `mc:Fallback`. Also handles flat `w:drawing` charts (no `mc:AlternateContent`).
+- **Fallback behavior:** Charts with no cached image produce `[Chart: no preview available]` as a `paragraph` block (not a `chart` block).
+- **EMF/WMF:** These metafile formats bypass PIL validation in `validate_image()` since PIL cannot open them.
+- **Ordering rule:** Chart detection must run before image extraction in `_process_paragraph()`. Chart drawings contain both `c:chart` and an `a:blip` — running image extraction first silently consumes the chart as a regular image.
+- **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
+- **`chart_metadata`:** Field on `Block` reserved for JON-107 (chart type, series, labels). Always `None` currently.
 
 ### Table Support (Phase 2)
 

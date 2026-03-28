@@ -27,6 +27,8 @@ RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relati
 DRAWINGML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+CHART_NS = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -109,6 +111,12 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
         max_mb = MAX_IMAGE_SIZE / (1024 * 1024)
         return False, f"Image exceeds maximum size ({size_mb:.1f}MB > {max_mb:.0f}MB)"
 
+    # Pass through EMF/WMF formats without PIL validation.
+    # PIL cannot open these metafile formats, but they are valid image types
+    # commonly used as cached chart fallback images in Word documents.
+    if expected_extension.lower() in ("emf", "wmf"):
+        return True, ""
+
     # Validate image data and format using PIL
     try:
         # First pass: verify image integrity
@@ -156,6 +164,34 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
         return False, f"Invalid or corrupted image data: {str(e)}"
 
 
+def _extract_blip_image(
+    blip: Any, doc_part: Any, filename_prefix: str, counter: int
+) -> Optional[tuple[str, str, bytes, str]]:
+    """Extract image data from a blip element via relationship lookup.
+
+    Args:
+        blip: lxml element for a:blip
+        doc_part: Document part for accessing relationships
+        filename_prefix: Prefix for the filename (e.g., "image" or "chart")
+        counter: Counter for generating unique filenames
+
+    Returns:
+        Tuple of (filename, extension, image_bytes, error_message) or None.
+    """
+    r_embed = blip.get(f'{{{RELATIONSHIPS_NS}}}embed')
+    if not r_embed or r_embed not in doc_part.rels:
+        return None
+
+    image_part = doc_part.rels[r_embed].target_part
+    extension = image_part.partname.split('.')[-1]
+    image_bytes = image_part.blob
+
+    is_valid, error_message = validate_image(image_bytes, extension)
+    image_filename = f"{filename_prefix}{counter}.{extension}"
+
+    return (image_filename, extension, image_bytes, error_message)
+
+
 def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: int) -> Optional[tuple[str, str, bytes, str]]:
     """Check if paragraph contains an image and extract it.
 
@@ -173,44 +209,70 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
     # Why check runs: Word documents store images inside run elements within paragraphs.
     # A paragraph may have multiple runs, and any of them could contain an image.
     for run in paragraph.runs:
-        # Navigate XML structure to find drawing elements
-        # Why XML namespaces: Word documents use Office Open XML format with specific
-        # namespaces. We need the full namespace URI to find elements correctly.
-        drawing_elems = run._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        drawing_elems = run._element.findall(f'.//{{{WORDPROCESSINGML_NS}}}drawing')
         for drawing in drawing_elems:
-            # Find blip element (contains image reference)
-            # Why blip: In Office Open XML, a "blip" (binary large image or picture)
-            # element contains the relationship ID pointing to the actual image data.
-            blips = drawing.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+            blips = drawing.findall(f'.//{{{DRAWINGML_NS}}}blip')
             for blip in blips:
-                # Get relationship ID that points to the image part
-                # Why r:embed: Images aren't stored inline - they're stored as separate
-                # "parts" in the ZIP archive, referenced via relationship IDs.
-                r_embed = blip.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')
-                if r_embed and r_embed in doc_part.rels:
-                    # Get image part using the relationship ID
-                    # Why relationships: This is how Office Open XML connects elements
-                    # to their binary data. The relationship maps ID -> actual image.
-                    image_part = doc_part.rels[r_embed].target_part
-                    # Get extension from content type or part name
-                    extension = image_part.partname.split('.')[-1]
-                    # Get image bytes (the actual binary image data)
-                    image_bytes = image_part.blob
+                result = _extract_blip_image(blip, doc_part, "image", image_counter)
+                if result is not None:
+                    return result
 
-                    # Validate image before including it in the sidedoc
-                    # Why validate: Protects against corrupted images, format mismatches,
-                    # and security issues like ZIP bombs or format spoofing
-                    is_valid, error_message = validate_image(image_bytes, extension)
+    return None
 
-                    # Generate unique filename
-                    # Why counter: Multiple images in a document need unique filenames
-                    # in the assets/ directory to avoid collisions
-                    image_filename = f"image{image_counter}.{extension}"
 
-                    # Return image data with validation result
-                    # Why return error_message even if invalid: The caller decides how to
-                    # handle invalid images (skip, show error message, etc.)
-                    return (image_filename, extension, image_bytes, error_message)
+def extract_chart_from_paragraph(
+    paragraph: Any, doc_part: Any, image_counter: int
+) -> Optional[tuple[str, str, bytes, str, str]]:
+    """Check if paragraph contains a chart and extract its cached fallback image.
+
+    Charts in OOXML may be embedded in two forms:
+    1. mc:AlternateContent — mc:Choice has c:chart, mc:Fallback has cached image blip
+    2. Flat w:drawing — c:chart in graphicData with no fallback image
+
+    Args:
+        paragraph: python-docx paragraph object
+        doc_part: Document part for accessing relationships
+        image_counter: Counter for generating unique image names
+
+    Returns:
+        Tuple of (image_filename, extension, image_bytes, error_message, chart_rel_id)
+        if chart found with cached image. Returns tuple with empty bytes
+        ("", "", b"", "", chart_rel_id) if chart found but no cached image.
+        Returns None if no chart found.
+    """
+    for run in paragraph.runs:
+        # Case 1: mc:AlternateContent with chart in mc:Choice
+        alt_contents = run._element.findall(f'{{{MC_NS}}}AlternateContent')
+        for alt in alt_contents:
+            choice = alt.find(f'{{{MC_NS}}}Choice')
+            if choice is None:
+                continue
+
+            charts = choice.findall(f'.//{{{CHART_NS}}}chart')
+            if not charts:
+                continue
+
+            chart_rel_id = charts[0].get(f'{{{RELATIONSHIPS_NS}}}id', "")
+
+            # Extract cached fallback image from mc:Fallback
+            fallback = alt.find(f'{{{MC_NS}}}Fallback')
+            if fallback is not None:
+                blips = fallback.findall(f'.//{{{DRAWINGML_NS}}}blip')
+                for blip in blips:
+                    result = _extract_blip_image(blip, doc_part, "chart", image_counter)
+                    if result is not None:
+                        return (*result, chart_rel_id)
+
+            # Chart found but no cached image
+            return ("", "", b"", "", chart_rel_id)
+
+        # Case 2: Flat w:drawing with c:chart in graphicData (no mc:AlternateContent)
+        drawing_elems = run._element.findall(f'{{{WORDPROCESSINGML_NS}}}drawing')
+        for drawing in drawing_elems:
+            charts = drawing.findall(f'.//{{{CHART_NS}}}chart')
+            if charts:
+                chart_rel_id = charts[0].get(f'{{{RELATIONSHIPS_NS}}}id', "")
+                return ("", "", b"", "", chart_rel_id)
 
     return None
 
@@ -1050,9 +1112,42 @@ def _process_paragraph(
     image_path = None
     block_track_changes = None
     footnote_refs: list[dict[str, Any]] = []
+    chart_metadata_val: Optional[dict[str, Any]] = None
 
-    image_info = extract_image_from_paragraph(paragraph, doc_part, image_counter)
-    if image_info:
+    # Ordering matters: chart detection must run BEFORE image extraction.
+    # Chart drawings contain both <c:chart> and a cached <a:blip> fallback.
+    # If extract_image_from_paragraph() runs first, it finds the fallback blip
+    # and silently consumes the chart as a regular image.
+    # Order: textbox check (in extract_blocks) → chart check → image check.
+    chart_info = extract_chart_from_paragraph(paragraph, doc_part, image_counter)
+    if chart_info:
+        image_filename, image_extension, image_bytes, error_message, chart_rel_id = chart_info
+        if chart_rel_id:
+            chart_metadata_val = {"chart_rel_id": chart_rel_id}
+
+        if not image_bytes:
+            # Chart found but no cached image available
+            markdown_content = "[Chart: no preview available]"
+            block_type = "paragraph"
+            level_value = None
+            inline_formatting = None
+        elif error_message:
+            markdown_content = f"[Chart {image_counter} skipped: {error_message}]"
+            block_type = "paragraph"
+            level_value = None
+            inline_formatting = None
+        else:
+            image_path = f"assets/{image_filename}"
+            markdown_content = f"![Chart]({image_path})"
+            block_type = "chart"
+            level_value = None
+            inline_formatting = None
+            image_data[image_filename] = image_bytes
+
+        image_counter += 1
+        list_number_counter = 0
+        previous_list_type = None
+    elif (image_info := extract_image_from_paragraph(paragraph, doc_part, image_counter)):
         # This is an image paragraph
         image_filename, image_extension, image_bytes, error_message = image_info
 
@@ -1134,6 +1229,7 @@ def _process_paragraph(
         image_path=image_path,
         track_changes=block_track_changes,
         footnote_references=footnote_refs if footnote_refs else None,
+        chart_metadata=chart_metadata_val,
     )
 
     return block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter

@@ -804,14 +804,23 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
 
         # Handle other block types
         if stripped_line.startswith("![") and "](" in stripped_line and stripped_line.endswith(")"):
-            # Extract image path from markdown
-            start_idx = stripped_line.find("](") + 2
+            # Extract alt text and image path from markdown
+            alt_start = 2  # after "!["
+            alt_end = stripped_line.find("](")
+            alt_text = stripped_line[alt_start:alt_end]
+            start_idx = alt_end + 2
             end_idx = stripped_line.rfind(")")
             image_path = stripped_line[start_idx:end_idx]
 
+            # Convention: alt text starting with "Chart" identifies chart blocks.
+            # This enables round-trip type preservation (extract → build → extract).
+            # Edge case: user-authored images with alt text starting with "Chart"
+            # (e.g., "Chart of accounts") will be misclassified as chart blocks.
+            block_type = "chart" if alt_text.startswith("Chart") else "image"
+
             block = Block(
                 id=f"block-{block_id}",
-                type="image",
+                type=block_type,
                 content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
@@ -1626,6 +1635,20 @@ def create_docx_from_blocks(
                     para = doc.add_paragraph(f"[Missing image: {block.image_path}]")
             else:
                 para = doc.add_paragraph("[Image]")
+        elif block.type == "chart":
+            # Charts reconstruct as images for now (full-fidelity in JON-108)
+            if block.image_path and assets_dir:
+                image_filename = block.image_path.split("/")[-1]
+                image_file_path = assets_dir / image_filename
+
+                if image_file_path.exists():
+                    para = doc.add_paragraph()
+                    run = para.add_run()
+                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
+                else:
+                    para = doc.add_paragraph(f"[Missing chart: {block.image_path}]")
+            else:
+                para = doc.add_paragraph("[Chart: no preview available]")
         else:
             # Paragraph and all other block types
             content = block.content
