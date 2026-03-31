@@ -43,3 +43,4 @@ website/site/
 .env
 .env.*
 !.env.example
+.serena/
