@@ -5,6 +5,7 @@ from pathlib import Path
 
 from docx import Document
 
+from sidedoc.constants import WORDPROCESSINGML_NS
 from sidedoc.extract import extract_blocks, extract_chart_from_paragraph, validate_image
 
 
@@ -43,14 +44,15 @@ def test_extract_chart_from_paragraph_returns_none_for_regular_paragraph():
 def test_extract_chart_from_paragraph_returns_none_for_regular_image():
     """Paragraph with a regular image (no chart) returns None."""
     doc = Document(str(FIXTURES_DIR / "images.docx"))
-    # Find the image paragraph
-    for para in doc.paragraphs:
-        if not para.text.strip():
-            result = extract_chart_from_paragraph(para, doc.part, image_counter=1)
-            assert result is None
-            return
-    # If no empty paragraph found, just check first paragraph
-    result = extract_chart_from_paragraph(doc.paragraphs[0], doc.part, image_counter=1)
+    # Paragraph index 2 is the first image per create_fixtures.py:
+    # [0] heading, [1] "First image:", [2] image, [3] "Second image:", [4] image, [5] text
+    image_para = doc.paragraphs[2]
+
+    # Precondition: confirm this paragraph actually contains a drawing (image)
+    drawings = image_para._element.findall(f'.//{{{WORDPROCESSINGML_NS}}}drawing')
+    assert len(drawings) > 0, "Expected paragraph[2] to contain a drawing element"
+
+    result = extract_chart_from_paragraph(image_para, doc.part, image_counter=1)
     assert result is None
 
 
@@ -167,6 +169,7 @@ def test_extract_blocks_chart_no_fallback_produces_placeholder():
     assert len(placeholder_blocks) == 1
     assert placeholder_blocks[0].type == "paragraph"
     assert "[Chart: no preview available]" in placeholder_blocks[0].content
+    assert placeholder_blocks[0].chart_metadata is None
 
 
 # --- Step 6: Chart markdown parsing ---

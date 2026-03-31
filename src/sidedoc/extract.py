@@ -1122,27 +1122,23 @@ def _process_paragraph(
     chart_info = extract_chart_from_paragraph(paragraph, doc_part, image_counter)
     if chart_info:
         image_filename, image_extension, image_bytes, error_message, chart_rel_id = chart_info
-        if chart_rel_id:
-            chart_metadata_val = {"chart_rel_id": chart_rel_id}
+        level_value = None
+        inline_formatting = None
 
         if not image_bytes:
             # Chart found but no cached image available
             markdown_content = "[Chart: no preview available]"
             block_type = "paragraph"
-            level_value = None
-            inline_formatting = None
         elif error_message:
             markdown_content = f"[Chart {image_counter} skipped: {error_message}]"
             block_type = "paragraph"
-            level_value = None
-            inline_formatting = None
         else:
             image_path = f"assets/{image_filename}"
             markdown_content = f"![Chart]({image_path})"
             block_type = "chart"
-            level_value = None
-            inline_formatting = None
             image_data[image_filename] = image_bytes
+            if chart_rel_id:
+                chart_metadata_val = {"chart_rel_id": chart_rel_id}
 
         image_counter += 1
         list_number_counter = 0

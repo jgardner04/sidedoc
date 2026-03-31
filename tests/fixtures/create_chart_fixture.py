@@ -17,17 +17,6 @@ from PIL import Image
 
 FIXTURES_DIR = Path(__file__).parent
 
-# OOXML namespaces
-_NSMAP = {
-    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-    "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
-    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
-}
-
 
 def _create_minimal_png() -> bytes:
     """Create a minimal valid 10x10 PNG image (chart fallback placeholder)."""

@@ -118,7 +118,7 @@ src/sidedoc/
 | `image` | `![alt](assets/image.png)` | |
 | `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
 | `hyperlink` | `[text](url)` | Inline within other blocks |
-| `chart` | `![Chart: Title](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
+| `chart` | `![Chart](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
 
 ### Headers and Footers
 
@@ -135,7 +135,7 @@ Charts are extracted using their cached PNG/EMF fallback image from the `mc:Alte
 - **EMF/WMF:** These metafile formats bypass PIL validation in `validate_image()` since PIL cannot open them.
 - **Ordering rule:** Chart detection must run before image extraction in `_process_paragraph()`. Chart drawings contain both `c:chart` and an `a:blip` — running image extraction first silently consumes the chart as a regular image.
 - **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
-- **`chart_metadata`:** Field on `Block` reserved for JON-107 (chart type, series, labels). Always `None` currently.
+- **`chart_metadata`:** Currently stores `{"chart_rel_id": ...}` for charts with a resolved relationship ID. `None` for degraded chart paragraphs (no preview / validation error). Full chart data (type, series, labels) reserved for JON-107.
 
 ### Table Support (Phase 2)
 
