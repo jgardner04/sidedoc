@@ -11,6 +11,7 @@ from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
 from sidedoc.constants import (
+    CHART_ALT_TEXT_PREFIX,
     MAX_IMAGE_SIZE,
     MAX_TABLE_ROWS,
     MAX_TABLE_COLS,
@@ -114,7 +115,15 @@ def validate_image(image_bytes: bytes, expected_extension: str) -> tuple[bool, s
     # Pass through EMF/WMF formats without PIL validation.
     # PIL cannot open these metafile formats, but they are valid image types
     # commonly used as cached chart fallback images in Word documents.
-    if expected_extension.lower() in ("emf", "wmf"):
+    # Verify magic bytes to prevent extension spoofing from crafted docx files.
+    ext_lower = expected_extension.lower()
+    if ext_lower == "emf":
+        if image_bytes[:4] != b'\x01\x00\x00\x00':
+            return False, "Invalid EMF: magic bytes not found"
+        return True, ""
+    if ext_lower == "wmf":
+        if image_bytes[:4] not in (b'\xD7\xCD\xC6\x9A', b'\x01\x00\x09\x00', b'\x02\x00\x09\x00'):
+            return False, "Invalid WMF: magic bytes not found"
         return True, ""
 
     # Validate image data and format using PIL
@@ -182,11 +191,19 @@ def _extract_blip_image(
     if not r_embed or r_embed not in doc_part.rels:
         return None
 
-    image_part = doc_part.rels[r_embed].target_part
-    extension = image_part.partname.split('.')[-1]
+    rel = doc_part.rels[r_embed]
+    if rel.is_external:
+        return None
+
+    image_part = rel.target_part
+    raw_ext = Path(image_part.partname).suffix.lstrip('.')
+    extension = ''.join(c for c in raw_ext if c.isalnum())[:10] or "bin"
     image_bytes = image_part.blob
 
     is_valid, error_message = validate_image(image_bytes, extension)
+    # Enforce validate_image contract: is_valid=False must include an error message
+    if not is_valid and not error_message:
+        error_message = "Image failed validation"
     image_filename = f"{filename_prefix}{counter}.{extension}"
 
     return (image_filename, extension, image_bytes, error_message)
@@ -1121,9 +1138,14 @@ def _process_paragraph(
     # Order: textbox check (in extract_blocks) → chart check → image check.
     chart_info = extract_chart_from_paragraph(paragraph, doc_part, image_counter)
     if chart_info:
-        image_filename, image_extension, image_bytes, error_message, chart_rel_id = chart_info
+        image_filename, _, image_bytes, error_message, chart_rel_id = chart_info
         level_value = None
         inline_formatting = None
+
+        # Preserve chart_rel_id for all chart cases (JON-107 needs it
+        # regardless of whether the cached image was valid).
+        if chart_rel_id:
+            chart_metadata_val = {"chart_rel_id": chart_rel_id}
 
         if not image_bytes:
             # Chart found but no cached image available
@@ -1134,11 +1156,9 @@ def _process_paragraph(
             block_type = "paragraph"
         else:
             image_path = f"assets/{image_filename}"
-            markdown_content = f"![Chart]({image_path})"
+            markdown_content = f"![{CHART_ALT_TEXT_PREFIX}]({image_path})"
             block_type = "chart"
             image_data[image_filename] = image_bytes
-            if chart_rel_id:
-                chart_metadata_val = {"chart_rel_id": chart_rel_id}
 
         image_counter += 1
         list_number_counter = 0

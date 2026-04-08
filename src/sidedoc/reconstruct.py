@@ -18,6 +18,7 @@ from lxml import etree  # type: ignore[import-untyped]
 import click
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange, deserialize_sections
 from sidedoc.constants import (
+    CHART_ALT_TEXT_PREFIX,
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
     GFM_SEPARATOR_PATTERNS,
@@ -816,7 +817,7 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             # This enables round-trip type preservation (extract → build → extract).
             # Edge case: user-authored images with alt text starting with "Chart"
             # (e.g., "Chart of accounts") will be misclassified as chart blocks.
-            block_type = "chart" if alt_text.startswith("Chart") else "image"
+            block_type = "chart" if alt_text.startswith(CHART_ALT_TEXT_PREFIX) else "image"
 
             block = Block(
                 id=f"block-{block_id}",

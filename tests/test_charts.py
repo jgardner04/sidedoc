@@ -169,7 +169,8 @@ def test_extract_blocks_chart_no_fallback_produces_placeholder():
     assert len(placeholder_blocks) == 1
     assert placeholder_blocks[0].type == "paragraph"
     assert "[Chart: no preview available]" in placeholder_blocks[0].content
-    assert placeholder_blocks[0].chart_metadata is None
+    # chart_metadata preserves the rel ID even on degraded blocks (for JON-107)
+    assert placeholder_blocks[0].chart_metadata is not None
 
 
 # --- Step 6: Chart markdown parsing ---
@@ -321,3 +322,141 @@ def test_cli_extract_chart_succeeds():
         result = runner.invoke(main, ["extract", "charts.docx", "--force"])
         assert result.exit_code == 0
         assert "Error" not in result.output
+
+
+# --- PR #58 review feedback: additional tests ---
+
+
+def test_block_to_structure_dict_includes_chart_metadata():
+    """chart_metadata must be serialized into structure.json dict."""
+    from sidedoc.models import Block
+    from sidedoc.package import block_to_structure_dict
+
+    block = Block(
+        id="block-0",
+        type="chart",
+        content="![Chart](assets/chart1.png)",
+        docx_paragraph_index=0,
+        content_start=0,
+        content_end=27,
+        content_hash="abc",
+        image_path="assets/chart1.png",
+        chart_metadata={"chart_rel_id": "rId5"},
+    )
+    d = block_to_structure_dict(block)
+    assert "chart_metadata" in d
+    assert d["chart_metadata"] == {"chart_rel_id": "rId5"}
+
+
+def test_extract_blocks_chart_validation_error_produces_placeholder():
+    """Chart with cached image that fails validation produces a skipped placeholder."""
+    from unittest.mock import patch
+
+    # Patch validate_image to simulate a validation failure
+    with patch("sidedoc.extract.validate_image", return_value=(False, "exceeds maximum size")):
+        blocks, image_data = extract_blocks(str(FIXTURES_DIR / "charts.docx"))
+
+    # The chart should degrade to a paragraph with a "skipped" message
+    skipped = [b for b in blocks if "skipped" in b.content]
+    assert len(skipped) == 1
+    assert skipped[0].type == "paragraph"
+    assert "exceeds maximum size" in skipped[0].content
+
+
+def test_chart_metadata_preserved_on_degraded_blocks():
+    """chart_metadata with chart_rel_id is set even when chart degrades to paragraph."""
+    blocks, _ = extract_blocks(str(FIXTURES_DIR / "charts_no_fallback.docx"))
+
+    # The no-fallback chart has a chart_rel_id but no cached image,
+    # so it degrades to a paragraph. chart_metadata should still be set.
+    placeholder = [b for b in blocks if "no preview available" in b.content]
+    assert len(placeholder) == 1
+    assert placeholder[0].chart_metadata is not None
+    assert "chart_rel_id" in placeholder[0].chart_metadata
+
+
+def test_parse_markdown_lowercase_chart_is_image():
+    """Lowercase ![chart](...) is classified as image, not chart (case-sensitive)."""
+    from sidedoc.reconstruct import parse_markdown_to_blocks
+
+    blocks = parse_markdown_to_blocks("![chart](assets/chart1.png)")
+    assert len(blocks) == 1
+    assert blocks[0].type == "image"
+
+
+# --- PR #58 review feedback: security hardening tests ---
+
+
+def test_extract_blip_image_skips_external_relationship():
+    """_extract_blip_image returns None for external relationships."""
+    from unittest.mock import MagicMock, PropertyMock
+    from sidedoc.extract import _extract_blip_image
+
+    blip = MagicMock()
+    blip.get.return_value = "rId1"
+
+    # Mock an external relationship — target_part raises if accessed
+    rel = MagicMock()
+    rel.is_external = True
+    type(rel).target_part = PropertyMock(
+        side_effect=AssertionError("target_part should not be accessed")
+    )
+    doc_part = MagicMock()
+    doc_part.rels = {"rId1": rel}
+
+    result = _extract_blip_image(blip, doc_part, "image", 1)
+    assert result is None
+
+
+def test_validate_image_emf_rejects_wrong_magic_bytes():
+    """EMF extension with wrong magic bytes is rejected."""
+    bad_emf = b"\xFF\xFF\xFF\xFF" * 10
+    is_valid, error_message = validate_image(bad_emf, "emf")
+    assert is_valid is False
+    assert "magic bytes" in error_message.lower() or "EMF" in error_message
+
+
+def test_validate_image_wmf_rejects_wrong_magic_bytes():
+    """WMF extension with wrong magic bytes is rejected."""
+    bad_wmf = b"\xFF\xFF\xFF\xFF" * 10
+    is_valid, error_message = validate_image(bad_wmf, "wmf")
+    assert is_valid is False
+    assert "magic bytes" in error_message.lower() or "WMF" in error_message
+
+
+def test_extract_blip_image_sanitizes_extension():
+    """_extract_blip_image sanitizes pathological extensions."""
+    from unittest.mock import MagicMock, PropertyMock
+    from sidedoc.extract import _extract_blip_image
+
+    blip = MagicMock()
+    blip.get.return_value = "rId1"
+
+    # Mock a part with a pathological partname (no dot)
+    rel = MagicMock()
+    rel.is_external = False
+    image_part = MagicMock()
+    type(image_part).partname = PropertyMock(return_value="/word/media/nodotfile")
+    image_part.blob = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100  # minimal bytes
+
+    rel.target_part = image_part
+    doc_part = MagicMock()
+    doc_part.rels = {"rId1": rel}
+
+    result = _extract_blip_image(blip, doc_part, "image", 1)
+    assert result is not None
+    filename, extension, _, _ = result
+    # Extension should be sanitized — no path separators, fallback to "bin" if empty
+    assert "/" not in extension
+    assert "\\" not in extension
+    assert len(extension) <= 10
+    assert extension == "bin"
+
+
+def test_validate_image_wmf_disk_variant_passes():
+    """WMF disk metafile variant (0x0002) is accepted as valid."""
+    # MetafileType=0x0002 (DISKMETAFILE), HeaderSize=0x0009 per MS-WMF spec
+    disk_wmf = b"\x02\x00\x09\x00" * 10
+    is_valid, error_message = validate_image(disk_wmf, "wmf")
+    assert is_valid is True
+    assert error_message == ""

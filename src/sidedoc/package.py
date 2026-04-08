@@ -48,6 +48,7 @@ def block_to_structure_dict(block: Block) -> dict:
         ] if block.track_changes else None,
         "footnote_references": block.footnote_references,
         "text_box_metadata": block.text_box_metadata,
+        "chart_metadata": block.chart_metadata,
     }
 
 
