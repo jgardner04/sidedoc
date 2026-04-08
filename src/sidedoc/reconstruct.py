@@ -18,6 +18,7 @@ from lxml import etree  # type: ignore[import-untyped]
 import click
 from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange, deserialize_sections
 from sidedoc.constants import (
+    CHART_ALT_TEXT_PREFIX,
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
     GFM_SEPARATOR_PATTERNS,
@@ -804,14 +805,23 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
 
         # Handle other block types
         if stripped_line.startswith("![") and "](" in stripped_line and stripped_line.endswith(")"):
-            # Extract image path from markdown
-            start_idx = stripped_line.find("](") + 2
+            # Extract alt text and image path from markdown
+            alt_start = 2  # after "!["
+            alt_end = stripped_line.find("](")
+            alt_text = stripped_line[alt_start:alt_end]
+            start_idx = alt_end + 2
             end_idx = stripped_line.rfind(")")
             image_path = stripped_line[start_idx:end_idx]
 
+            # Convention: alt text starting with "Chart" identifies chart blocks.
+            # This enables round-trip type preservation (extract → build → extract).
+            # Edge case: user-authored images with alt text starting with "Chart"
+            # (e.g., "Chart of accounts") will be misclassified as chart blocks.
+            block_type = "chart" if alt_text.startswith(CHART_ALT_TEXT_PREFIX) else "image"
+
             block = Block(
                 id=f"block-{block_id}",
-                type="image",
+                type=block_type,
                 content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
@@ -1613,19 +1623,23 @@ def create_docx_from_blocks(
             else:
                 inner_text = _extract_textbox_inner_content(block.content)
                 para = doc.add_paragraph(inner_text)
-        elif block.type == "image":
+        elif block.type in ("image", "chart"):
+            # Charts reconstruct as images for now (full-fidelity in JON-108)
+            is_chart = block.type == "chart"
+            missing_label = f"[Missing {'chart' if is_chart else 'image'}: {block.image_path}]"
+            no_path_label = "[Chart: no preview available]" if is_chart else "[Image]"
+
             if block.image_path and assets_dir:
-                image_filename = block.image_path.split("/")[-1]
-                image_file_path = assets_dir / image_filename
+                image_file_path = assets_dir / Path(block.image_path).name
 
                 if image_file_path.exists():
                     para = doc.add_paragraph()
                     run = para.add_run()
                     run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                 else:
-                    para = doc.add_paragraph(f"[Missing image: {block.image_path}]")
+                    para = doc.add_paragraph(missing_label)
             else:
-                para = doc.add_paragraph("[Image]")
+                para = doc.add_paragraph(no_path_label)
         else:
             # Paragraph and all other block types
             content = block.content
@@ -1677,7 +1691,7 @@ def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_d
         else:
             para = header_footer.add_paragraph()
         if para_dict.get("type") == "image" and para_dict.get("image_path"):
-            image_filename = para_dict["image_path"].split("/")[-1]
+            image_filename = Path(para_dict["image_path"]).name
             if assets_dir:
                 image_file_path = assets_dir / image_filename
                 if image_file_path.exists():

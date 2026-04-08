@@ -178,6 +178,9 @@ SUBSTITUTION_PATTERN = r"\{~~(.+?)~>(.+?)~~\}"
 # Sidedoc Format Constants
 # =============================================================================
 
+# Chart block detection
+CHART_ALT_TEXT_PREFIX = "Chart"  # Alt text must start with this to be classified as a chart block
+
 # File extensions
 SIDEDOC_DIR_EXTENSION = ".sidedoc"
 SIDEDOC_ZIP_EXTENSION = ".sdoc"
