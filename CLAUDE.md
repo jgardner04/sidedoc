@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. The canonical format is a `.sidedoc/` directory containing markdown content and formatting metadata. A `.sdoc` ZIP archive is used for distribution and sharing.
 
-**Status:** MVP complete with hyperlink, track changes, and table support (extraction, reconstruction, sync).
+**Status:** MVP complete with hyperlink, track changes, table, headers/footers, and chart support (extraction, reconstruction).
 
 ## Development Philosophy
 
@@ -93,10 +93,10 @@ src/sidedoc/
 ├── __init__.py
 ├── cli.py              # CLI entry points (click), includes validate command
 ├── constants.py        # Shared constants (extensions, limits, patterns)
-├── extract.py          # docx → sidedoc (paragraphs, tables, images)
+├── extract.py          # docx → sidedoc (paragraphs, tables, images, charts, headers/footers)
 ├── models.py           # Block, Style, Manifest, TrackChange dataclasses
 ├── package.py          # Archive/directory creation helpers, block serialization
-├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling
+├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling, header/footer reconstruction
 ├── store.py            # Read-only abstraction over directory/ZIP
 ├── sync.py             # edited content → updated docx (imports formatting from reconstruct.py)
 └── utils.py            # shared utilities
@@ -106,7 +106,7 @@ src/sidedoc/
 
 - **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
 - **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
-- **Sync:** After editing content.md, update the .docx while preserving original formatting
+- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content.
 
 ### Block Types
 
@@ -118,6 +118,24 @@ src/sidedoc/
 | `image` | `![alt](assets/image.png)` | |
 | `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
 | `hyperlink` | `[text](url)` | Inline within other blocks |
+| `chart` | `![Chart](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
+
+### Headers and Footers
+
+Headers and footers are stored as section metadata in `structure.json` (not as blocks in `content.md`). Each section can have up to six variants: `header_default`, `header_first`, `header_even`, `footer_default`, `footer_first`, `footer_even`.
+
+**Limitation:** Header/footer content is extracted and reconstructed as **plain text only**. Inline formatting (bold, italic, hyperlinks) within header/footer paragraphs is silently dropped. Images in headers/footers are extracted to `assets/` and restored on build.
+
+### Chart Support
+
+Charts are extracted using their cached PNG/EMF fallback image from the `mc:AlternateContent` OOXML wrapper. The live chart XML is not round-tripped in this phase.
+
+- **Detection:** `extract_chart_from_paragraph()` looks for `mc:AlternateContent` with `mc:Choice Requires="c"` containing `c:chart`, then extracts the blip from `mc:Fallback`. Also handles flat `w:drawing` charts (no `mc:AlternateContent`).
+- **Fallback behavior:** Charts with no cached image produce `[Chart: no preview available]` as a `paragraph` block (not a `chart` block).
+- **EMF/WMF:** These metafile formats are validated by checking magic bytes first, then skip PIL validation (since PIL cannot open them).
+- **Ordering rule:** Chart detection must run before image extraction in `_process_paragraph()`. Chart drawings contain both `c:chart` and an `a:blip` — running image extraction first silently consumes the chart as a regular image.
+- **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
+- **`chart_metadata`:** Currently stores `{"chart_rel_id": ...}` for charts with a resolved relationship ID. Degraded chart paragraphs (no preview / validation error) also preserve `chart_rel_id` in `chart_metadata` when one is available; `None` only when no relationship ID can be resolved. Full chart data (type, series, labels) reserved for JON-107.
 
 ### Table Support (Phase 2)
 
@@ -142,11 +160,11 @@ A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
 |------|:-:|:-:|---------|
 | `content.md` | Yes | Yes | Clean markdown that AI reads/writes |
 | `styles.json` | Yes | Yes | Formatting information per block |
-| `structure.json` | No* | Yes | Block structure and mappings to docx paragraphs |
+| `structure.json` | No* | Yes | Block structure, docx paragraph mappings, and section metadata (headers, footers, page setup) |
 | `manifest.json` | No* | Yes | Metadata and version info |
 | `assets/` | No | No | Images and embedded files |
 
-\* Generated by `sidedoc sync`
+\* `structure.json` is written during `sidedoc extract` and updated by `sidedoc sync`; `manifest.json` is generated by `sidedoc sync`
 
 ## Benchmarks
 
@@ -203,3 +221,137 @@ sidedoc unpack document.sdoc                     # Unpack .sdoc ZIP → .sidedoc
 - mistune — Markdown parsing
 - click — CLI framework
 - pytest — Testing
+
+<!-- rtk-instructions v2 -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+## Golden Rule
+
+**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
+
+**Important**: Even in command chains with `&&`, use `rtk`:
+```bash
+# ❌ Wrong
+git add . && git commit -m "msg" && git push
+
+# ✅ Correct
+rtk git add . && rtk git commit -m "msg" && rtk git push
+```
+
+## RTK Commands by Workflow
+
+### Build & Compile (80-90% savings)
+```bash
+rtk cargo build         # Cargo build output
+rtk cargo check         # Cargo check output
+rtk cargo clippy        # Clippy warnings grouped by file (80%)
+rtk tsc                 # TypeScript errors grouped by file/code (83%)
+rtk lint                # ESLint/Biome violations grouped (84%)
+rtk prettier --check    # Files needing format only (70%)
+rtk next build          # Next.js build with route metrics (87%)
+```
+
+### Test (90-99% savings)
+```bash
+rtk cargo test          # Cargo test failures only (90%)
+rtk vitest run          # Vitest failures only (99.5%)
+rtk playwright test     # Playwright failures only (94%)
+rtk test <cmd>          # Generic test wrapper - failures only
+```
+
+### Git (59-80% savings)
+```bash
+rtk git status          # Compact status
+rtk git log             # Compact log (works with all git flags)
+rtk git diff            # Compact diff (80%)
+rtk git show            # Compact show (80%)
+rtk git add             # Ultra-compact confirmations (59%)
+rtk git commit          # Ultra-compact confirmations (59%)
+rtk git push            # Ultra-compact confirmations
+rtk git pull            # Ultra-compact confirmations
+rtk git branch          # Compact branch list
+rtk git fetch           # Compact fetch
+rtk git stash           # Compact stash
+rtk git worktree        # Compact worktree
+```
+
+Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
+
+### GitHub (26-87% savings)
+```bash
+rtk gh pr view <num>    # Compact PR view (87%)
+rtk gh pr checks        # Compact PR checks (79%)
+rtk gh run list         # Compact workflow runs (82%)
+rtk gh issue list       # Compact issue list (80%)
+rtk gh api              # Compact API responses (26%)
+```
+
+### JavaScript/TypeScript Tooling (70-90% savings)
+```bash
+rtk pnpm list           # Compact dependency tree (70%)
+rtk pnpm outdated       # Compact outdated packages (80%)
+rtk pnpm install        # Compact install output (90%)
+rtk npm run <script>    # Compact npm script output
+rtk npx <cmd>           # Compact npx command output
+rtk prisma              # Prisma without ASCII art (88%)
+```
+
+### Files & Search (60-75% savings)
+```bash
+rtk ls <path>           # Tree format, compact (65%)
+rtk read <file>         # Code reading with filtering (60%)
+rtk grep <pattern>      # Search grouped by file (75%)
+rtk find <pattern>      # Find grouped by directory (70%)
+```
+
+### Analysis & Debug (70-90% savings)
+```bash
+rtk err <cmd>           # Filter errors only from any command
+rtk log <file>          # Deduplicated logs with counts
+rtk json <file>         # JSON structure without values
+rtk deps                # Dependency overview
+rtk env                 # Environment variables compact
+rtk summary <cmd>       # Smart summary of command output
+rtk diff                # Ultra-compact diffs
+```
+
+### Infrastructure (85% savings)
+```bash
+rtk docker ps           # Compact container list
+rtk docker images       # Compact image list
+rtk docker logs <c>     # Deduplicated logs
+rtk kubectl get         # Compact resource list
+rtk kubectl logs        # Deduplicated pod logs
+```
+
+### Network (65-70% savings)
+```bash
+rtk curl <url>          # Compact HTTP responses (70%)
+rtk wget <url>          # Compact download output (65%)
+```
+
+### Meta Commands
+```bash
+rtk gain                # View token savings statistics
+rtk gain --history      # View command history with savings
+rtk discover            # Analyze Claude Code sessions for missed RTK usage
+rtk proxy <cmd>         # Run command without filtering (for debugging)
+rtk init                # Add RTK instructions to CLAUDE.md
+rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
+```
+
+## Token Savings Overview
+
+| Category | Commands | Typical Savings |
+|----------|----------|-----------------|
+| Tests | vitest, playwright, cargo test | 90-99% |
+| Build | next, tsc, lint, prettier | 70-87% |
+| Git | status, log, diff, add, commit | 59-80% |
+| GitHub | gh pr, gh run, gh issue | 26-87% |
+| Package Managers | pnpm, npm, npx | 70-90% |
+| Files | ls, read, grep, find | 60-75% |
+| Infrastructure | docker, kubectl | 85% |
+| Network | curl, wget | 65-70% |
+
+Overall average: **60-90% token reduction** on common development operations.
+<!-- /rtk-instructions -->

@@ -4,12 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Optional, Any
-from sidedoc.models import Block
+from sidedoc.models import Block, ColumnDefinition, SectionProperties, deserialize_sections
 from sidedoc.utils import get_iso_timestamp, compute_similarity
 from sidedoc.constants import (
     SIMILARITY_THRESHOLD,
 )
-from sidedoc.reconstruct import create_docx_from_blocks
+from sidedoc.reconstruct import apply_sections_to_document, create_docx_from_blocks
 
 # Default author for new track changes created during sync
 DEFAULT_SYNC_AUTHOR = "Sidedoc AI"
@@ -127,12 +127,12 @@ def _create_reverse_mapping(matches: dict[str, Block]) -> dict[str, str]:
     return {new_block.id: old_id for old_id, new_block in matches.items()}
 
 
-
 def generate_updated_docx(
     new_blocks: list[Block],
     matches: dict[str, Block],
     styles: dict[str, Any],
     output_path: str,
+    sections: list[SectionProperties] | None = None,
 ) -> None:
     """Generate an updated docx file from new blocks.
 
@@ -145,9 +145,10 @@ def generate_updated_docx(
         matches: Dictionary mapping old block IDs to new blocks
         styles: Style information dictionary with block_styles
         output_path: Path where docx should be saved
+        sections: Optional list of SectionProperties for column layouts
     """
     new_to_old = _create_reverse_mapping(matches)
-    doc = create_docx_from_blocks(new_blocks, styles, style_id_remap=new_to_old)
+    doc = create_docx_from_blocks(new_blocks, styles, style_id_remap=new_to_old, sections=sections)
     doc.save(output_path)
 
 
@@ -180,13 +181,20 @@ def update_sidedoc_metadata(
     _update_directory_metadata(sidedoc_path, new_blocks, new_content, matches)
 
 
-def _build_structure_data(new_blocks: list[Block]) -> dict:
-    """Build structure.json data from blocks."""
+def _build_structure_data(new_blocks: list[Block], existing_structure: dict | None = None) -> dict:
+    """Build structure.json data from blocks, preserving all non-block metadata."""
     from sidedoc.package import block_to_structure_dict
 
-    return {
+    result: dict = {
         "blocks": [block_to_structure_dict(block) for block in new_blocks]
     }
+    # Preserve all non-block metadata from existing structure (sections,
+    # hf_sections, footnotes, etc.). Only blocks are rebuilt from content.md.
+    if existing_structure:
+        for key, value in existing_structure.items():
+            if key != "blocks":
+                result[key] = value
+    return result
 
 
 def _update_manifest(old_manifest: dict, new_content: str) -> dict:
@@ -219,6 +227,12 @@ def _update_directory_metadata(
     if matches:
         styles_data = remap_styles(styles_data, matches)
 
+    # Read existing structure.json to preserve sections
+    structure_path = dir_path / "structure.json"
+    existing_structure = None
+    if structure_path.exists():
+        existing_structure = json.loads(structure_path.read_text(encoding="utf-8"))
+
     # Read old manifest if it exists
     manifest_path = dir_path / "manifest.json"
     if manifest_path.exists():
@@ -232,7 +246,7 @@ def _update_directory_metadata(
             "generator": "sidedoc-cli",
         }
 
-    structure_data = _build_structure_data(new_blocks)
+    structure_data = _build_structure_data(new_blocks, existing_structure)
     manifest_data = _update_manifest(old_manifest, new_content)
 
     # Write to .tmp files first, then rename for atomicity
@@ -286,8 +300,12 @@ def sync_sidedoc_to_docx(
     with SidedocStore.open(sidedoc_path) as store:
         content_md = store.read_text("content.md")
         styles_data = store.read_json("styles.json")
+        structure_data = store.read_json("structure.json") if store.has_file("structure.json") else {}
+        assets_dir = store.assets_dir if store.list_assets() else None
+        hf_sections_data = structure_data.get("hf_sections", [])
 
     blocks = parse_markdown_to_blocks(content_md)
+    sections = deserialize_sections(structure_data)
 
     # Note: no style_id_remap needed here because update_sidedoc_metadata()
     # (called before this function in the CLI sync command) already remaps
@@ -295,5 +313,11 @@ def sync_sidedoc_to_docx(
     doc = create_docx_from_blocks(
         blocks, styles_data,
         default_tc_author=author, default_tc_date=sync_date,
+        content_md=content_md,
+        sections=sections,
     )
+
+    if hf_sections_data:
+        apply_sections_to_document(doc, hf_sections_data, assets_dir)
+
     doc.save(output_path)
