@@ -17,7 +17,9 @@ def block_to_structure_dict(block: Block) -> dict:
     Returns:
         Dictionary suitable for structure.json
     """
-    return {
+    from dataclasses import asdict
+
+    result = {
         "id": block.id,
         "type": block.type,
         "docx_paragraph_index": block.docx_paragraph_index,
@@ -41,6 +43,15 @@ def block_to_structure_dict(block: Block) -> dict:
             for tc in block.track_changes
         ] if block.track_changes else None,
     }
+
+    if block.chart_metadata is not None:
+        result["chart_metadata"] = asdict(block.chart_metadata)
+    if block.smartart_metadata is not None:
+        result["smartart_metadata"] = asdict(block.smartart_metadata)
+    if block.chart_parts_manifest is not None:
+        result["chart_parts_manifest"] = asdict(block.chart_parts_manifest)
+
+    return result
 
 
 def _build_metadata(
@@ -171,4 +182,6 @@ def create_sidedoc_directory(
         assets_dir = out / "assets"
         assets_dir.mkdir(exist_ok=True)
         for filename, image_bytes in image_data.items():
-            (assets_dir / filename).write_bytes(image_bytes)
+            file_path = assets_dir / filename
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(image_bytes)

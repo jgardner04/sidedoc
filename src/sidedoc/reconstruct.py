@@ -11,7 +11,7 @@ from docx.document import Document as DocumentType
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import click
-from sidedoc.models import Block, Style, TrackChange
+from sidedoc.models import Block, ChartPartsManifest, Style, TrackChange
 from sidedoc.constants import (
     DEFAULT_IMAGE_WIDTH_INCHES,
     ALIGNMENT_STRING_TO_ENUM,
@@ -735,15 +735,36 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             end_idx = stripped_line.rfind(")")
             image_path = stripped_line[start_idx:end_idx]
 
+            # Determine block type from alt text
+            alt_text = stripped_line[2:stripped_line.find("](")]
+            if alt_text.startswith("Chart:"):
+                block_type = "chart"
+            elif alt_text.startswith("SmartArt:"):
+                block_type = "smartart"
+            else:
+                block_type = "image"
+
             block = Block(
                 id=f"block-{block_id}",
-                type="image",
+                type=block_type,
                 content=stripped_line,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
                 content_end=content_position + len(stripped_line),
                 content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
                 image_path=image_path,
+            )
+        elif stripped_line.startswith("[Chart:") or stripped_line.startswith("[SmartArt:"):
+            # Chart/SmartArt without cached image (no image path)
+            block_type = "chart" if stripped_line.startswith("[Chart:") else "smartart"
+            block = Block(
+                id=f"block-{block_id}",
+                type=block_type,
+                content=stripped_line,
+                docx_paragraph_index=block_id,
+                content_start=content_position,
+                content_end=content_position + len(stripped_line),
+                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
             )
         elif stripped_line.startswith("#"):
             level = 0
@@ -1192,6 +1213,20 @@ def create_docx_from_blocks(
                     para = doc.add_paragraph(f"[Missing image: {block.image_path}]")
             else:
                 para = doc.add_paragraph("[Image]")
+        elif block.type in ("chart", "smartart"):
+            # Reconstruct chart/SmartArt as cached image if available
+            if block.image_path and assets_dir:
+                image_filename = block.image_path.split("/")[-1]
+                image_file_path = assets_dir / image_filename
+
+                if image_file_path.exists():
+                    para = doc.add_paragraph()
+                    run = para.add_run()
+                    run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
+                else:
+                    para = doc.add_paragraph(block.content)
+            else:
+                para = doc.add_paragraph(block.content)
         else:
             # Paragraph and all other block types
             content = block.content
@@ -1219,6 +1254,110 @@ def create_docx_from_blocks(
     return doc
 
 
+def _inject_chart_parts(
+    docx_bytes: bytes,
+    chart_injections: list[tuple[int, ChartPartsManifest]],
+    assets_dir: Path,
+) -> bytes:
+    """Post-process a docx ZIP to inject archived chart XML parts.
+
+    Replaces placeholder paragraphs with the original chart drawing XML
+    and adds all OOXML parts, relationships, and content types needed
+    for a fully functional chart.
+
+    Args:
+        docx_bytes: Base docx bytes (from python-docx save)
+        chart_injections: List of (body_element_index, manifest) tuples
+        assets_dir: Path to the assets directory containing chart_parts/
+
+    Returns:
+        Modified docx bytes with chart parts injected
+    """
+    import io
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
+
+    src = zipfile.ZipFile(io.BytesIO(docx_bytes), "r")
+    out_buf = io.BytesIO()
+    dst = zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED)
+
+    # Collect all rels and content types from all chart injections
+    all_extra_rels: list[dict[str, str]] = []
+    all_extra_content_types: list[dict[str, str]] = []
+    all_extra_parts: dict[str, bytes] = {}
+
+    for body_idx, manifest in chart_injections:
+        all_extra_rels.extend(manifest.rels)
+        all_extra_content_types.extend(manifest.content_types)
+
+        # Load all OOXML parts from assets
+        for ooxml_path, asset_path in manifest.parts.items():
+            # Skip rels files — they go into word/ directly
+            full_ooxml_path = f"word/{ooxml_path}"
+            part_file = assets_dir / asset_path
+            if part_file.exists():
+                all_extra_parts[full_ooxml_path] = part_file.read_bytes()
+
+    for item in src.infolist():
+        data = src.read(item.filename)
+
+        if item.filename == "word/document.xml":
+            doc_tree = ET.fromstring(data)
+            body = doc_tree.find(f"{{{W}}}body")
+            if body is not None:
+                body_children = list(body)
+                for body_idx, manifest in chart_injections:
+                    if body_idx < len(body_children):
+                        para = body_children[body_idx]
+                        # Load the archived drawing XML (w:r element)
+                        drawing_file = assets_dir / manifest.drawing_xml_path
+                        if drawing_file.exists():
+                            drawing_xml = drawing_file.read_bytes()
+                            drawing_elem = ET.fromstring(drawing_xml)
+                            # Clear existing paragraph content and inject drawing
+                            for child in list(para):
+                                para.remove(child)
+                            para.append(drawing_elem)
+
+            # Serialize with XML declaration
+            data = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
+
+        elif item.filename == "word/_rels/document.xml.rels":
+            rels_tree = ET.fromstring(data)
+            existing_ids = {rel.get("Id") for rel in rels_tree}
+            for rel_dict in all_extra_rels:
+                if rel_dict["id"] not in existing_ids:
+                    rel = ET.SubElement(rels_tree, "Relationship")
+                    rel.set("Id", rel_dict["id"])
+                    rel.set("Type", rel_dict["type"])
+                    rel.set("Target", rel_dict["target"])
+            data = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
+
+        elif item.filename == "[Content_Types].xml":
+            ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/content-types")
+            ct_tree = ET.fromstring(data)
+            existing_parts = {o.get("PartName") for o in ct_tree}
+            for ct_dict in all_extra_content_types:
+                if ct_dict["part_name"] not in existing_parts:
+                    override = ET.SubElement(ct_tree, "Override")
+                    override.set("PartName", ct_dict["part_name"])
+                    override.set("ContentType", ct_dict["content_type"])
+            data = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
+
+        dst.writestr(item, data)
+
+    # Add extra parts not already in the ZIP
+    for part_path, part_bytes in all_extra_parts.items():
+        dst.writestr(part_path, part_bytes)
+
+    src.close()
+    dst.close()
+    return out_buf.getvalue()
+
+
 def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
     """Build a Word document from a sidedoc archive or directory.
 
@@ -1237,11 +1376,12 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         blocks = parse_markdown_to_blocks(content_md)
 
-        # Enrich blocks with track changes data from structure.json
+        # Enrich blocks with structure.json metadata (track changes + chart parts)
+        chart_blocks_with_parts: list[tuple[int, ChartPartsManifest]] = []
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
             structure_blocks = structure_data.get("blocks", [])
-            for block, struct_block in zip(blocks, structure_blocks):
+            for block_idx, (block, struct_block) in enumerate(zip(blocks, structure_blocks)):
                 # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
                     block.track_changes = [
@@ -1257,5 +1397,26 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         for tc in struct_block["track_changes"]
                     ]
 
+                # Collect chart parts manifests for post-processing
+                if "chart_parts_manifest" in struct_block and struct_block["chart_parts_manifest"]:
+                    manifest_data = struct_block["chart_parts_manifest"]
+                    manifest = ChartPartsManifest(
+                        drawing_xml_path=manifest_data["drawing_xml_path"],
+                        parts=manifest_data["parts"],
+                        rels=manifest_data["rels"],
+                        content_types=manifest_data["content_types"],
+                    )
+                    # Body element index = block_idx + 1 (python-docx Document() starts with one empty paragraph)
+                    chart_blocks_with_parts.append((block_idx + 1, manifest))
+
         doc = create_docx_from_blocks(blocks, styles_data, assets_dir)
-        doc.save(output_path)
+
+        if chart_blocks_with_parts and assets_dir:
+            # Post-process the docx ZIP to inject chart parts
+            import io
+            buf = io.BytesIO()
+            doc.save(buf)
+            result_bytes = _inject_chart_parts(buf.getvalue(), chart_blocks_with_parts, assets_dir)
+            Path(output_path).write_bytes(result_bytes)
+        else:
+            doc.save(output_path)
