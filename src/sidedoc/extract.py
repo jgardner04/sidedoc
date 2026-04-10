@@ -2346,10 +2346,11 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
             paragraph = Paragraph(child, doc)
 
             # Chart and SmartArt blocks get default styles
+            # Use "Normal" style name since Word doesn't have built-in "Chart"/"Smartart" paragraph styles
             if block.type in ("chart", "smartart"):
                 style = Style(
                     block_id=block.id,
-                    docx_style=block.type.capitalize(),
+                    docx_style="Normal",
                     font_name="Calibri",
                     font_size=11,
                     alignment="left",

@@ -1,11 +1,14 @@
 """Reconstruct Word documents from sidedoc format."""
 
 import hashlib
+import io
 import re
 import warnings
+import zipfile
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
+from xml.etree import ElementTree as ET
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
@@ -43,6 +46,13 @@ from sidedoc.constants import (
 from sidedoc.store import SidedocStore
 
 import mistune
+
+# Register XML namespaces at module level to avoid mutating global state in functions
+# (ET.register_namespace mutates process-global state and can cause corruption if
+# called multiple times with different namespaces in concurrent contexts)
+# Note: Both relationships and content-types use the default namespace (prefix="")
+# within their respective files, so we register whichever is processed last
+ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
 
 # Known limitation: multi-line footnote definitions not supported.
 # Only single-line [^N]: text definitions are captured; indented continuation
@@ -814,7 +824,6 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             image_path = stripped_line[start_idx:end_idx]
 
             # Determine block type from alt text
-            alt_text = stripped_line[2:stripped_line.find("](")]
             if alt_text.startswith("Chart:"):
                 block_type = "chart"
             elif alt_text.startswith("SmartArt:"):
@@ -1663,6 +1672,10 @@ def create_docx_from_blocks(
                     para = doc.add_paragraph(missing_label)
             else:
                 para = doc.add_paragraph(no_path_label)
+
+            # Mark chart paragraphs with block ID for robust injection during _inject_chart_parts
+            if para is not None and (is_chart or is_smartart):
+                para._element.set(qn("w:rsidR"), block.id)
         else:
             # Paragraph and all other block types
             content = block.content
@@ -1701,7 +1714,7 @@ def create_docx_from_blocks(
 
 def _inject_chart_parts(
     docx_bytes: bytes,
-    chart_injections: list[tuple[int, ChartPartsManifest]],
+    chart_injections: list[tuple[str, ChartPartsManifest]],
     assets_dir: Path,
 ) -> bytes:
     """Post-process a docx ZIP to inject archived chart XML parts.
@@ -1712,31 +1725,26 @@ def _inject_chart_parts(
 
     Args:
         docx_bytes: Base docx bytes (from python-docx save)
-        chart_injections: List of (body_element_index, manifest) tuples
+        chart_injections: List of (block_id, manifest) tuples where block_id
+            matches the w:rsidR attribute set on chart paragraphs
         assets_dir: Path to the assets directory containing chart_parts/
 
     Returns:
         Modified docx bytes with chart parts injected
     """
-    import io
-    import zipfile
-    from xml.etree import ElementTree as ET
-
     W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
-
-    src = zipfile.ZipFile(io.BytesIO(docx_bytes), "r")
-    out_buf = io.BytesIO()
-    dst = zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED)
 
     # Collect all rels and content types from all chart injections
     all_extra_rels: list[dict[str, str]] = []
     all_extra_content_types: list[dict[str, str]] = []
     all_extra_parts: dict[str, bytes] = {}
+    # Build mapping of block_id -> manifest for lookup during XML processing
+    chart_manifest_map: dict[str, ChartPartsManifest] = {}
 
-    for body_idx, manifest in chart_injections:
+    for block_id, manifest in chart_injections:
         all_extra_rels.extend(manifest.rels)
         all_extra_content_types.extend(manifest.content_types)
+        chart_manifest_map[block_id] = manifest
 
         # Load all OOXML parts from assets
         for ooxml_path, asset_path in manifest.parts.items():
@@ -1746,61 +1754,66 @@ def _inject_chart_parts(
             if part_file.exists():
                 all_extra_parts[full_ooxml_path] = part_file.read_bytes()
 
-    for item in src.infolist():
-        data = src.read(item.filename)
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as src:
+        out_buf = io.BytesIO()
+        with zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
 
-        if item.filename == "word/document.xml":
-            doc_tree = ET.fromstring(data)
-            body = doc_tree.find(f"{{{W}}}body")
-            if body is not None:
-                body_children = list(body)
-                for body_idx, manifest in chart_injections:
-                    if body_idx < len(body_children):
-                        para = body_children[body_idx]
-                        # Load the archived drawing XML (w:r element)
-                        drawing_file = assets_dir / manifest.drawing_xml_path
-                        if drawing_file.exists():
-                            drawing_xml = drawing_file.read_bytes()
-                            drawing_elem = ET.fromstring(drawing_xml)
-                            # Clear existing paragraph content and inject drawing
-                            for child in list(para):
-                                para.remove(child)
-                            para.append(drawing_elem)
+                if item.filename == "word/document.xml":
+                    doc_tree = ET.fromstring(data)
+                    body = doc_tree.find(f"{{{W}}}body")
+                    if body is not None:
+                        # Find all paragraphs marked with chart block IDs
+                        for para in body.findall(f".//{{{W}}}p"):
+                            rsid = para.get(qn("w:rsidR"))
+                            if rsid and rsid in chart_manifest_map:
+                                manifest = chart_manifest_map[rsid]
+                                # Load the archived drawing XML (w:r element)
+                                drawing_file = assets_dir / manifest.drawing_xml_path
+                                if drawing_file.exists():
+                                    drawing_xml = drawing_file.read_bytes()
+                                    drawing_elem = ET.fromstring(drawing_xml)
+                                    # Clear existing paragraph content and inject drawing
+                                    for child in list(para):
+                                        para.remove(child)
+                                    para.append(drawing_elem)
 
-            # Serialize with XML declaration
-            data = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
+                    # Serialize with XML declaration
+                    data = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
 
-        elif item.filename == "word/_rels/document.xml.rels":
-            rels_tree = ET.fromstring(data)
-            existing_ids = {rel.get("Id") for rel in rels_tree}
-            for rel_dict in all_extra_rels:
-                if rel_dict["id"] not in existing_ids:
-                    rel = ET.SubElement(rels_tree, "Relationship")
-                    rel.set("Id", rel_dict["id"])
-                    rel.set("Type", rel_dict["type"])
-                    rel.set("Target", rel_dict["target"])
-            data = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
+                elif item.filename == "word/_rels/document.xml.rels":
+                    rels_tree = ET.fromstring(data)
+                    existing_ids = {rel.get("Id") for rel in rels_tree}
+                    for rel_dict in all_extra_rels:
+                        if rel_dict["id"] not in existing_ids:
+                            rel = ET.SubElement(rels_tree, "Relationship")
+                            rel.set("Id", rel_dict["id"])
+                            rel.set("Type", rel_dict["type"])
+                            rel.set("Target", rel_dict["target"])
+                    data = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
 
-        elif item.filename == "[Content_Types].xml":
-            ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/content-types")
-            ct_tree = ET.fromstring(data)
-            existing_parts = {o.get("PartName") for o in ct_tree}
-            for ct_dict in all_extra_content_types:
-                if ct_dict["part_name"] not in existing_parts:
-                    override = ET.SubElement(ct_tree, "Override")
-                    override.set("PartName", ct_dict["part_name"])
-                    override.set("ContentType", ct_dict["content_type"])
-            data = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
+                elif item.filename == "[Content_Types].xml":
+                    # Temporarily register content-types namespace for this tree only
+                    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/content-types")
+                    ct_tree = ET.fromstring(data)
+                    existing_parts = {o.get("PartName") for o in ct_tree}
+                    for ct_dict in all_extra_content_types:
+                        if ct_dict["part_name"] not in existing_parts:
+                            override = ET.SubElement(ct_tree, "Override")
+                            override.set("PartName", ct_dict["part_name"])
+                            override.set("ContentType", ct_dict["content_type"])
+                    data = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
+                    # Restore relationships namespace for subsequent processing
+                    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
 
-        dst.writestr(item, data)
+                dst.writestr(item, data)
 
-    # Add extra parts not already in the ZIP
-    for part_path, part_bytes in all_extra_parts.items():
-        dst.writestr(part_path, part_bytes)
+            # Add extra parts not already in the ZIP
+            for part_path, part_bytes in all_extra_parts.items():
+                dst.writestr(part_path, part_bytes)
 
-    src.close()
-    dst.close()
-    return out_buf.getvalue()
+        return out_buf.getvalue()
 
 
 def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_dir: Optional[Path] = None) -> None:
@@ -1944,8 +1957,8 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         rels=manifest_data["rels"],
                         content_types=manifest_data["content_types"],
                     )
-                    # Body element index = block_idx + 1 (python-docx Document() starts with one empty paragraph)
-                    chart_blocks_with_parts.append((block_idx + 1, manifest))
+                    # Use block.id as marker for robust injection (set as w:rsidR in create_docx_from_blocks)
+                    chart_blocks_with_parts.append((block.id, manifest))
 
             # Read section properties (column layouts)
             sections = deserialize_sections(structure_data)

@@ -50,15 +50,12 @@ def block_to_structure_dict(block: Block) -> dict:
         ] if block.track_changes else None,
         "footnote_references": block.footnote_references,
         "text_box_metadata": block.text_box_metadata,
-        "chart_metadata": block.chart_metadata,
     }
 
-    if block.chart_metadata is not None:
-        result["chart_metadata"] = asdict(block.chart_metadata)
-    if block.smartart_metadata is not None:
-        result["smartart_metadata"] = asdict(block.smartart_metadata)
-    if block.chart_parts_manifest is not None:
-        result["chart_parts_manifest"] = asdict(block.chart_parts_manifest)
+    # Serialize dataclass fields to dicts (or None if not present)
+    result["chart_metadata"] = asdict(block.chart_metadata) if block.chart_metadata is not None else None
+    result["smartart_metadata"] = asdict(block.smartart_metadata) if block.smartart_metadata is not None else None
+    result["chart_parts_manifest"] = asdict(block.chart_parts_manifest) if block.chart_parts_manifest is not None else None
 
     return result
 
