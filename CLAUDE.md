@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. The canonical format is a `.sidedoc/` directory containing markdown content and formatting metadata. A `.sdoc` ZIP archive is used for distribution and sharing.
 
-**Status:** MVP complete with hyperlink, track changes, table, headers/footers, and chart support (extraction, reconstruction).
+**Status:** MVP complete with hyperlink, track changes, table, headers/footers, chart, and PDF support (extraction, reconstruction).
 
 ## Development Philosophy
 
@@ -94,9 +94,11 @@ src/sidedoc/
 ├── cli.py              # CLI entry points (click), includes validate command
 ├── constants.py        # Shared constants (extensions, limits, patterns)
 ├── extract.py          # docx → sidedoc (paragraphs, tables, images, charts, headers/footers)
+├── extract_pdf.py      # pdf → sidedoc via Docling (optional, requires [pdf] extras)
 ├── models.py           # Block, Style, Manifest, TrackChange dataclasses
 ├── package.py          # Archive/directory creation helpers, block serialization
 ├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling, header/footer reconstruction
+├── reconstruct_pdf.py  # sidedoc → pdf via WeasyPrint (optional, requires [pdf] extras)
 ├── store.py            # Read-only abstraction over directory/ZIP
 ├── sync.py             # edited content → updated docx (imports formatting from reconstruct.py)
 └── utils.py            # shared utilities
@@ -104,9 +106,9 @@ src/sidedoc/
 
 ## Key Concepts
 
-- **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
-- **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
-- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content.
+- **Extract:** Convert a `.docx` or `.pdf` file into a Sidedoc container (content.md + formatting metadata). PDF extraction requires `pip install sidedoc[pdf]`.
+- **Reconstruct (build):** Rebuild the original document from the Sidedoc container. Output format (`.docx` or `.pdf`) is determined automatically from `manifest.json`'s `source_format` field.
+- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content. (DOCX only — PDF sync not yet supported.)
 
 ### Block Types
 
@@ -137,6 +139,19 @@ Charts are extracted using their cached PNG/EMF fallback image from the `mc:Alte
 - **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
 - **`chart_metadata`:** Currently stores `{"chart_rel_id": ...}` for charts with a resolved relationship ID. Degraded chart paragraphs (no preview / validation error) also preserve `chart_rel_id` in `chart_metadata` when one is available; `None` only when no relationship ID can be resolved. Full chart data (type, series, labels) reserved for JON-107.
 
+### PDF Support
+
+PDF extraction uses Docling (`extract_pdf.py`) and reconstruction uses WeasyPrint (`reconstruct_pdf.py`). Both require `pip install sidedoc[pdf]`.
+
+**Pitfalls to avoid:**
+
+- **`mistune.html()` is the correct API.** Use `mistune.html(content_md)` directly — do not wrap it in a custom class or use `mistune.create_markdown()`. The function returns a plain `str` and is the simplest correct approach.
+- **GFM separator double-insertion.** `_table_to_gfm()` has two code paths: one that appends a separator after a detected header row, and a fallback that inserts one after row 0 when no headers are detected. These must be `if/else` — never two independent `if` checks — or headerless tables will get two separator rows.
+- **Do not coerce `header_rows` to `max(1, ...)`** — Docling tables without any `column_header=True` cells legitimately have `header_rows=0`. Forcing it to 1 creates incorrect GFM (treats a data row as a header) and corrupts `table_metadata`.
+- **Guard optional heavy deps at module level.** `fitz` (PyMuPDF), `weasyprint`, and `docling` are all optional. Each module that needs them must use a top-level `try/except ImportError` block and set a `HAS_*` flag. Tests skip via `pytest.mark.skipif(not HAS_PYMUPDF, ...)`.
+- **Skip `PictureItem` blocks when image extraction is unimplemented.** Do not emit a block with a broken asset reference. Use `continue` to skip the item entirely; the block list stays clean and no dangling `![alt](assets/...)` references appear in `content.md`.
+- **WeasyPrint requires `base_url`.** `weasyprint.HTML(string=full_html)` cannot resolve relative paths to assets. Always pass `base_url=str(Path(sidedoc_path).resolve())` so embedded images in `assets/` resolve correctly.
+
 ### Table Support (Phase 2)
 
 Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
@@ -161,10 +176,10 @@ A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
 | `content.md` | Yes | Yes | Clean markdown that AI reads/writes |
 | `styles.json` | Yes | Yes | Formatting information per block |
 | `structure.json` | No* | Yes | Block structure, docx paragraph mappings, and section metadata (headers, footers, page setup) |
-| `manifest.json` | No* | Yes | Metadata and version info |
+| `manifest.json` | No* | Yes | Metadata and version info; includes `source_format` ("docx" or "pdf") |
 | `assets/` | No | No | Images and embedded files |
 
-\* `structure.json` is written during `sidedoc extract` and updated by `sidedoc sync`; `manifest.json` is generated by `sidedoc sync`
+\* `structure.json` is written during `sidedoc extract` and updated by `sidedoc sync`; `manifest.json` is written during `sidedoc extract` (for PDF sources) or `sidedoc sync` (for DOCX sources)
 
 ## Benchmarks
 
@@ -194,6 +209,9 @@ pytest
 # Run tests with coverage
 pytest --cov=sidedoc
 
+# Run tests excluding PDF (skips tests requiring docling/weasyprint)
+pytest -m "not pdf"
+
 # Type checking
 mypy src/
 
@@ -203,8 +221,9 @@ sidedoc extract document.docx --pack             # Extract to document.sdoc ZIP
 sidedoc extract document.docx --force            # Overwrite existing output
 sidedoc extract document.docx --track-changes    # Force extract track changes
 sidedoc extract document.docx --no-track-changes # Accept all changes
-sidedoc build document.sidedoc                   # Build docx (accepts dir or ZIP)
-sidedoc sync document.sidedoc                    # Sync edited content.md (directory only)
+sidedoc extract document.pdf                     # Extract PDF (requires pip install sidedoc[pdf])
+sidedoc build document.sidedoc                   # Build document; auto-detects .docx or .pdf from manifest
+sidedoc sync document.sidedoc                    # Sync edited content.md (directory only, DOCX source only)
 sidedoc sync document.sidedoc -o out.docx        # Sync and build updated docx
 sidedoc sync document.sidedoc --author "AI"      # Sync with custom author for track changes
 sidedoc validate document.sidedoc                # Validate structure, table dimensions, merged cells, styles completeness
@@ -221,6 +240,12 @@ sidedoc unpack document.sdoc                     # Unpack .sdoc ZIP → .sidedoc
 - mistune — Markdown parsing
 - click — CLI framework
 - pytest — Testing
+- Pillow — Image validation
+
+**Optional (`pip install sidedoc[pdf]`):**
+- docling — PDF extraction (IBM; pulls in torch + transformers, ~900 MB)
+- weasyprint — PDF reconstruction (markdown → HTML → PDF; requires libpango system library)
+- pymupdf — PDF inspection utilities
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands

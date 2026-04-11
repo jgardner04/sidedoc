@@ -146,3 +146,4 @@ class Manifest:
     source_hash: str  # SHA256 hash of source file
     content_hash: str  # SHA256 hash of content.md
     generator: str  # e.g., "sidedoc-cli/0.1.0"
+    source_format: str = "docx"  # "docx" or "pdf"
