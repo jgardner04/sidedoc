@@ -18,7 +18,7 @@ from sidedoc.constants import (
     SIDEDOC_ZIP_EXTENSION,
     TRACKING_FILES,
 )
-from sidedoc.extract import extract_blocks, extract_document, extract_section_metadata, extract_sections, extract_styles, blocks_to_markdown
+from sidedoc.extract import extract_document, extract_section_metadata, extract_styles, blocks_to_markdown
 from sidedoc.models import Block
 from sidedoc.package import create_sidedoc_archive, create_sidedoc_directory
 from sidedoc.reconstruct import build_docx_from_sidedoc, parse_gfm_table, parse_markdown_to_blocks, validate_gfm_table_dimensions
@@ -120,6 +120,19 @@ def _read_sidedoc_files(input_path: str) -> tuple[str, dict, dict]:
         return content_md, styles_data, old_structure
 
 
+def _read_source_format(sidedoc_path: str) -> str:
+    """Read source_format from manifest.json, default to 'docx'."""
+    try:
+        store = SidedocStore.open(sidedoc_path)
+        with store:
+            if store.has_file("manifest.json"):
+                manifest = store.read_json("manifest.json")
+                return str(manifest.get("source_format", "docx"))
+    except (FileNotFoundError, ValueError):
+        pass
+    return "docx"
+
+
 def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     """Convert structure.json dict to list of Block objects."""
     return [
@@ -151,56 +164,79 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     help="Force enable/disable track changes extraction. Default: auto-detect",
 )
 def extract(input_file: str, output: str | None, force: bool, pack: bool, track_changes: bool | None) -> None:
-    """Extract a Word document into a sidedoc directory.
+    """Extract a document into a sidedoc directory.
 
-    Converts document.docx to document.sidedoc/ directory (or document.sdoc with --pack).
+    Supports .docx and .pdf input files.
+    Converts to .sidedoc/ directory (or .sdoc with --pack).
 
-    Track changes behavior:
+    Track changes behavior (docx only):
     - Default: Auto-detect track changes in the document
     - --track-changes: Force extract track changes as CriticMarkup
     - --no-track-changes: Accept all changes (ignore track changes)
     """
     try:
+        input_path = Path(input_file)
+        is_pdf = input_path.suffix.lower() == ".pdf"
+
+        if is_pdf and track_changes is not None:
+            click.echo("Warning: --track-changes/--no-track-changes ignored for PDF input.", err=True)
+
+        # Extract based on input format
+        if is_pdf:
+            from sidedoc.extract_pdf import extract_pdf_document, extract_pdf_styles
+
+            blocks, image_data, sections = extract_pdf_document(input_file)
+            styles = extract_pdf_styles(input_file, blocks)
+            hf_sections: list[dict] = []
+            source_format = "pdf"
+        else:
+            blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
+            styles = extract_styles(input_file, blocks)
+            hf_sections_result, section_images = extract_section_metadata(input_file)
+            image_data.update(section_images)
+            hf_sections = hf_sections_result
+            source_format = "docx"
+
+        content_md = blocks_to_markdown(blocks)
+
         if pack:
             # Create ZIP archive with .sdoc extension
             if output is None:
-                output = str(Path(input_file).with_suffix(SIDEDOC_ZIP_EXTENSION))
+                output = str(input_path.with_suffix(SIDEDOC_ZIP_EXTENSION))
             else:
                 output = ensure_sdoc_extension(output)
 
-            blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
-            styles = extract_styles(input_file, blocks)
-            hf_sections, section_images = extract_section_metadata(input_file)
-            image_data.update(section_images)
-            content_md = blocks_to_markdown(blocks)
-            create_sidedoc_archive(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
+            create_sidedoc_archive(
+                output, content_md, blocks, styles, input_file,
+                image_data, sections, hf_sections,
+                source_format=source_format,
+            )
         else:
             # Create directory with .sidedoc extension
             if output is None:
-                output = str(Path(input_file).with_suffix(SIDEDOC_DIR_EXTENSION))
+                output = str(input_path.with_suffix(SIDEDOC_DIR_EXTENSION))
             else:
                 output = ensure_sidedoc_extension(output)
 
-            output_path = Path(output)
-            if output_path.is_symlink():
+            output_dir = Path(output)
+            if output_dir.is_symlink():
                 click.echo("Error: output path is a symlink.", err=True)
                 sys.exit(EXIT_ERROR)
 
-            if output_path.exists():
+            if output_dir.exists():
                 if not force:
                     click.echo(
                         f"Error: {output} already exists. Use --force to overwrite.",
                         err=True,
                     )
                     sys.exit(EXIT_ERROR)
-                shutil.rmtree(output_path)
+                shutil.rmtree(output_dir)
 
-            blocks, image_data, sections = extract_document(input_file, track_changes=track_changes)
-            styles = extract_styles(input_file, blocks)
-            hf_sections, section_images = extract_section_metadata(input_file)
-            image_data.update(section_images)
-            content_md = blocks_to_markdown(blocks)
-            create_sidedoc_directory(output, content_md, blocks, styles, input_file, image_data, sections, hf_sections)
+            create_sidedoc_directory(
+                output, content_md, blocks, styles, input_file,
+                image_data, sections, hf_sections,
+                source_format=source_format,
+            )
 
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)
@@ -214,19 +250,29 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
 
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
-@click.option("-o", "--output", help="Output path for .docx file")
+@click.option("-o", "--output", help="Output path for document file")
 def build(input_file: str, output: str | None) -> None:
-    """Reconstruct a Word document from a sidedoc directory or archive.
+    """Reconstruct a document from a sidedoc directory or archive.
 
     Accepts both .sidedoc/ directories and .sdoc ZIP archives.
+    Output format is determined by source_format in manifest.json:
+    - docx source → builds .docx
+    - pdf source → builds .pdf
     """
     try:
-        if output is None:
-            # Place output alongside input (not inside directory)
-            input_path = Path(input_file)
-            output = str(input_path.parent / (input_path.stem + ".docx"))
+        source_format = _read_source_format(input_file)
 
-        build_docx_from_sidedoc(input_file, output)
+        input_path = Path(input_file)
+        if source_format == "pdf":
+            from sidedoc.reconstruct_pdf import build_pdf_from_sidedoc
+
+            if output is None:
+                output = str(input_path.parent / (input_path.stem + ".pdf"))
+            build_pdf_from_sidedoc(input_file, output)
+        else:
+            if output is None:
+                output = str(input_path.parent / (input_path.stem + ".docx"))
+            build_docx_from_sidedoc(input_file, output)
 
         click.echo(f"✓ Built document: {output}")
         sys.exit(EXIT_SUCCESS)

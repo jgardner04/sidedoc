@@ -1,5 +1,6 @@
 """Package and unpackage sidedoc archives."""
 
+import hashlib
 import json
 import re
 import zipfile
@@ -120,6 +121,7 @@ def _build_metadata(
     source_file: str,
     sections: list[SectionProperties] | None = None,
     hf_sections: list[dict] | None = None,
+    source_format: str = "docx",
 ) -> tuple[dict, dict, dict]:
     """Build structure, styles, and manifest dicts from extraction data.
 
@@ -171,16 +173,18 @@ def _build_metadata(
     }
 
     timestamp = get_iso_timestamp()
-    content_hash = compute_file_hash(source_file)
+    source_hash = compute_file_hash(source_file)
+    content_hash = hashlib.sha256(content_md.encode()).hexdigest()
 
     manifest = Manifest(
         sidedoc_version="1.0.0",
         created_at=timestamp,
         modified_at=timestamp,
         source_file=Path(source_file).name,
-        source_hash=content_hash,
+        source_hash=source_hash,
         content_hash=content_hash,
         generator=f"sidedoc-cli/{__version__}",
+        source_format=source_format,
     )
 
     manifest_data = {
@@ -191,6 +195,7 @@ def _build_metadata(
         "source_hash": manifest.source_hash,
         "content_hash": manifest.content_hash,
         "generator": manifest.generator,
+        "source_format": manifest.source_format,
     }
 
     return structure_data, styles_data, manifest_data
@@ -205,6 +210,7 @@ def create_sidedoc_archive(
     image_data: dict[str, bytes] | None = None,
     sections: list[SectionProperties] | None = None,
     hf_sections: list[dict] | None = None,
+    source_format: str = "docx",
 ) -> None:
     """Create a .sidedoc/.sdoc ZIP archive.
 
@@ -217,9 +223,11 @@ def create_sidedoc_archive(
         image_data: Optional dict mapping image filenames to image bytes
         sections: Optional list of SectionProperties for column layouts
         hf_sections: Optional list of header/footer section metadata dicts
+        source_format: Source file format ("docx" or "pdf")
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file, sections, hf_sections
+        content_md, blocks, styles, source_file, sections, hf_sections,
+        source_format=source_format,
     )
 
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -242,6 +250,7 @@ def create_sidedoc_directory(
     image_data: dict[str, bytes] | None = None,
     sections: list[SectionProperties] | None = None,
     hf_sections: list[dict] | None = None,
+    source_format: str = "docx",
 ) -> None:
     """Create a .sidedoc directory.
 
@@ -254,9 +263,11 @@ def create_sidedoc_directory(
         image_data: Optional dict mapping image filenames to image bytes
         sections: Optional list of SectionProperties for column layouts
         hf_sections: Optional list of header/footer section metadata dicts
+        source_format: Source file format ("docx" or "pdf")
     """
     structure_data, styles_data, manifest_data = _build_metadata(
-        content_md, blocks, styles, source_file, sections, hf_sections
+        content_md, blocks, styles, source_file, sections, hf_sections,
+        source_format=source_format,
     )
 
     out = Path(output_path)

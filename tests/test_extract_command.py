@@ -101,6 +101,35 @@ def test_extract_creates_valid_manifest():
             Path(docx_path).unlink(missing_ok=True)
 
 
+def test_manifest_content_hash_matches_content_md():
+    """manifest.json content_hash should be SHA256 of content.md, not the source file."""
+    import hashlib
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        docx_path = create_test_docx()
+
+        try:
+            result = runner.invoke(main, ["extract", docx_path])
+            assert result.exit_code == 0
+
+            sidedoc_path = Path(docx_path).with_suffix(".sidedoc")
+            content_md = (sidedoc_path / "content.md").read_text()
+            manifest = json.loads((sidedoc_path / "manifest.json").read_text())
+
+            expected_hash = hashlib.sha256(content_md.encode()).hexdigest()
+            assert manifest["content_hash"] == expected_hash, (
+                f"content_hash should be SHA256 of content.md, "
+                f"got {manifest['content_hash']}, expected {expected_hash}"
+            )
+            assert manifest["content_hash"] != manifest["source_hash"], (
+                "content_hash and source_hash should differ "
+                "(content.md is markdown, source is binary docx)"
+            )
+        finally:
+            Path(docx_path).unlink(missing_ok=True)
+
+
 def test_extract_error_on_missing_file():
     """Test that extract returns error code 2 for missing file."""
     runner = CliRunner()

@@ -34,6 +34,11 @@ dev = [
     "pytest-cov>=6.0.0",
     "mypy>=1.11.0",
 ]
+pdf = [
+    "docling>=2.0.0",
+    "pymupdf>=1.24.0",
+    "weasyprint>=60.0",
+]
 benchmarks = [
     "pypandoc>=1.16.2",
     "tiktoken>=0.12.0",
@@ -54,6 +59,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --strict-markers"
+markers = [
+    "pdf: marks tests requiring docling/pymupdf (deselect with '-m \"not pdf\"')",
+]
 
 [tool.mypy]
 python_version = "3.11"
