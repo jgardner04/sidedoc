@@ -1920,12 +1920,33 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
                     paragraph.alignment, DEFAULT_ALIGNMENT
                 )
 
+            # Extract paragraph format properties
+            pf = paragraph.paragraph_format
+            left_indent = int(pf.left_indent) if pf.left_indent is not None else None
+            right_indent = int(pf.right_indent) if pf.right_indent is not None else None
+            first_line_indent = int(pf.first_line_indent) if pf.first_line_indent is not None else None
+            space_before = int(pf.space_before) if pf.space_before is not None else None
+            space_after = int(pf.space_after) if pf.space_after is not None else None
+            line_spacing = int(pf.line_spacing) if pf.line_spacing is not None else None
+            keep_together = pf.keep_together if pf.keep_together else None
+            keep_with_next = pf.keep_with_next if pf.keep_with_next else None
+            page_break_before = pf.page_break_before if pf.page_break_before else None
+
             style = Style(
                 block_id=block.id,
                 docx_style=paragraph.style.name if paragraph.style else "Normal",
                 font_name=font_name,
                 font_size=font_size,
                 alignment=alignment,
+                left_indent=left_indent,
+                right_indent=right_indent,
+                first_line_indent=first_line_indent,
+                space_before=space_before,
+                space_after=space_after,
+                line_spacing=line_spacing,
+                keep_together=keep_together,
+                keep_with_next=keep_with_next,
+                page_break_before=page_break_before,
             )
             styles.append(style)
             block_index += 1
