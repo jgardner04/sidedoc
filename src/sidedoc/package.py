@@ -3,6 +3,7 @@
 import json
 import re
 import zipfile
+from dataclasses import asdict
 from pathlib import Path
 from sidedoc.models import Block, SectionProperties, Style, Manifest
 from sidedoc.utils import compute_file_hash, get_iso_timestamp
@@ -23,8 +24,6 @@ def block_to_structure_dict(block: Block) -> dict:
     Returns:
         Dictionary suitable for structure.json
     """
-    from dataclasses import asdict
-
     result = {
         "id": block.id,
         "type": block.type,

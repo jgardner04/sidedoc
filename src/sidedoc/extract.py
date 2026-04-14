@@ -2,8 +2,11 @@
 
 import hashlib
 import io
+import logging
+import zipfile
 from pathlib import Path
 from typing import Any, Literal, Optional
+from xml.etree import ElementTree as ET
 from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
@@ -31,6 +34,8 @@ WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 CHART_NS = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 DIAGRAM_NS = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
+
+logger = logging.getLogger(__name__)
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -244,8 +249,6 @@ def _load_doc_rels(docx_path: str) -> dict[str, tuple[str, str]]:
     python-docx only loads known relationship types. Charts and SmartArt
     relationships are not included, so we parse the rels file directly.
     """
-    import zipfile
-    from xml.etree import ElementTree as ET
 
     rels: dict[str, tuple[str, str]] = {}
     with zipfile.ZipFile(docx_path, "r") as zf:
@@ -267,7 +270,6 @@ def _load_doc_rels(docx_path: str) -> dict[str, tuple[str, str]]:
 
 def _read_docx_part(docx_path: str, part_path: str) -> Optional[bytes]:
     """Read a part from the docx ZIP archive by path (relative to word/)."""
-    import zipfile
 
     full_path = f"word/{part_path}" if not part_path.startswith("word/") else part_path
     with zipfile.ZipFile(docx_path, "r") as zf:
@@ -289,7 +291,6 @@ def _extract_content_types_for_parts(
     zf: "zipfile.ZipFile", part_paths: list[str]
 ) -> list[dict[str, str]]:
     """Extract content type overrides from [Content_Types].xml for given part paths."""
-    from xml.etree import ElementTree as ET
 
     ct_bytes = _read_zip_part(zf, "[Content_Types].xml")
     if ct_bytes is None:
@@ -328,7 +329,6 @@ def _archive_chart_parts(
     Returns:
         Tuple of (manifest, asset_data) where asset_data maps asset paths to bytes.
     """
-    from xml.etree import ElementTree as ET
 
     prefix = f"chart_parts/chart{chart_counter}"
     asset_data: dict[str, bytes] = {}
@@ -471,7 +471,6 @@ def extract_chart_from_paragraph(
                 # Open the docx ZIP once and thread it through the archival
                 # helpers — they each used to open their own handle, yielding
                 # ~5-7 ZIP opens per chart in the previous implementation.
-                import zipfile
                 with zipfile.ZipFile(docx_path, "r") as zf:
                     parts_info = _archive_chart_parts(
                         zf, run._element, chart_rel_id, target,
@@ -485,18 +484,17 @@ def extract_chart_from_paragraph(
 
 def _parse_chart_xml(chart_bytes: bytes) -> ChartMetadata:
     """Parse chart XML to extract type, title, series, and categories."""
-    from xml.etree import ElementTree as ET
 
     root = ET.fromstring(chart_bytes)
 
-    # Extract title from c:title/c:tx/c:rich/a:p/a:r/a:t
+    # Extract title from c:title/c:tx/c:rich/a:p/a:r/a:t — concatenate all
+    # text runs so multi-run / formatted titles aren't truncated.
     title = None
     title_elem = root.find(f'.//{{{CHART_NS}}}title')
     if title_elem is not None:
-        for t_elem in title_elem.iter(f'{{{DRAWINGML_NS}}}t'):
-            if t_elem.text:
-                title = t_elem.text
-                break
+        parts = [t.text for t in title_elem.iter(f'{{{DRAWINGML_NS}}}t') if t.text]
+        if parts:
+            title = "".join(parts)
 
     # Detect chart type from plot area children
     chart_type = "unknown"
@@ -637,7 +635,6 @@ def extract_smartart_from_paragraph(
 
 def _parse_smartart_data_xml(data_bytes: bytes) -> SmartArtMetadata:
     """Parse SmartArt data XML to extract node text."""
-    from xml.etree import ElementTree as ET
 
     root = ET.fromstring(data_bytes)
     nodes: list[dict[str, Any]] = []
@@ -656,13 +653,16 @@ def _parse_smartart_data_xml(data_bytes: bytes) -> SmartArtMetadata:
 
 def _parse_smartart_layout_type(layout_bytes: bytes) -> Optional[str]:
     """Extract diagram type name from SmartArt layout XML."""
-    from xml.etree import ElementTree as ET
 
     root = ET.fromstring(layout_bytes)
     title = root.find(f'{{{DIAGRAM_NS}}}title')
-    if title is not None:
-        return title.get('val')
-    return None
+    if title is None:
+        logger.debug("SmartArt layout has no dgm:title element; falling back to 'Diagram N'")
+        return None
+    val = title.get('val')
+    if not val:
+        logger.debug("SmartArt dgm:title missing 'val' attribute; falling back to 'Diagram N'")
+    return val
 
 
 def _find_fallback_drawing(drawing: Any) -> Optional[Any]:
