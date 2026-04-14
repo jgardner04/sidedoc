@@ -477,3 +477,50 @@ class TestExternalRelationshipBlipSkip:
         result = _extract_blip_image(blip, doc_part, "image", 0)
         assert result is None, "External-relationship blip should be skipped"
         blip.get.assert_called_with(f"{{{RELATIONSHIPS_NS}}}embed")
+
+
+class TestNamespacePreservation:
+    """Round-tripped docx must preserve the `w:` namespace prefix in
+    document.xml. Using stdlib ElementTree to serialize re-emits as `ns0:`,
+    which python-docx and other OOXML tools cannot parse."""
+
+    def _build(self, docx_path, tmp_path):
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+        blocks, image_data = extract_blocks(str(docx_path))
+        styles = extract_styles(str(docx_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+        sdoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sdoc_dir), content_md, blocks, styles,
+            str(docx_path), image_data,
+        )
+        output_docx = tmp_path / "rebuilt.docx"
+        build_docx_from_sidedoc(str(sdoc_dir), str(output_docx))
+        return output_docx
+
+    def test_rebuilt_document_xml_uses_w_prefix(self, chart_bar_path, tmp_path):
+        output_docx = self._build(chart_bar_path, tmp_path)
+
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+
+        assert "ns0:" not in doc_xml, (
+            "document.xml uses stdlib ET default prefix (ns0:) instead of w:; "
+            "this will break python-docx round-tripping"
+        )
+        assert "<w:body" in doc_xml or "w:body " in doc_xml, \
+            "expected w:body element in rebuilt document.xml"
+
+    def test_rebuilt_docx_has_no_invalid_rsidR_marker(self, chart_bar_path, tmp_path):
+        output_docx = self._build(chart_bar_path, tmp_path)
+
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+
+        # block-N is the internal sidedoc ID; it must not appear as a w:rsidR
+        # attribute in the rebuilt docx (w:rsidR is spec'd as 8-digit hex).
+        assert 'w:rsidR="block-' not in doc_xml, \
+            "internal block-N IDs leaked into w:rsidR — invalid OOXML"
+        assert 'rsidR="block-' not in doc_xml, \
+            "internal block-N IDs leaked into rsidR — invalid OOXML"

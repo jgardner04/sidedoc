@@ -8,7 +8,6 @@ import zipfile
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
-from xml.etree import ElementTree as ET
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.document import Document as DocumentType
@@ -47,12 +46,11 @@ from sidedoc.store import SidedocStore
 
 import mistune
 
-# Register XML namespaces at module level to avoid mutating global state in functions
-# (ET.register_namespace mutates process-global state and can cause corruption if
-# called multiple times with different namespaces in concurrent contexts)
-# Note: Both relationships and content-types use the default namespace (prefix="")
-# within their respective files, so we register whichever is processed last
-ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
+# Private namespace for sidedoc internal attributes (e.g. block ID marker on
+# chart placeholder paragraphs). Word ignores attributes in unknown namespaces
+# on open, and we strip this attribute from the final output before saving.
+SIDEDOC_NS = "https://sidedoc.dev/xmlns/2026"
+SIDEDOC_BLOCK_ID = f"{{{SIDEDOC_NS}}}blockId"
 
 # Known limitation: multi-line footnote definitions not supported.
 # Only single-line [^N]: text definitions are captured; indented continuation
@@ -1673,9 +1671,12 @@ def create_docx_from_blocks(
             else:
                 para = doc.add_paragraph(no_path_label)
 
-            # Mark chart paragraphs with block ID for robust injection during _inject_chart_parts
+            # Tag chart/smartart placeholder paragraphs with a private-namespace
+            # attribute so _inject_chart_parts can match them after python-docx
+            # emits the document XML. The attribute is stripped during injection
+            # so it never leaks into the saved docx.
             if para is not None and (is_chart or is_smartart):
-                para._element.set(qn("w:rsidR"), block.id)
+                para._element.set(SIDEDOC_BLOCK_ID, block.id)
         else:
             # Paragraph and all other block types
             content = block.content
@@ -1714,45 +1715,50 @@ def create_docx_from_blocks(
 
 def _inject_chart_parts(
     docx_bytes: bytes,
-    chart_injections: list[tuple[str, ChartPartsManifest]],
+    chart_injections: dict[str, ChartPartsManifest],
     assets_dir: Path,
 ) -> bytes:
     """Post-process a docx ZIP to inject archived chart XML parts.
 
-    Replaces placeholder paragraphs with the original chart drawing XML
-    and adds all OOXML parts, relationships, and content types needed
-    for a fully functional chart.
+    Replaces placeholder paragraphs (tagged with SIDEDOC_BLOCK_ID) with the
+    original chart drawing XML and adds the OOXML parts, relationships, and
+    content types needed for a fully functional chart.
+
+    Uses lxml for OOXML manipulation so namespace prefixes (w:, r:, mc:, …)
+    are preserved on re-serialization — stdlib ElementTree would emit them as
+    ns0/ns1/… and break python-docx round-tripping.
 
     Args:
-        docx_bytes: Base docx bytes (from python-docx save)
-        chart_injections: List of (block_id, manifest) tuples where block_id
-            matches the w:rsidR attribute set on chart paragraphs
-        assets_dir: Path to the assets directory containing chart_parts/
+        docx_bytes: Base docx bytes (from python-docx save).
+        chart_injections: Map of block_id → manifest. The block_id must match
+            the SIDEDOC_BLOCK_ID attribute set on chart paragraphs during
+            create_docx_from_blocks.
+        assets_dir: Path to the assets directory containing chart_parts/.
 
     Returns:
-        Modified docx bytes with chart parts injected
+        Modified docx bytes with chart parts injected.
     """
     W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+    CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 
-    # Collect all rels and content types from all chart injections
     all_extra_rels: list[dict[str, str]] = []
     all_extra_content_types: list[dict[str, str]] = []
     all_extra_parts: dict[str, bytes] = {}
-    # Build mapping of block_id -> manifest for lookup during XML processing
-    chart_manifest_map: dict[str, ChartPartsManifest] = {}
 
-    for block_id, manifest in chart_injections:
+    for manifest in chart_injections.values():
         all_extra_rels.extend(manifest.rels)
         all_extra_content_types.extend(manifest.content_types)
-        chart_manifest_map[block_id] = manifest
-
-        # Load all OOXML parts from assets
         for ooxml_path, asset_path in manifest.parts.items():
-            # Skip rels files — they go into word/ directly
             full_ooxml_path = f"word/{ooxml_path}"
             part_file = assets_dir / asset_path
             if part_file.exists():
                 all_extra_parts[full_ooxml_path] = part_file.read_bytes()
+
+    def _serialize(tree: Any) -> bytes:
+        return etree.tostring(
+            tree, xml_declaration=True, encoding="UTF-8", standalone=True
+        )
 
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as src:
         out_buf = io.BytesIO()
@@ -1761,55 +1767,61 @@ def _inject_chart_parts(
                 data = src.read(item.filename)
 
                 if item.filename == "word/document.xml":
-                    doc_tree = ET.fromstring(data)
+                    doc_tree = etree.fromstring(data)
                     body = doc_tree.find(f"{{{W}}}body")
                     if body is not None:
-                        # Find all paragraphs marked with chart block IDs
                         for para in body.findall(f".//{{{W}}}p"):
-                            rsid = para.get(qn("w:rsidR"))
-                            if rsid and rsid in chart_manifest_map:
-                                manifest = chart_manifest_map[rsid]
-                                # Load the archived drawing XML (w:r element)
-                                drawing_file = assets_dir / manifest.drawing_xml_path
-                                if drawing_file.exists():
-                                    drawing_xml = drawing_file.read_bytes()
-                                    drawing_elem = ET.fromstring(drawing_xml)
-                                    # Clear existing paragraph content and inject drawing
-                                    for child in list(para):
-                                        para.remove(child)
-                                    para.append(drawing_elem)
-
-                    # Serialize with XML declaration
-                    data = ET.tostring(doc_tree, xml_declaration=True, encoding="UTF-8")
+                            block_id = para.get(SIDEDOC_BLOCK_ID)
+                            if not block_id:
+                                continue
+                            manifest = chart_injections.get(block_id)
+                            # Strip the marker regardless — it must never leak
+                            # into the final docx even if injection is skipped.
+                            del para.attrib[SIDEDOC_BLOCK_ID]
+                            if manifest is None:
+                                continue
+                            drawing_file = assets_dir / manifest.drawing_xml_path
+                            if not drawing_file.exists():
+                                continue
+                            drawing_elem = etree.fromstring(drawing_file.read_bytes())
+                            for child in list(para):
+                                para.remove(child)
+                            para.append(drawing_elem)
+                    data = _serialize(doc_tree.getroottree())
 
                 elif item.filename == "word/_rels/document.xml.rels":
-                    rels_tree = ET.fromstring(data)
+                    rels_tree = etree.fromstring(data)
                     existing_ids = {rel.get("Id") for rel in rels_tree}
                     for rel_dict in all_extra_rels:
-                        if rel_dict["id"] not in existing_ids:
-                            rel = ET.SubElement(rels_tree, "Relationship")
-                            rel.set("Id", rel_dict["id"])
-                            rel.set("Type", rel_dict["type"])
-                            rel.set("Target", rel_dict["target"])
-                    data = ET.tostring(rels_tree, xml_declaration=True, encoding="UTF-8")
+                        if rel_dict["id"] in existing_ids:
+                            continue
+                        rel = etree.SubElement(
+                            rels_tree,
+                            f"{{{REL_NS}}}Relationship",
+                            nsmap={None: REL_NS},
+                        )
+                        rel.set("Id", rel_dict["id"])
+                        rel.set("Type", rel_dict["type"])
+                        rel.set("Target", rel_dict["target"])
+                    data = _serialize(rels_tree.getroottree())
 
                 elif item.filename == "[Content_Types].xml":
-                    # Temporarily register content-types namespace for this tree only
-                    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/content-types")
-                    ct_tree = ET.fromstring(data)
+                    ct_tree = etree.fromstring(data)
                     existing_parts = {o.get("PartName") for o in ct_tree}
                     for ct_dict in all_extra_content_types:
-                        if ct_dict["part_name"] not in existing_parts:
-                            override = ET.SubElement(ct_tree, "Override")
-                            override.set("PartName", ct_dict["part_name"])
-                            override.set("ContentType", ct_dict["content_type"])
-                    data = ET.tostring(ct_tree, xml_declaration=True, encoding="UTF-8")
-                    # Restore relationships namespace for subsequent processing
-                    ET.register_namespace("", "http://schemas.openxmlformats.org/package/2006/relationships")
+                        if ct_dict["part_name"] in existing_parts:
+                            continue
+                        override = etree.SubElement(
+                            ct_tree,
+                            f"{{{CT_NS}}}Override",
+                            nsmap={None: CT_NS},
+                        )
+                        override.set("PartName", ct_dict["part_name"])
+                        override.set("ContentType", ct_dict["content_type"])
+                    data = _serialize(ct_tree.getroottree())
 
                 dst.writestr(item, data)
 
-            # Add extra parts not already in the ZIP
             for part_path, part_bytes in all_extra_parts.items():
                 dst.writestr(part_path, part_bytes)
 
@@ -1907,7 +1919,7 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         hf_sections_data: list[dict] = []
 
         # Enrich blocks with structure.json metadata (track changes, chart parts, footnotes, sections)
-        chart_blocks_with_parts: list[tuple[int, ChartPartsManifest]] = []
+        chart_blocks_with_parts: dict[str, ChartPartsManifest] = {}
         sections: list[SectionProperties] | None = None
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
@@ -1957,8 +1969,9 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         rels=manifest_data["rels"],
                         content_types=manifest_data["content_types"],
                     )
-                    # Use block.id as marker for robust injection (set as w:rsidR in create_docx_from_blocks)
-                    chart_blocks_with_parts.append((block.id, manifest))
+                    # Block ID is set as SIDEDOC_BLOCK_ID on the placeholder paragraph
+                    # during create_docx_from_blocks; _inject_chart_parts matches by it.
+                    chart_blocks_with_parts[block.id] = manifest
 
             # Read section properties (column layouts)
             sections = deserialize_sections(structure_data)
