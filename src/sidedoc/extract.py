@@ -2,14 +2,17 @@
 
 import hashlib
 import io
+import logging
+import zipfile
 from pathlib import Path
 from typing import Any, Literal, Optional
+from xml.etree import ElementTree as ET
 from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.oxml.ns import qn
 from lxml import etree  # type: ignore[import-untyped]
 from PIL import Image
-from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange
+from sidedoc.models import Block, ChartMetadata, ChartPartsManifest, ColumnDefinition, SectionProperties, SmartArtMetadata, Style, TrackChange
 from sidedoc.constants import (
     CHART_ALT_TEXT_PREFIX,
     MAX_IMAGE_SIZE,
@@ -30,6 +33,9 @@ WP_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessing
 WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 CHART_NS = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+DIAGRAM_NS = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
+
+logger = logging.getLogger(__name__)
 
 
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
@@ -237,60 +243,490 @@ def extract_image_from_paragraph(paragraph: Any, doc_part: Any, image_counter: i
     return None
 
 
-def extract_chart_from_paragraph(
-    paragraph: Any, doc_part: Any, image_counter: int
-) -> Optional[tuple[str, str, bytes, str, str]]:
-    """Check if paragraph contains a chart and extract its cached fallback image.
+def _load_doc_rels(docx_path: str) -> dict[str, tuple[str, str]]:
+    """Load document.xml.rels into a dict mapping rId -> (type, target).
 
-    Charts in OOXML may be embedded in two forms:
-    1. mc:AlternateContent — mc:Choice has c:chart, mc:Fallback has cached image blip
-    2. Flat w:drawing — c:chart in graphicData with no fallback image
+    python-docx only loads known relationship types. Charts and SmartArt
+    relationships are not included, so we parse the rels file directly.
+    """
+
+    rels: dict[str, tuple[str, str]] = {}
+    with zipfile.ZipFile(docx_path, "r") as zf:
+        try:
+            rels_xml = zf.read("word/_rels/document.xml.rels")
+        except KeyError:
+            return rels
+
+        root = ET.fromstring(rels_xml)
+        for rel in root:
+            rel_id = rel.get("Id", "")
+            rel_type = rel.get("Type", "")
+            target = rel.get("Target", "")
+            if rel_id:
+                rels[rel_id] = (rel_type, target)
+
+    return rels
+
+
+def _read_docx_part(docx_path: str, part_path: str) -> Optional[bytes]:
+    """Read a part from the docx ZIP archive by path (relative to word/)."""
+
+    full_path = f"word/{part_path}" if not part_path.startswith("word/") else part_path
+    with zipfile.ZipFile(docx_path, "r") as zf:
+        try:
+            return zf.read(full_path)
+        except KeyError:
+            return None
+
+
+def _read_zip_part(zf: "zipfile.ZipFile", zip_path: str) -> Optional[bytes]:
+    """Read a part from an already-open docx ZIP handle."""
+    try:
+        return zf.read(zip_path)
+    except KeyError:
+        return None
+
+
+def _extract_content_types_for_parts(
+    zf: "zipfile.ZipFile", part_paths: list[str]
+) -> list[dict[str, str]]:
+    """Extract content type overrides from [Content_Types].xml for given part paths."""
+
+    ct_bytes = _read_zip_part(zf, "[Content_Types].xml")
+    if ct_bytes is None:
+        return []
+
+    root = ET.fromstring(ct_bytes)
+    ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+    result = []
+    for override in root.findall(f"{{{ct_ns}}}Override"):
+        part_name = override.get("PartName", "")
+        # part_name is like "/word/charts/chart1.xml"
+        # part_paths are like "word/charts/chart1.xml"
+        normalized = part_name.lstrip("/")
+        if normalized in part_paths:
+            result.append({
+                "part_name": part_name,
+                "content_type": override.get("ContentType", ""),
+            })
+    return result
+
+
+def _archive_chart_parts(
+    zf: "zipfile.ZipFile",
+    run_elem: Any,
+    chart_rel_id: str,
+    chart_target: str,
+    chart_bytes: bytes,
+    doc_rels: dict[str, tuple[str, str]],
+    chart_counter: int,
+) -> tuple[ChartPartsManifest, dict[str, bytes]]:
+    """Archive all OOXML parts needed for full-fidelity chart reconstruction.
+
+    Captures the drawing XML, chart XML, chart sub-parts (embedded xlsx, style, colors),
+    relationship IDs, and content types.
+
+    Returns:
+        Tuple of (manifest, asset_data) where asset_data maps asset paths to bytes.
+    """
+
+    prefix = f"chart_parts/chart{chart_counter}"
+    asset_data: dict[str, bytes] = {}
+    parts: dict[str, str] = {}
+    rels: list[dict[str, str]] = []
+    all_ooxml_paths: list[str] = []
+
+    # 1. Archive the w:r drawing element
+    drawing_xml_bytes = ET.tostring(run_elem, encoding="unicode").encode("utf-8")
+    drawing_asset_path = f"{prefix}/drawing.xml"
+    asset_data[drawing_asset_path] = drawing_xml_bytes
+
+    # 2. Archive the chart XML part
+    chart_full_path = f"word/{chart_target}" if not chart_target.startswith("word/") else chart_target
+    chart_asset_path = f"{prefix}/{chart_target.replace('/', '_')}"
+    asset_data[chart_asset_path] = chart_bytes
+    parts[chart_target] = chart_asset_path
+    all_ooxml_paths.append(chart_full_path)
+
+    # Record the chart relationship
+    rel_type = doc_rels[chart_rel_id][0]
+    rels.append({"id": chart_rel_id, "type": rel_type, "target": chart_target})
+
+    # 3. Read chart's own rels to find sub-parts (embedded xlsx, style, colors)
+    chart_name = chart_target.rsplit("/", 1)[-1]
+    chart_dir = chart_target.rsplit("/", 1)[0] if "/" in chart_target else ""
+    chart_rels_zip_path = f"word/{chart_dir}/_rels/{chart_name}.rels" if chart_dir else f"word/_rels/{chart_name}.rels"
+    chart_rels_bytes = _read_zip_part(zf, chart_rels_zip_path)
+    if chart_rels_bytes is not None:
+        # Archive the chart's own rels file
+        rels_asset_path = f"{prefix}/{chart_dir.replace('/', '_')}__rels_{chart_name}.rels"
+        asset_data[rels_asset_path] = chart_rels_bytes
+        parts[f"{chart_dir}/_rels/{chart_name}.rels" if chart_dir else f"_rels/{chart_name}.rels"] = rels_asset_path
+
+        # Parse and follow references to sub-parts
+        chart_rels_root = ET.fromstring(chart_rels_bytes)
+        pkg_rels_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+        for rel in chart_rels_root.findall(f"{{{pkg_rels_ns}}}Relationship"):
+            sub_target = rel.get("Target", "")
+            if not sub_target:
+                continue
+            # Resolve relative paths (e.g., "../embeddings/oleObject1.xlsx")
+            if sub_target.startswith("../"):
+                sub_full = f"word/{sub_target[3:]}"
+            elif sub_target.startswith("/"):
+                sub_full = sub_target.lstrip("/")
+            else:
+                sub_full = f"word/{chart_dir}/{sub_target}" if chart_dir else f"word/{sub_target}"
+
+            sub_bytes = _read_zip_part(zf, sub_full)
+            if sub_bytes is not None:
+                # Normalize the target for storage
+                sub_relative = sub_full.removeprefix("word/")
+                sub_asset_path = f"{prefix}/{sub_relative.replace('/', '_')}"
+                asset_data[sub_asset_path] = sub_bytes
+                parts[sub_relative] = sub_asset_path
+                all_ooxml_paths.append(sub_full)
+
+    # 4. Also archive fallback image relationship if present in doc_rels
+    # (already handled by cached_image extraction, but record the rel for reconstruction)
+    image_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+    drawing_elem = run_elem.find(f'.//{{{DRAWINGML_NS}}}blip')
+    if drawing_elem is not None:
+        img_rel_id = drawing_elem.get(f'{{{RELATIONSHIPS_NS}}}embed')
+        if img_rel_id and img_rel_id in doc_rels:
+            img_type, img_target = doc_rels[img_rel_id]
+            if img_type == image_rel_type:
+                rels.append({"id": img_rel_id, "type": img_type, "target": img_target})
+
+    # 5. Extract content types for all archived OOXML parts
+    content_types = _extract_content_types_for_parts(zf, all_ooxml_paths)
+
+    manifest = ChartPartsManifest(
+        drawing_xml_path=drawing_asset_path,
+        parts=parts,
+        rels=rels,
+        content_types=content_types,
+    )
+    return manifest, asset_data
+
+
+def extract_chart_from_paragraph(
+    paragraph: Any, docx_path: str, doc_rels: dict[str, tuple[str, str]], chart_counter: int
+) -> Optional[tuple[ChartMetadata, Optional[tuple[str, bytes]], Optional[tuple[ChartPartsManifest, dict[str, bytes]]]]]:
+    """Check if paragraph contains a chart and extract metadata + cached image + parts.
 
     Args:
         paragraph: python-docx paragraph object
-        doc_part: Document part for accessing relationships
-        image_counter: Counter for generating unique image names
+        docx_path: Path to the docx file for reading chart parts
+        doc_rels: Pre-loaded document relationships
+        chart_counter: Counter for generating unique chart image names
 
     Returns:
-        Tuple of (image_filename, extension, image_bytes, error_message, chart_rel_id)
-        if chart found with cached image. Returns tuple with empty bytes
-        ("", "", b"", "", chart_rel_id) if chart found but no cached image.
-        Returns None if no chart found.
+        Tuple of (chart_metadata, optional (image_filename, image_bytes),
+        optional (chart_parts_manifest, chart_parts_data))
+        if chart found, None otherwise.
     """
+    chart_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart"
+
     for run in paragraph.runs:
-        # Case 1: mc:AlternateContent with chart in mc:Choice
-        alt_contents = run._element.findall(f'{{{MC_NS}}}AlternateContent')
-        for alt in alt_contents:
-            choice = alt.find(f'{{{MC_NS}}}Choice')
-            if choice is None:
-                continue
-
-            charts = choice.findall(f'.//{{{CHART_NS}}}chart')
-            if not charts:
-                continue
-
-            chart_rel_id = charts[0].get(f'{{{RELATIONSHIPS_NS}}}id', "")
-
-            # Extract cached fallback image from mc:Fallback
-            fallback = alt.find(f'{{{MC_NS}}}Fallback')
-            if fallback is not None:
-                blips = fallback.findall(f'.//{{{DRAWINGML_NS}}}blip')
-                for blip in blips:
-                    result = _extract_blip_image(blip, doc_part, "chart", image_counter)
-                    if result is not None:
-                        return (*result, chart_rel_id)
-
-            # Chart found but no cached image
-            return ("", "", b"", "", chart_rel_id)
-
-        # Case 2: Flat w:drawing with c:chart in graphicData (no mc:AlternateContent)
-        drawing_elems = run._element.findall(f'{{{WORDPROCESSINGML_NS}}}drawing')
+        # Recursive search picks up drawings wrapped in mc:AlternateContent > mc:Choice
+        # (the dominant real-world format in Word 2010+) as well as flat w:drawing children.
+        drawing_elems = run._element.findall(
+            f'.//{{{WORDPROCESSINGML_NS}}}drawing'
+        )
         for drawing in drawing_elems:
-            charts = drawing.findall(f'.//{{{CHART_NS}}}chart')
-            if charts:
-                chart_rel_id = charts[0].get(f'{{{RELATIONSHIPS_NS}}}id', "")
-                return ("", "", b"", "", chart_rel_id)
+            graphic_datas = drawing.findall(f'.//{{{DRAWINGML_NS}}}graphicData')
+            for gd in graphic_datas:
+                if gd.get('uri', '') != CHART_NS:
+                    continue
 
+                chart_ref = gd.find(f'{{{CHART_NS}}}chart')
+                if chart_ref is None:
+                    continue
+
+                chart_rel_id = chart_ref.get(f'{{{RELATIONSHIPS_NS}}}id')
+                if not chart_rel_id or chart_rel_id not in doc_rels:
+                    continue
+
+                rel_type, target = doc_rels[chart_rel_id]
+                if rel_type != chart_rel_type:
+                    continue
+
+                chart_bytes = _read_docx_part(docx_path, target)
+                if chart_bytes is None:
+                    continue
+
+                chart_metadata = _parse_chart_xml(chart_bytes)
+
+                # Cached fallback image lives in a sibling mc:Fallback > w:drawing
+                # when the chart is wrapped in mc:AlternateContent. Fall back to the
+                # current drawing for the flat (no-wrapper) case.
+                fallback = _find_fallback_drawing(drawing)
+                image_drawing = fallback if fallback is not None else drawing
+                cached_image = _extract_cached_image_from_drawing(
+                    image_drawing, docx_path, doc_rels, chart_counter, "chart"
+                )
+
+                # Archive chart parts for full-fidelity reconstruction.
+                # Open the docx ZIP once and thread it through the archival
+                # helpers — they each used to open their own handle, yielding
+                # ~5-7 ZIP opens per chart in the previous implementation.
+                with zipfile.ZipFile(docx_path, "r") as zf:
+                    parts_info = _archive_chart_parts(
+                        zf, run._element, chart_rel_id, target,
+                        chart_bytes, doc_rels, chart_counter,
+                    )
+
+                return chart_metadata, cached_image, parts_info
+
+    return None
+
+
+def _parse_chart_xml(chart_bytes: bytes) -> ChartMetadata:
+    """Parse chart XML to extract type, title, series, and categories."""
+
+    root = ET.fromstring(chart_bytes)
+
+    # Extract title from c:title/c:tx/c:rich/a:p/a:r/a:t — concatenate all
+    # text runs so multi-run / formatted titles aren't truncated.
+    title = None
+    title_elem = root.find(f'.//{{{CHART_NS}}}title')
+    if title_elem is not None:
+        parts = [t.text for t in title_elem.iter(f'{{{DRAWINGML_NS}}}t') if t.text]
+        if parts:
+            title = "".join(parts)
+
+    # Detect chart type from plot area children
+    chart_type = "unknown"
+    chart_elem = None
+    plot_area = root.find(f'.//{{{CHART_NS}}}plotArea')
+    if plot_area is not None:
+        type_map = {
+            'barChart': 'bar', 'bar3DChart': 'bar',
+            'pieChart': 'pie', 'pie3DChart': 'pie',
+            'lineChart': 'line', 'line3DChart': 'line',
+            'areaChart': 'area', 'area3DChart': 'area',
+            'scatterChart': 'scatter',
+            'doughnutChart': 'doughnut',
+            'radarChart': 'radar',
+            'bubbleChart': 'bubble',
+        }
+        for child in plot_area:
+            local_tag = child.tag.split('}')[-1]
+            if local_tag in type_map:
+                chart_type = type_map[local_tag]
+                chart_elem = child
+                break
+
+    # Extract series data
+    series_list: list[dict[str, Any]] = []
+    categories: Optional[list[str]] = None
+
+    if chart_elem is not None:
+        for ser in chart_elem.findall(f'{{{CHART_NS}}}ser'):
+            series_name = None
+            series_values: list[str] = []
+
+            # Series name
+            tx = ser.find(f'{{{CHART_NS}}}tx')
+            if tx is not None:
+                for pt in tx.iter(f'{{{CHART_NS}}}v'):
+                    if pt.text:
+                        series_name = pt.text
+                        break
+
+            # Categories (only from first series)
+            if categories is None:
+                cat = ser.find(f'{{{CHART_NS}}}cat')
+                if cat is not None:
+                    categories = []
+                    for pt in cat.iter(f'{{{CHART_NS}}}pt'):
+                        v = pt.find(f'{{{CHART_NS}}}v')
+                        if v is not None and v.text:
+                            categories.append(v.text)
+
+            # Values
+            val_elem = ser.find(f'{{{CHART_NS}}}val')
+            if val_elem is not None:
+                for pt in val_elem.iter(f'{{{CHART_NS}}}pt'):
+                    v = pt.find(f'{{{CHART_NS}}}v')
+                    if v is not None and v.text:
+                        series_values.append(v.text)
+
+            series_list.append({
+                "name": series_name or f"Series {len(series_list) + 1}",
+                "values": series_values,
+            })
+
+    return ChartMetadata(
+        chart_type=chart_type,
+        title=title,
+        series=series_list if series_list else None,
+        categories=categories,
+    )
+
+
+def extract_smartart_from_paragraph(
+    paragraph: Any, docx_path: str, doc_rels: dict[str, tuple[str, str]], smartart_counter: int
+) -> Optional[tuple[SmartArtMetadata, Optional[tuple[str, bytes]]]]:
+    """Check if paragraph contains SmartArt and extract metadata + cached image.
+
+    Args:
+        paragraph: python-docx paragraph object
+        docx_path: Path to the docx file for reading SmartArt parts
+        doc_rels: Pre-loaded document relationships
+        smartart_counter: Counter for generating unique SmartArt image names
+
+    Returns:
+        Tuple of (smartart_metadata, optional (image_filename, image_bytes))
+        if SmartArt found, None otherwise.
+    """
+    dgm_data_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData"
+    dgm_layout_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout"
+
+    for run in paragraph.runs:
+        drawing_elems = run._element.findall(
+            f'.//{{{WORDPROCESSINGML_NS}}}drawing'
+        )
+        for drawing in drawing_elems:
+            graphic_datas = drawing.findall(f'.//{{{DRAWINGML_NS}}}graphicData')
+            for gd in graphic_datas:
+                if gd.get('uri', '') != DIAGRAM_NS:
+                    continue
+
+                dgm_rel_ids = gd.find(f'{{{DIAGRAM_NS}}}relIds')
+                if dgm_rel_ids is None:
+                    continue
+
+                dm_rel_id = dgm_rel_ids.get(f'{{{RELATIONSHIPS_NS}}}dm')
+                if not dm_rel_id or dm_rel_id not in doc_rels:
+                    continue
+
+                rel_type, target = doc_rels[dm_rel_id]
+                if rel_type != dgm_data_rel_type:
+                    continue
+
+                data_bytes = _read_docx_part(docx_path, target)
+                if data_bytes is None:
+                    continue
+
+                smartart_metadata = _parse_smartart_data_xml(data_bytes)
+
+                # Try to get diagram type from layout part
+                lo_rel_id = dgm_rel_ids.get(f'{{{RELATIONSHIPS_NS}}}lo')
+                if lo_rel_id and lo_rel_id in doc_rels:
+                    lo_rel_type, lo_target = doc_rels[lo_rel_id]
+                    if lo_rel_type == dgm_layout_rel_type:
+                        layout_bytes = _read_docx_part(docx_path, lo_target)
+                        if layout_bytes:
+                            diagram_type = _parse_smartart_layout_type(layout_bytes)
+                            if diagram_type:
+                                smartart_metadata.diagram_type = diagram_type
+
+                fallback = _find_fallback_drawing(drawing)
+                image_drawing = fallback if fallback is not None else drawing
+                cached_image = _extract_cached_image_from_drawing(
+                    image_drawing, docx_path, doc_rels, smartart_counter, "smartart"
+                )
+                return smartart_metadata, cached_image
+
+    return None
+
+
+def _parse_smartart_data_xml(data_bytes: bytes) -> SmartArtMetadata:
+    """Parse SmartArt data XML to extract node text."""
+
+    root = ET.fromstring(data_bytes)
+    nodes: list[dict[str, Any]] = []
+
+    for pt in root.iter(f'{{{DIAGRAM_NS}}}pt'):
+        if pt.get('type', '') == 'doc':
+            continue  # Skip root document node
+        model_id = pt.get('modelId', '')
+        t_elem = pt.find(f'{{{DIAGRAM_NS}}}t')
+        text = t_elem.text if t_elem is not None and t_elem.text else ""
+        if text:
+            nodes.append({"text": text, "model_id": model_id})
+
+    return SmartArtMetadata(nodes=nodes if nodes else None)
+
+
+def _parse_smartart_layout_type(layout_bytes: bytes) -> Optional[str]:
+    """Extract diagram type name from SmartArt layout XML."""
+
+    root = ET.fromstring(layout_bytes)
+    title = root.find(f'{{{DIAGRAM_NS}}}title')
+    if title is None:
+        logger.debug("SmartArt layout has no dgm:title element; falling back to 'Diagram N'")
+        return None
+    val = title.get('val')
+    if not val:
+        logger.debug("SmartArt dgm:title missing 'val' attribute; falling back to 'Diagram N'")
+    return val
+
+
+def _find_fallback_drawing(drawing: Any) -> Optional[Any]:
+    """Return the mc:Fallback w:drawing that holds the cached raster image, if any.
+
+    Charts in Word 2010+ are wrapped as w:r > mc:AlternateContent containing
+    both mc:Choice (live chart, no blip) and mc:Fallback (cached image blip).
+    The `drawing` passed in here is the mc:Choice drawing; the renderable
+    fallback is a sibling inside mc:Fallback.
+    """
+    # Walk up at most a few ancestors to find an enclosing mc:Choice, then look
+    # at its AlternateContent sibling mc:Fallback.
+    node = drawing
+    for _ in range(4):
+        parent = node.getparent() if hasattr(node, "getparent") else None
+        if parent is None:
+            return None
+        if parent.tag == f"{{{MC_NS}}}Choice":
+            alt_content = parent.getparent()
+            if alt_content is None:
+                return None
+            fallback = alt_content.find(f"{{{MC_NS}}}Fallback")
+            if fallback is None:
+                return None
+            return fallback.find(f".//{{{WORDPROCESSINGML_NS}}}drawing")
+        node = parent
+    return None
+
+
+def _extract_cached_image_from_drawing(
+    drawing: Any, docx_path: str, doc_rels: dict[str, tuple[str, str]],
+    counter: int, prefix: str
+) -> Optional[tuple[str, bytes]]:
+    """Extract cached fallback image (blip) from a drawing element.
+
+    Charts and SmartArt often include a rasterized fallback image
+    alongside the XML data. Uses direct ZIP access since python-docx
+    may not load all relationship types.
+
+    Args:
+        drawing: The w:drawing XML element
+        docx_path: Path to the docx file
+        doc_rels: Pre-loaded document relationships mapping rId -> (type, target)
+        counter: Counter for unique filenames
+        prefix: Filename prefix ("chart" or "smartart")
+
+    Returns:
+        Tuple of (filename, image_bytes) if found, None otherwise
+    """
+    image_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+
+    blips = drawing.findall(f'.//{{{DRAWINGML_NS}}}blip')
+    for blip in blips:
+        r_embed = blip.get(f'{{{RELATIONSHIPS_NS}}}embed')
+        if r_embed and r_embed in doc_rels:
+            rel_type, target = doc_rels[r_embed]
+            if rel_type != image_rel_type:
+                continue
+            image_bytes = _read_docx_part(docx_path, target)
+            if image_bytes is None:
+                continue
+            extension = target.rsplit('.', 1)[-1] if '.' in target else 'png'
+            filename = f"{prefix}{counter}.{extension}"
+            return filename, image_bytes
     return None
 
 
@@ -1129,41 +1565,10 @@ def _process_paragraph(
     image_path = None
     block_track_changes = None
     footnote_refs: list[dict[str, Any]] = []
-    chart_metadata_val: Optional[dict[str, Any]] = None
 
-    # Ordering matters: chart detection must run BEFORE image extraction.
-    # Chart drawings contain both <c:chart> and a cached <a:blip> fallback.
-    # If extract_image_from_paragraph() runs first, it finds the fallback blip
-    # and silently consumes the chart as a regular image.
-    # Order: textbox check (in extract_blocks) → chart check → image check.
-    chart_info = extract_chart_from_paragraph(paragraph, doc_part, image_counter)
-    if chart_info:
-        image_filename, _, image_bytes, error_message, chart_rel_id = chart_info
-        level_value = None
-        inline_formatting = None
-
-        # Preserve chart_rel_id for all chart cases (JON-107 needs it
-        # regardless of whether the cached image was valid).
-        if chart_rel_id:
-            chart_metadata_val = {"chart_rel_id": chart_rel_id}
-
-        if not image_bytes:
-            # Chart found but no cached image available
-            markdown_content = "[Chart: no preview available]"
-            block_type = "paragraph"
-        elif error_message:
-            markdown_content = f"[Chart {image_counter} skipped: {error_message}]"
-            block_type = "paragraph"
-        else:
-            image_path = f"assets/{image_filename}"
-            markdown_content = f"![{CHART_ALT_TEXT_PREFIX}]({image_path})"
-            block_type = "chart"
-            image_data[image_filename] = image_bytes
-
-        image_counter += 1
-        list_number_counter = 0
-        previous_list_type = None
-    elif (image_info := extract_image_from_paragraph(paragraph, doc_part, image_counter)):
+    # Chart and SmartArt detection is handled in extract_blocks() before
+    # _process_paragraph is called, so we only need image detection here.
+    if (image_info := extract_image_from_paragraph(paragraph, doc_part, image_counter)):
         # This is an image paragraph
         image_filename, image_extension, image_bytes, error_message = image_info
 
@@ -1245,7 +1650,6 @@ def _process_paragraph(
         image_path=image_path,
         track_changes=block_track_changes,
         footnote_references=footnote_refs if footnote_refs else None,
-        chart_metadata=chart_metadata_val,
     )
 
     return block, image_counter, list_number_counter, previous_list_type, image_data, footnote_counter
@@ -1282,10 +1686,15 @@ def extract_blocks(
     list_number_counter = 0
     previous_list_type: Optional[str] = None
     image_counter = 1
+    chart_counter = 1
+    smartart_counter = 1
     block_index = 0
     para_index = 0
     table_index = 0
     footnote_counter = 0
+
+    # Load document relationships directly from ZIP (python-docx skips chart/SmartArt rels)
+    doc_rels = _load_doc_rels(docx_path)
 
     # Determine track changes mode
     # If not specified (None), auto-detect based on document content
@@ -1302,6 +1711,91 @@ def extract_blocks(
         if tag == 'p':
             # Create a Paragraph object from the XML element
             paragraph = Paragraph(child, doc)
+
+            # Check for chart elements before standard paragraph processing
+            chart_info = extract_chart_from_paragraph(paragraph, docx_path, doc_rels, chart_counter)
+            if chart_info:
+                chart_metadata, cached_image, parts_info = chart_info
+                chart_title = chart_metadata.title or f"Chart {chart_counter}"
+
+                if cached_image:
+                    img_filename, img_bytes = cached_image
+                    image_path = f"assets/{img_filename}"
+                    image_data[img_filename] = img_bytes
+                    markdown_content = f"![Chart: {chart_title}]({image_path})"
+                else:
+                    image_path = None
+                    markdown_content = f"[Chart: {chart_title}]"
+
+                # Archive chart parts for full-fidelity reconstruction
+                chart_parts_manifest = None
+                if parts_info:
+                    chart_parts_manifest, chart_asset_data = parts_info
+                    image_data.update(chart_asset_data)
+
+                content_start = content_position
+                content_end = content_position + len(markdown_content)
+
+                block = Block(
+                    id=generate_block_id(block_index),
+                    type="chart",
+                    content=markdown_content,
+                    docx_paragraph_index=para_index,
+                    content_start=content_start,
+                    content_end=content_end,
+                    content_hash=compute_content_hash(markdown_content),
+                    image_path=image_path,
+                    chart_metadata=chart_metadata,
+                    chart_parts_manifest=chart_parts_manifest,
+                )
+
+                blocks.append(block)
+                content_position = content_end + 1
+                block_index += 1
+                para_index += 1
+                chart_counter += 1
+                list_number_counter = 0
+                previous_list_type = None
+                continue
+
+            # Check for SmartArt elements
+            smartart_info = extract_smartart_from_paragraph(paragraph, docx_path, doc_rels, smartart_counter)
+            if smartart_info:
+                smartart_metadata, cached_image = smartart_info
+                smartart_label = smartart_metadata.diagram_type or f"Diagram {smartart_counter}"
+
+                if cached_image:
+                    img_filename, img_bytes = cached_image
+                    image_path = f"assets/{img_filename}"
+                    image_data[img_filename] = img_bytes
+                    markdown_content = f"![SmartArt: {smartart_label}]({image_path})"
+                else:
+                    image_path = None
+                    markdown_content = f"[SmartArt: {smartart_label}]"
+
+                content_start = content_position
+                content_end = content_position + len(markdown_content)
+
+                block = Block(
+                    id=generate_block_id(block_index),
+                    type="smartart",
+                    content=markdown_content,
+                    docx_paragraph_index=para_index,
+                    content_start=content_start,
+                    content_end=content_end,
+                    content_hash=compute_content_hash(markdown_content),
+                    image_path=image_path,
+                    smartart_metadata=smartart_metadata,
+                )
+
+                blocks.append(block)
+                content_position = content_end + 1
+                block_index += 1
+                para_index += 1
+                smartart_counter += 1
+                list_number_counter = 0
+                previous_list_type = None
+                continue
 
             # Check for text boxes/shapes with text before other content
             textbox_infos = extract_textbox_from_paragraph(paragraph)
@@ -1890,8 +2384,20 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
         if tag == 'p':
             paragraph = Paragraph(child, doc)
 
+            # Chart and SmartArt blocks get default styles
+            # Use "Normal" style name since Word doesn't have built-in "Chart"/"Smartart" paragraph styles
+            if block.type in ("chart", "smartart"):
+                style = Style(
+                    block_id=block.id,
+                    docx_style="Normal",
+                    font_name="Calibri",
+                    font_size=11,
+                    alignment="left",
+                )
+                styles.append(style)
+                block_index += 1
             # Check if this paragraph produced text box blocks
-            if block.type == "textbox":
+            elif block.type == "textbox":
                 while block_index < len(blocks) and blocks[block_index].type == "textbox":
                     style = Style(
                         block_id=blocks[block_index].id,

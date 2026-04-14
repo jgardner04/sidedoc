@@ -33,27 +33,67 @@ class TrackChangesConfig:
 
 
 @dataclass
+class ChartPartsManifest:
+    """Manifest of archived OOXML parts for full-fidelity chart reconstruction.
+
+    Stores paths to archived chart XML, drawing XML, and related parts
+    so that sidedoc build can reconstruct a functional chart (not just a raster image).
+    """
+
+    drawing_xml_path: str  # Asset path to serialized w:r drawing element XML
+    parts: dict[str, str]  # OOXML path -> asset path (e.g., "charts/chart1.xml" -> "chart_parts/chart1/chart.xml")
+    rels: list[dict[str, str]]  # [{"id": "rId1", "type": "...", "target": "..."}]
+    content_types: list[dict[str, str]]  # [{"part_name": "/word/charts/chart1.xml", "content_type": "..."}]
+
+
+@dataclass
+class ChartMetadata:
+    """Metadata extracted from a chart embedded in a Word document.
+
+    Stores chart type, data series, categories, and title for AI analysis.
+    """
+
+    chart_type: str  # "bar", "pie", "line", "area", "scatter", etc.
+    title: Optional[str] = None
+    series: Optional[list[dict[str, Any]]] = None  # [{"name": str, "values": [str]}]
+    categories: Optional[list[str]] = None  # Category labels
+
+
+@dataclass
+class SmartArtMetadata:
+    """Metadata extracted from a SmartArt diagram in a Word document.
+
+    Stores node text for AI awareness of diagram content.
+    """
+
+    diagram_type: Optional[str] = None  # e.g., "Organization Chart"
+    nodes: Optional[list[dict[str, Any]]] = None  # [{"text": str, "model_id": str}]
+
+
+@dataclass
 class Block:
     """Represents a content block in a sidedoc document.
 
-    Blocks can be headings, paragraphs, lists, images, or tables.
+    Blocks can be headings, paragraphs, lists, images, tables, charts, or smartart.
     """
 
     id: str
-    type: str  # "heading", "paragraph", "list", "image", "table", "textbox", "chart"
+    type: str  # "heading", "paragraph", "list", "image", "table", "textbox", "chart", "smartart"
     content: str
     docx_paragraph_index: int
     content_start: int
     content_end: int
     content_hash: str
     level: Optional[int] = None  # For headings (1-6)
-    image_path: Optional[str] = None  # For images
+    image_path: Optional[str] = None  # For images, charts, smartart
     inline_formatting: Optional[list[dict[str, Any]]] = None
     table_metadata: Optional[dict[str, Any]] = None  # For tables: rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
     track_changes: Optional[list[TrackChange]] = None  # Track changes for this block
     footnote_references: Optional[list[dict[str, Any]]] = None  # Footnote/endnote references in this block
     text_box_metadata: Optional[dict[str, Any]] = None  # For text boxes: anchor_type, width, height, position, border, fill, drawing_xml
-    chart_metadata: Optional[dict[str, Any]] = None  # For charts: currently {"chart_rel_id": ...}; full data (type, series, labels) in JON-107
+    chart_metadata: Optional[ChartMetadata] = None  # For charts: type, series, labels
+    smartart_metadata: Optional[SmartArtMetadata] = None  # For SmartArt: diagram type, nodes
+    chart_parts_manifest: Optional[ChartPartsManifest] = None  # For full-fidelity chart reconstruction
 
 
 @dataclass

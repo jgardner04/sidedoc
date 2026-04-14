@@ -118,18 +118,22 @@ class SidedocStore:
                 return sorted(zf.namelist())
 
     def list_assets(self) -> list[str]:
-        """List asset filenames (without the assets/ prefix)."""
+        """List asset paths relative to assets/ (including files in subdirectories)."""
         if self._fmt == "directory":
             assets_dir = self._path / "assets"
             if not assets_dir.exists():
                 return []
-            return sorted(p.name for p in assets_dir.iterdir() if p.is_file())
+            return sorted(
+                str(p.relative_to(assets_dir))
+                for p in assets_dir.rglob("*") if p.is_file()
+            )
         else:
             with zipfile.ZipFile(self._path, "r") as zf:
                 return sorted(
                     name.removeprefix("assets/")
                     for name in zf.namelist()
                     if name.startswith("assets/") and name != "assets/"
+                    and not name.endswith("/")
                 )
 
     @property

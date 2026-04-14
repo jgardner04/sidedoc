@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Chart support:** Detect charts during extraction, extract cached images to `assets/`, and parse chart data (type, series, labels, categories) into structured metadata
+- **SmartArt support:** Detect SmartArt diagrams, extract cached images, and parse node text into metadata
+- **Chart/SmartArt in content.md:** `![Chart: title](assets/chart1.png)` and `![SmartArt: type](assets/smartart1.png)` notation
+- **Full-fidelity chart round-trip:** Archive chart XML parts, embedded spreadsheets, relationship IDs, and drawing XML to `assets/chart_parts/` during extraction; reconstruct functional charts (not just raster images) during `sidedoc build` ([JON-108](https://linear.app/jonathangardner/issue/JON-108/chart-full-fidelity-round-trip-archive-reconstruct))
+
 ## [0.2.0] - 2026-03-19
 
 ### Added

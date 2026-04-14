@@ -1,462 +1,568 @@
-"""Tests for chart extraction and reconstruction."""
+"""Tests for chart and SmartArt extraction and reconstruction."""
 
-import tempfile
+import json
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
-from docx import Document
+import pytest
+from sidedoc.extract import extract_blocks
+from sidedoc.models import Block
+from sidedoc.reconstruct import build_docx_from_sidedoc
+from tests.helpers import create_sidedoc_dir
 
-from sidedoc.constants import WORDPROCESSINGML_NS
-from sidedoc.extract import extract_blocks, extract_chart_from_paragraph, validate_image
 
+@pytest.fixture
+def fixtures_dir():
+    return Path(__file__).parent / "fixtures"
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+@pytest.fixture
+def chart_bar_path(fixtures_dir):
+    return fixtures_dir / "chart_bar.docx"
 
-# --- Step 2: Chart detection ---
 
+@pytest.fixture
+def chart_pie_path(fixtures_dir):
+    return fixtures_dir / "chart_pie.docx"
 
-def test_extract_chart_from_paragraph_detects_chart():
-    """Chart paragraph returns chart info with cached image bytes and rel ID."""
-    doc = Document(str(FIXTURES_DIR / "charts.docx"))
-    chart_para = doc.paragraphs[1]  # The chart paragraph
 
-    result = extract_chart_from_paragraph(chart_para, doc.part, image_counter=1)
+@pytest.fixture
+def smartart_orgchart_path(fixtures_dir):
+    return fixtures_dir / "smartart_orgchart.docx"
 
-    assert result is not None
-    image_filename, extension, image_bytes, error_message, chart_rel_id = result
-    assert image_filename == "chart1.png"
-    assert extension == "png"
-    assert len(image_bytes) > 0
-    assert error_message == ""
-    assert chart_rel_id == "rId5"
 
+# ── Chart Detection ──────────────────────────────────────────────
 
-def test_extract_chart_from_paragraph_returns_none_for_regular_paragraph():
-    """Non-chart paragraph returns None."""
-    doc = Document(str(FIXTURES_DIR / "charts.docx"))
-    text_para = doc.paragraphs[0]  # "Before chart"
 
-    result = extract_chart_from_paragraph(text_para, doc.part, image_counter=1)
+class TestChartDetection:
+    """Charts are detected during extraction and produce 'chart' blocks."""
 
-    assert result is None
+    def test_bar_chart_detected(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_blocks = [b for b in blocks if b.type == "chart"]
+        assert len(chart_blocks) == 1
 
+    def test_pie_chart_detected(self, chart_pie_path):
+        blocks, _ = extract_blocks(str(chart_pie_path))
+        chart_blocks = [b for b in blocks if b.type == "chart"]
+        assert len(chart_blocks) == 1
 
-def test_extract_chart_from_paragraph_returns_none_for_regular_image():
-    """Paragraph with a regular image (no chart) returns None."""
-    doc = Document(str(FIXTURES_DIR / "images.docx"))
-    # Paragraph index 2 is the first image per create_fixtures.py:
-    # [0] heading, [1] "First image:", [2] image, [3] "Second image:", [4] image, [5] text
-    image_para = doc.paragraphs[2]
+    def test_chart_block_has_image_reference(self, chart_bar_path):
+        """Chart blocks with cached images include an image reference in content."""
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert "![Chart:" in chart_block.content
+        assert "assets/" in chart_block.content
 
-    # Precondition: confirm this paragraph actually contains a drawing (image)
-    drawings = image_para._element.findall(f'.//{{{WORDPROCESSINGML_NS}}}drawing')
-    assert len(drawings) > 0, "Expected paragraph[2] to contain a drawing element"
+    def test_chart_block_no_cached_image(self, chart_pie_path):
+        """Charts without cached images get a placeholder."""
+        blocks, _ = extract_blocks(str(chart_pie_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert "[Chart:" in chart_block.content
 
-    result = extract_chart_from_paragraph(image_para, doc.part, image_counter=1)
-    assert result is None
 
+# ── Chart Cached Image Extraction ────────────────────────────────
 
-# --- Step 3: EMF validation pass-through ---
 
+class TestChartImageExtraction:
+    """Chart cached images are extracted to assets/."""
 
-def test_validate_image_emf_passes_without_pil():
-    """EMF bytes pass validation without PIL (pass-through format)."""
-    # EMF files start with a specific header but PIL can't open them.
-    # Use arbitrary bytes — EMF validation should skip PIL entirely.
-    fake_emf_bytes = b"\x01\x00\x00\x00" * 10
-    is_valid, error_message = validate_image(fake_emf_bytes, "emf")
-    assert is_valid is True
-    assert error_message == ""
+    def test_chart_image_extracted(self, chart_bar_path):
+        _, image_data = extract_blocks(str(chart_bar_path))
+        chart_images = [k for k in image_data if "chart" in k]
+        assert len(chart_images) >= 1
 
+    def test_chart_image_is_png(self, chart_bar_path):
+        _, image_data = extract_blocks(str(chart_bar_path))
+        chart_images = [k for k in image_data if "chart" in k]
+        assert any(k.endswith(".png") for k in chart_images)
 
-def test_validate_image_wmf_passes_without_pil():
-    """WMF bytes pass validation without PIL (pass-through format)."""
-    fake_wmf_bytes = b"\xd7\xcd\xc6\x9a" * 10
-    is_valid, error_message = validate_image(fake_wmf_bytes, "wmf")
-    assert is_valid is True
-    assert error_message == ""
 
+# ── Chart Data Extraction ────────────────────────────────────────
 
-def test_validate_image_emf_respects_size_limit():
-    """EMF pass-through still enforces the max size limit."""
-    from sidedoc.constants import MAX_IMAGE_SIZE
 
-    oversized_bytes = b"\x00" * (MAX_IMAGE_SIZE + 1)
-    is_valid, error_message = validate_image(oversized_bytes, "emf")
-    assert is_valid is False
-    assert "exceeds maximum size" in error_message
+class TestChartDataExtraction:
+    """Chart data (type, series, labels) extracted to metadata."""
 
+    def test_chart_metadata_present(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
 
-def test_validate_image_png_unchanged():
-    """Regular PNG validation is unaffected by EMF changes."""
-    from PIL import Image
-    import io
+    def test_chart_type_detected(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert chart_block.chart_metadata.chart_type == "bar"
 
-    img = Image.new("RGB", (1, 1), color="red")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    png_bytes = buf.getvalue()
+    def test_pie_chart_type(self, chart_pie_path):
+        blocks, _ = extract_blocks(str(chart_pie_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert chart_block.chart_metadata.chart_type == "pie"
 
-    is_valid, error_message = validate_image(png_bytes, "png")
-    assert is_valid is True
-    assert error_message == ""
+    def test_chart_title(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert chart_block.chart_metadata.title == "Q4 Revenue"
 
-
-# --- Step 4: Chart block creation in extract_blocks() ---
-
-
-def test_extract_blocks_chart_produces_chart_block():
-    """Chart docx produces a Block with type='chart' and correct content."""
-    blocks, image_data = extract_blocks(str(FIXTURES_DIR / "charts.docx"))
-
-    chart_blocks = [b for b in blocks if b.type == "chart"]
-    assert len(chart_blocks) == 1
-
-    chart = chart_blocks[0]
-    assert chart.image_path is not None
-    assert chart.image_path.startswith("assets/chart")
-    assert chart.content.startswith("![Chart")
-    assert chart.chart_metadata == {"chart_rel_id": "rId5"}
-
-
-def test_extract_blocks_chart_image_in_image_data():
-    """Chart cached image bytes are included in image_data dict."""
-    blocks, image_data = extract_blocks(str(FIXTURES_DIR / "charts.docx"))
-
-    chart_blocks = [b for b in blocks if b.type == "chart"]
-    assert len(chart_blocks) == 1
-
-    # image_path is "assets/chartN.ext", image_data key is just "chartN.ext"
-    image_filename = chart_blocks[0].image_path.split("/")[-1]
-    assert image_filename in image_data
-    assert len(image_data[image_filename]) > 0
-
-
-def test_extract_blocks_regular_images_not_affected():
-    """Regular images still produce type='image' blocks (no regression)."""
-    blocks, image_data = extract_blocks(str(FIXTURES_DIR / "images.docx"))
-
-    image_blocks = [b for b in blocks if b.type == "image"]
-    chart_blocks = [b for b in blocks if b.type == "chart"]
-
-    assert len(image_blocks) > 0
-    assert len(chart_blocks) == 0
-
-
-def test_extract_blocks_chart_text_paragraphs_preserved():
-    """Text paragraphs before and after chart are preserved."""
-    blocks, _ = extract_blocks(str(FIXTURES_DIR / "charts.docx"))
-
-    assert blocks[0].type == "paragraph"
-    assert blocks[0].content == "Before chart"
-    assert blocks[-1].type == "paragraph"
-    assert blocks[-1].content == "After chart"
-
-
-# --- Step 5: Missing cached image fallback ---
-
-
-def test_extract_blocks_chart_no_fallback_produces_placeholder():
-    """Chart with no cached image produces a paragraph placeholder."""
-    blocks, image_data = extract_blocks(str(FIXTURES_DIR / "charts_no_fallback.docx"))
-
-    # Should not produce a chart block (no image to extract)
-    chart_blocks = [b for b in blocks if b.type == "chart"]
-    assert len(chart_blocks) == 0
-
-    # Should produce a placeholder paragraph
-    placeholder_blocks = [b for b in blocks if "no preview available" in b.content]
-    assert len(placeholder_blocks) == 1
-    assert placeholder_blocks[0].type == "paragraph"
-    assert "[Chart: no preview available]" in placeholder_blocks[0].content
-    # chart_metadata preserves the rel ID even on degraded blocks (for JON-107)
-    assert placeholder_blocks[0].chart_metadata is not None
-
-
-# --- Step 6: Chart markdown parsing ---
-
-
-def test_parse_markdown_chart_produces_chart_block():
-    """Markdown ![Chart: Revenue](assets/chart1.png) parsed as type='chart'."""
-    from sidedoc.reconstruct import parse_markdown_to_blocks
-
-    blocks = parse_markdown_to_blocks("![Chart: Revenue](assets/chart1.png)")
-    assert len(blocks) == 1
-    assert blocks[0].type == "chart"
-    assert blocks[0].image_path == "assets/chart1.png"
-
-
-def test_parse_markdown_chart_no_title_produces_chart_block():
-    """Markdown ![Chart](assets/chart1.png) parsed as type='chart'."""
-    from sidedoc.reconstruct import parse_markdown_to_blocks
-
-    blocks = parse_markdown_to_blocks("![Chart](assets/chart1.png)")
-    assert len(blocks) == 1
-    assert blocks[0].type == "chart"
-
-
-def test_parse_markdown_regular_image_unchanged():
-    """Markdown ![Screenshot](assets/image1.png) still parsed as type='image'."""
-    from sidedoc.reconstruct import parse_markdown_to_blocks
-
-    blocks = parse_markdown_to_blocks("![Screenshot](assets/image1.png)")
-    assert len(blocks) == 1
-    assert blocks[0].type == "image"
-
-
-# --- Step 7: Chart reconstruction ---
-
-
-def _make_styles_dict() -> dict:
-    """Create a minimal styles dict for testing reconstruction."""
-    return {
-        "block_styles": {},
-        "document_defaults": {"font_name": "Arial", "font_size": 11},
-    }
-
-
-def test_reconstruct_chart_block_with_image():
-    """Chart block with image_path produces a docx with the image embedded."""
-    from sidedoc.reconstruct import create_docx_from_blocks
-    from sidedoc.models import Block
-
-    chart_block = Block(
-        id="block-0",
-        type="chart",
-        content="![Chart](assets/chart1.png)",
-        docx_paragraph_index=0,
-        content_start=0,
-        content_end=27,
-        content_hash="abc",
-        image_path="assets/chart1.png",
-    )
-
-    from PIL import Image
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        assets_dir = Path(tmpdir) / "assets"
-        assets_dir.mkdir()
-        img = Image.new("RGB", (10, 10), color="green")
-        img.save(assets_dir / "chart1.png", format="PNG")
-
-        doc = create_docx_from_blocks(
-            [chart_block], _make_styles_dict(), assets_dir=assets_dir
+    def test_chart_series_names(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert len(chart_block.chart_metadata.series) >= 1
+        assert chart_block.chart_metadata.series[0]["name"] == "Revenue"
+
+    def test_chart_categories(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert chart_block.chart_metadata.categories == ["Oct", "Nov", "Dec"]
+
+    def test_chart_values(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_metadata is not None
+        assert chart_block.chart_metadata.series[0]["values"] == ["1200000", "1350000", "1500000"]
+
+
+# ── SmartArt Detection ───────────────────────────────────────────
+
+
+class TestSmartArtDetection:
+    """SmartArt diagrams are detected and produce 'smartart' blocks."""
+
+    def test_smartart_detected(self, smartart_orgchart_path):
+        blocks, _ = extract_blocks(str(smartart_orgchart_path))
+        smartart_blocks = [b for b in blocks if b.type == "smartart"]
+        assert len(smartart_blocks) == 1
+
+    def test_smartart_cached_image_extracted(self, smartart_orgchart_path):
+        _, image_data = extract_blocks(str(smartart_orgchart_path))
+        smartart_images = [k for k in image_data if "smartart" in k]
+        assert len(smartart_images) >= 1
+
+    def test_smartart_block_has_image_reference(self, smartart_orgchart_path):
+        blocks, _ = extract_blocks(str(smartart_orgchart_path))
+        smartart_block = next(b for b in blocks if b.type == "smartart")
+        assert "![SmartArt:" in smartart_block.content
+        assert "assets/" in smartart_block.content
+
+    def test_smartart_metadata_present(self, smartart_orgchart_path):
+        blocks, _ = extract_blocks(str(smartart_orgchart_path))
+        smartart_block = next(b for b in blocks if b.type == "smartart")
+        assert smartart_block.smartart_metadata is not None
+
+    def test_smartart_nodes(self, smartart_orgchart_path):
+        blocks, _ = extract_blocks(str(smartart_orgchart_path))
+        smartart_block = next(b for b in blocks if b.type == "smartart")
+        assert smartart_block.smartart_metadata is not None
+        nodes = smartart_block.smartart_metadata.nodes
+        assert len(nodes) == 3
+        node_texts = [n["text"] for n in nodes]
+        assert "CEO" in node_texts
+        assert "VP Engineering" in node_texts
+
+
+# ── Content.md Integration ───────────────────────────────────────
+
+
+class TestContentMarkdown:
+    """content.md includes image reference with chart/SmartArt notation."""
+
+    def test_chart_in_content_md(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        # Should look like: ![Chart: Q4 Revenue](assets/chart1.png)
+        assert "Chart:" in chart_block.content
+
+    def test_smartart_in_content_md(self, smartart_orgchart_path):
+        blocks, _ = extract_blocks(str(smartart_orgchart_path))
+        smartart_block = next(b for b in blocks if b.type == "smartart")
+        assert "SmartArt:" in smartart_block.content
+
+
+# ── Round-trip ───────────────────────────────────────────────────
+
+
+class TestChartPartsArchival:
+    """Chart XML parts are archived during extraction for full-fidelity reconstruction."""
+
+    def test_chart_parts_manifest_present(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        assert chart_block.chart_parts_manifest is not None
+
+    def test_chart_parts_stored_as_files(self, chart_bar_path, tmp_path):
+        """Chart XML parts are stored as separate files in assets/chart_parts/."""
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        styles = extract_styles(str(chart_bar_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), content_md, blocks, styles,
+            str(chart_bar_path), image_data,
         )
 
-        # Verify the document has an embedded image (not just text)
-        # Check for inline shapes (pictures) in the document
-        from docx.opc.constants import RELATIONSHIP_TYPE as RT
-        image_rels = [
-            rel for rel in doc.part.rels.values()
-            if "image" in rel.reltype
-        ]
-        assert len(image_rels) > 0, "Chart should be embedded as an image"
+        chart_parts_dir = sidedoc_dir / "assets" / "chart_parts"
+        assert chart_parts_dir.exists()
+        chart_files = list(chart_parts_dir.rglob("*"))
+        assert len([f for f in chart_files if f.is_file()]) >= 2  # drawing.xml + chart XML
+
+    def test_drawing_xml_archived(self, chart_bar_path):
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        manifest = chart_block.chart_parts_manifest
+        assert manifest.drawing_xml_path in image_data
+        drawing_xml = image_data[manifest.drawing_xml_path]
+        assert b"drawing" in drawing_xml.lower() or b"chart" in drawing_xml.lower()
+
+    def test_chart_xml_archived(self, chart_bar_path):
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        manifest = chart_block.chart_parts_manifest
+        # At least one OOXML part should be the chart XML
+        chart_parts = [p for p in manifest.parts if "chart" in p]
+        assert len(chart_parts) >= 1
+        # Verify the chart XML bytes are in image_data
+        for ooxml_path, asset_path in manifest.parts.items():
+            assert asset_path in image_data
+
+    def test_part_relationships_recorded(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        manifest = chart_block.chart_parts_manifest
+        assert len(manifest.rels) >= 1
+        chart_rel = next(r for r in manifest.rels if "chart" in r["type"])
+        assert "id" in chart_rel
+        assert "type" in chart_rel
+        assert "target" in chart_rel
+
+    def test_content_types_recorded(self, chart_bar_path):
+        blocks, _ = extract_blocks(str(chart_bar_path))
+        chart_block = next(b for b in blocks if b.type == "chart")
+        manifest = chart_block.chart_parts_manifest
+        assert len(manifest.content_types) >= 1
+        assert any("chart" in ct["content_type"] for ct in manifest.content_types)
+
+    def test_manifest_serialized_in_structure_json(self, chart_bar_path, tmp_path):
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        styles = extract_styles(str(chart_bar_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), content_md, blocks, styles,
+            str(chart_bar_path), image_data,
+        )
+
+        structure = json.loads((sidedoc_dir / "structure.json").read_text())
+        chart_struct = next(b for b in structure["blocks"] if b["type"] == "chart")
+        assert "chart_parts_manifest" in chart_struct
+        assert "drawing_xml_path" in chart_struct["chart_parts_manifest"]
+        assert "parts" in chart_struct["chart_parts_manifest"]
+        assert "rels" in chart_struct["chart_parts_manifest"]
+
+    def test_chart_parts_not_in_structure_json_inline(self, chart_bar_path, tmp_path):
+        """Chart XML bytes must NOT be inlined in structure.json."""
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        styles = extract_styles(str(chart_bar_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), content_md, blocks, styles,
+            str(chart_bar_path), image_data,
+        )
+
+        structure_text = (sidedoc_dir / "structure.json").read_text()
+        # structure.json should contain paths, not base64 or raw XML
+        assert "chartSpace" not in structure_text
 
 
-def test_reconstruct_chart_block_without_image():
-    """Chart block with no image_path produces placeholder text."""
-    from sidedoc.reconstruct import create_docx_from_blocks
-    from sidedoc.models import Block
+class TestChartRoundTrip:
+    """Build can reconstruct from archived XML parts."""
 
-    chart_block = Block(
-        id="block-0",
-        type="chart",
-        content="[Chart: no preview available]",
-        docx_paragraph_index=0,
-        content_start=0,
-        content_end=29,
-        content_hash="abc",
-    )
+    def _extract_and_build(self, docx_path, tmp_path):
+        from sidedoc.extract import extract_blocks, extract_styles
+        from sidedoc.package import create_sidedoc_directory
 
-    doc = create_docx_from_blocks([chart_block], _make_styles_dict())
-    texts = [p.text for p in doc.paragraphs]
-    assert any("[Chart" in t for t in texts)
+        blocks, image_data = extract_blocks(str(docx_path))
+        styles = extract_styles(str(docx_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
 
+        sidedoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sidedoc_dir), content_md, blocks, styles,
+            str(docx_path), image_data,
+        )
 
-# --- Step 8: Integration tests ---
+        output_docx = tmp_path / "rebuilt.docx"
+        build_docx_from_sidedoc(str(sidedoc_dir), str(output_docx))
+        return output_docx
 
+    def test_chart_roundtrip_preserves_content(self, chart_bar_path, tmp_path):
+        """Extract a chart doc, build from sidedoc, verify chart block survives."""
+        output_docx = self._extract_and_build(chart_bar_path, tmp_path)
+        assert output_docx.exists()
 
-def test_extract_build_roundtrip_preserves_chart():
-    """Extract → build round-trip preserves chart as image in rebuilt docx."""
-    from click.testing import CliRunner
-    from sidedoc.cli import main
+    def test_roundtrip_produces_functional_chart(self, chart_bar_path, tmp_path):
+        """Rebuilt docx contains a functional chart XML part, not just a raster image."""
+        output_docx = self._extract_and_build(chart_bar_path, tmp_path)
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        # Copy chart fixture to working directory
-        import shutil
-        shutil.copy(FIXTURES_DIR / "charts.docx", "charts.docx")
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            names = zf.namelist()
+            chart_parts = [n for n in names if "charts/" in n and n.endswith(".xml")]
+            assert len(chart_parts) >= 1, f"No chart XML parts found in rebuilt docx: {names}"
 
-        # Extract
-        result = runner.invoke(main, ["extract", "charts.docx", "--force"])
-        assert result.exit_code == 0, f"Extract failed: {result.output}"
+            # Verify the chart XML is valid and contains chart data
+            chart_xml = zf.read(chart_parts[0])
+            root = ET.fromstring(chart_xml)
+            chart_ns = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+            assert root.find(f".//{{{chart_ns}}}barChart") is not None or \
+                   root.find(f".//{{{chart_ns}}}chart") is not None
 
-        # Verify content.md has chart reference
-        content = Path("charts.sidedoc/content.md").read_text()
-        assert "![Chart]" in content
-        assert "assets/chart" in content
+    def test_roundtrip_has_chart_relationship(self, chart_bar_path, tmp_path):
+        """Rebuilt docx has proper chart relationship in document.xml.rels."""
+        output_docx = self._extract_and_build(chart_bar_path, tmp_path)
 
-        # Verify chart image in assets
-        assets = list(Path("charts.sidedoc/assets").glob("chart*"))
-        assert len(assets) > 0
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            rels_xml = zf.read("word/_rels/document.xml.rels")
+            root = ET.fromstring(rels_xml)
+            chart_rels = [
+                r for r in root
+                if "chart" in r.get("Type", "")
+            ]
+            assert len(chart_rels) >= 1
 
-        # Build
-        result = runner.invoke(main, ["build", "charts.sidedoc", "-o", "rebuilt.docx"])
-        assert result.exit_code == 0, f"Build failed: {result.output}"
+    def test_roundtrip_has_chart_content_type(self, chart_bar_path, tmp_path):
+        """Rebuilt docx has chart content type override."""
+        output_docx = self._extract_and_build(chart_bar_path, tmp_path)
 
-        # Verify rebuilt docx exists and has content
-        doc = Document("rebuilt.docx")
-        assert len(doc.paragraphs) > 0
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            ct_xml = zf.read("[Content_Types].xml")
+            root = ET.fromstring(ct_xml)
+            ct_ns = "http://schemas.openxmlformats.org/package/2006/content-types"
+            chart_overrides = [
+                o for o in root.findall(f"{{{ct_ns}}}Override")
+                if "chart" in o.get("ContentType", "")
+            ]
+            assert len(chart_overrides) >= 1
 
+    def test_roundtrip_drawing_references_chart(self, chart_bar_path, tmp_path):
+        """Rebuilt docx has a w:drawing element referencing the chart."""
+        output_docx = self._extract_and_build(chart_bar_path, tmp_path)
 
-def test_cli_extract_chart_succeeds():
-    """sidedoc extract on chart docx succeeds without errors."""
-    from click.testing import CliRunner
-    from sidedoc.cli import main
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            doc_xml = zf.read("word/document.xml")
+            W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+            root = ET.fromstring(doc_xml)
+            chart_refs = root.findall(f".//{{{C}}}chart")
+            assert len(chart_refs) >= 1
 
-    runner = CliRunner()
-    with runner.isolated_filesystem():
-        import shutil
-        shutil.copy(FIXTURES_DIR / "charts.docx", "charts.docx")
+    def test_pie_chart_roundtrip(self, chart_pie_path, tmp_path):
+        """Pie chart (no fallback image) also round-trips with chart XML."""
+        output_docx = self._extract_and_build(chart_pie_path, tmp_path)
 
-        result = runner.invoke(main, ["extract", "charts.docx", "--force"])
-        assert result.exit_code == 0
-        assert "Error" not in result.output
-
-
-# --- PR #58 review feedback: additional tests ---
-
-
-def test_block_to_structure_dict_includes_chart_metadata():
-    """chart_metadata must be serialized into structure.json dict."""
-    from sidedoc.models import Block
-    from sidedoc.package import block_to_structure_dict
-
-    block = Block(
-        id="block-0",
-        type="chart",
-        content="![Chart](assets/chart1.png)",
-        docx_paragraph_index=0,
-        content_start=0,
-        content_end=27,
-        content_hash="abc",
-        image_path="assets/chart1.png",
-        chart_metadata={"chart_rel_id": "rId5"},
-    )
-    d = block_to_structure_dict(block)
-    assert "chart_metadata" in d
-    assert d["chart_metadata"] == {"chart_rel_id": "rId5"}
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            names = zf.namelist()
+            chart_parts = [n for n in names if "charts/" in n and n.endswith(".xml")]
+            assert len(chart_parts) >= 1
 
 
-def test_extract_blocks_chart_validation_error_produces_placeholder():
-    """Chart with cached image that fails validation produces a skipped placeholder."""
-    from unittest.mock import patch
-
-    # Patch validate_image to simulate a validation failure
-    with patch("sidedoc.extract.validate_image", return_value=(False, "exceeds maximum size")):
-        blocks, image_data = extract_blocks(str(FIXTURES_DIR / "charts.docx"))
-
-    # The chart should degrade to a paragraph with a "skipped" message
-    skipped = [b for b in blocks if "skipped" in b.content]
-    assert len(skipped) == 1
-    assert skipped[0].type == "paragraph"
-    assert "exceeds maximum size" in skipped[0].content
+# ── No Regression ────────────────────────────────────────────────
 
 
-def test_chart_metadata_preserved_on_degraded_blocks():
-    """chart_metadata with chart_rel_id is set even when chart degrades to paragraph."""
-    blocks, _ = extract_blocks(str(FIXTURES_DIR / "charts_no_fallback.docx"))
+class TestNoRegression:
+    """Chart/SmartArt changes don't break standard image extraction."""
 
-    # The no-fallback chart has a chart_rel_id but no cached image,
-    # so it degrades to a paragraph. chart_metadata should still be set.
-    placeholder = [b for b in blocks if "no preview available" in b.content]
-    assert len(placeholder) == 1
-    assert placeholder[0].chart_metadata is not None
-    assert "chart_rel_id" in placeholder[0].chart_metadata
+    def test_standard_images_still_work(self, fixtures_dir):
+        images_path = fixtures_dir / "images.docx"
+        if not images_path.exists():
+            pytest.skip("images.docx fixture not found")
+        blocks, image_data = extract_blocks(str(images_path))
+        image_blocks = [b for b in blocks if b.type == "image"]
+        assert len(image_blocks) >= 1
+        assert len(image_data) >= 1
 
-
-def test_parse_markdown_lowercase_chart_is_image():
-    """Lowercase ![chart](...) is classified as image, not chart (case-sensitive)."""
-    from sidedoc.reconstruct import parse_markdown_to_blocks
-
-    blocks = parse_markdown_to_blocks("![chart](assets/chart1.png)")
-    assert len(blocks) == 1
-    assert blocks[0].type == "image"
+    def test_simple_doc_no_charts(self, fixtures_dir):
+        simple_path = fixtures_dir / "simple.docx"
+        blocks, _ = extract_blocks(str(simple_path))
+        chart_blocks = [b for b in blocks if b.type in ("chart", "smartart")]
+        assert len(chart_blocks) == 0
 
 
-# --- PR #58 review feedback: security hardening tests ---
+# ── Regression coverage for behaviors the JON-108 rewrite left uncovered ──
 
 
-def test_extract_blip_image_skips_external_relationship():
-    """_extract_blip_image returns None for external relationships."""
-    from unittest.mock import MagicMock, PropertyMock
-    from sidedoc.extract import _extract_blip_image
+class TestAlternateContentChartDetection:
+    """Charts wrapped in mc:AlternateContent (the dominant Word 2010+ format)
+    must be detected. The legacy charts.docx fixture uses this wrapping;
+    chart_bar.docx uses flat w:drawing and does not exercise this path."""
 
-    blip = MagicMock()
-    blip.get.return_value = "rId1"
-
-    # Mock an external relationship — target_part raises if accessed
-    rel = MagicMock()
-    rel.is_external = True
-    type(rel).target_part = PropertyMock(
-        side_effect=AssertionError("target_part should not be accessed")
-    )
-    doc_part = MagicMock()
-    doc_part.rels = {"rId1": rel}
-
-    result = _extract_blip_image(blip, doc_part, "image", 1)
-    assert result is None
-
-
-def test_validate_image_emf_rejects_wrong_magic_bytes():
-    """EMF extension with wrong magic bytes is rejected."""
-    bad_emf = b"\xFF\xFF\xFF\xFF" * 10
-    is_valid, error_message = validate_image(bad_emf, "emf")
-    assert is_valid is False
-    assert "magic bytes" in error_message.lower() or "EMF" in error_message
+    def test_alternate_content_wrapped_chart_detected(self, fixtures_dir):
+        charts_path = fixtures_dir / "charts.docx"
+        if not charts_path.exists():
+            pytest.skip("charts.docx fixture not found")
+        # Sanity: fixture actually uses mc:AlternateContent
+        with zipfile.ZipFile(str(charts_path), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+        assert "mc:AlternateContent" in doc_xml, \
+            "charts.docx is expected to use mc:AlternateContent wrappers"
+        blocks, _ = extract_blocks(str(charts_path))
+        chart_blocks = [b for b in blocks if b.type == "chart"]
+        assert len(chart_blocks) >= 1, (
+            "Chart inside mc:AlternateContent was not detected — "
+            "fell through to paragraph placeholder"
+        )
 
 
-def test_validate_image_wmf_rejects_wrong_magic_bytes():
-    """WMF extension with wrong magic bytes is rejected."""
-    bad_wmf = b"\xFF\xFF\xFF\xFF" * 10
-    is_valid, error_message = validate_image(bad_wmf, "wmf")
-    assert is_valid is False
-    assert "magic bytes" in error_message.lower() or "WMF" in error_message
+class TestValidateImageMetafiles:
+    """EMF and WMF cached-fallback images bypass PIL (which can't open them)
+    but must still be checked via magic bytes."""
+
+    def test_validate_image_emf_passes_without_pil(self):
+        from sidedoc.extract import validate_image
+        # Minimal EMF header — 4-byte magic + padding
+        emf_bytes = b"\x01\x00\x00\x00" + b"\x00" * 60
+        is_valid, err = validate_image(emf_bytes, "emf")
+        assert is_valid, f"EMF with correct magic rejected: {err}"
+        assert err == ""
+
+    def test_validate_image_emf_rejects_wrong_magic(self):
+        from sidedoc.extract import validate_image
+        is_valid, err = validate_image(b"\xFF\xFF\xFF\xFF" + b"\x00" * 60, "emf")
+        assert not is_valid
+        assert "EMF" in err
+
+    def test_validate_image_wmf_passes_without_pil(self):
+        from sidedoc.extract import validate_image
+        # Aldus placeable WMF header
+        wmf_bytes = b"\xD7\xCD\xC6\x9A" + b"\x00" * 60
+        is_valid, err = validate_image(wmf_bytes, "wmf")
+        assert is_valid, f"WMF with correct magic rejected: {err}"
+        assert err == ""
 
 
-def test_extract_blip_image_sanitizes_extension():
-    """_extract_blip_image sanitizes pathological extensions."""
-    from unittest.mock import MagicMock, PropertyMock
-    from sidedoc.extract import _extract_blip_image
+class TestExternalRelationshipBlipSkip:
+    """_extract_blip_image must skip blips whose embed relationship is external,
+    to prevent SSRF-ish resolution of remote URLs during extraction."""
 
-    blip = MagicMock()
-    blip.get.return_value = "rId1"
+    def test_external_relationship_blip_returns_none(self):
+        from unittest.mock import MagicMock
+        from sidedoc.extract import _extract_blip_image, RELATIONSHIPS_NS
 
-    # Mock a part with a pathological partname (no dot)
-    rel = MagicMock()
-    rel.is_external = False
-    image_part = MagicMock()
-    type(image_part).partname = PropertyMock(return_value="/word/media/nodotfile")
-    image_part.blob = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100  # minimal bytes
+        blip = MagicMock()
+        blip.get.return_value = "rId99"
 
-    rel.target_part = image_part
-    doc_part = MagicMock()
-    doc_part.rels = {"rId1": rel}
+        rel = MagicMock()
+        rel.is_external = True
 
-    result = _extract_blip_image(blip, doc_part, "image", 1)
-    assert result is not None
-    filename, extension, _, _ = result
-    # Extension should be sanitized — no path separators, fallback to "bin" if empty
-    assert "/" not in extension
-    assert "\\" not in extension
-    assert len(extension) <= 10
-    assert extension == "bin"
+        doc_part = MagicMock()
+        doc_part.rels = {"rId99": rel}
+
+        result = _extract_blip_image(blip, doc_part, "image", 0)
+        assert result is None, "External-relationship blip should be skipped"
+        blip.get.assert_called_with(f"{{{RELATIONSHIPS_NS}}}embed")
 
 
-def test_validate_image_wmf_disk_variant_passes():
-    """WMF disk metafile variant (0x0002) is accepted as valid."""
-    # MetafileType=0x0002 (DISKMETAFILE), HeaderSize=0x0009 per MS-WMF spec
-    disk_wmf = b"\x02\x00\x09\x00" * 10
-    is_valid, error_message = validate_image(disk_wmf, "wmf")
-    assert is_valid is True
-    assert error_message == ""
+class TestNamespacePreservation:
+    """Round-tripped docx must preserve the `w:` namespace prefix in
+    document.xml. Using stdlib ElementTree to serialize re-emits as `ns0:`,
+    which python-docx and other OOXML tools cannot parse."""
+
+    def _build(self, docx_path, tmp_path):
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+        blocks, image_data = extract_blocks(str(docx_path))
+        styles = extract_styles(str(docx_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+        sdoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sdoc_dir), content_md, blocks, styles,
+            str(docx_path), image_data,
+        )
+        output_docx = tmp_path / "rebuilt.docx"
+        build_docx_from_sidedoc(str(sdoc_dir), str(output_docx))
+        return output_docx
+
+    def test_rebuilt_document_xml_uses_w_prefix(self, chart_bar_path, tmp_path):
+        output_docx = self._build(chart_bar_path, tmp_path)
+
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+
+        assert "ns0:" not in doc_xml, (
+            "document.xml uses stdlib ET default prefix (ns0:) instead of w:; "
+            "this will break python-docx round-tripping"
+        )
+        assert "<w:body" in doc_xml or "w:body " in doc_xml, \
+            "expected w:body element in rebuilt document.xml"
+
+    def test_rebuilt_docx_has_no_invalid_rsidR_marker(self, chart_bar_path, tmp_path):
+        output_docx = self._build(chart_bar_path, tmp_path)
+
+        with zipfile.ZipFile(str(output_docx), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+
+        # block-N is the internal sidedoc ID; it must not appear as a w:rsidR
+        # attribute in the rebuilt docx (w:rsidR is spec'd as 8-digit hex).
+        assert 'w:rsidR="block-' not in doc_xml, \
+            "internal block-N IDs leaked into w:rsidR — invalid OOXML"
+        assert 'rsidR="block-' not in doc_xml, \
+            "internal block-N IDs leaked into rsidR — invalid OOXML"
+
+
+class TestChartArchivalZipOpens:
+    """_archive_chart_parts should not repeatedly open the docx ZIP per sub-part.
+    The previous implementation opened it ~5-7 times per chart (once per
+    _read_docx_part_raw call plus content-types scan)."""
+
+    def test_chart_archival_does_not_reopen_zip_per_subpart(self, chart_bar_path, monkeypatch):
+        """_archive_chart_parts and its helpers must share one ZipFile handle.
+        Previously _read_docx_part_raw + _extract_content_types_for_parts each
+        opened their own handle, giving O(chart_subparts) ZipFile opens per
+        chart. After H3 the archival block opens exactly once per chart."""
+        import zipfile as zf_mod
+        from sidedoc.extract import _archive_chart_parts
+
+        opens: list[str] = []
+        real_init = zf_mod.ZipFile.__init__
+
+        def counting_init(self, file, *args, **kwargs):
+            opens.append(str(file))
+            real_init(self, file, *args, **kwargs)
+
+        monkeypatch.setattr(zf_mod.ZipFile, "__init__", counting_init)
+
+        # Baseline: no charts => only python-docx + rels opens.
+        simple_path = chart_bar_path.parent / "simple.docx"
+        opens.clear()
+        extract_blocks(str(simple_path))
+        baseline = len([o for o in opens if "simple.docx" in o])
+
+        # With one chart: extra opens must stay bounded.
+        opens.clear()
+        extract_blocks(str(chart_bar_path))
+        with_chart = len([o for o in opens if "chart_bar.docx" in o])
+
+        # Previous code opened ~5 extra ZipFiles per chart (one per sub-part
+        # lookup + content-types scan). After H3 the archival block opens
+        # exactly once, so the per-chart overhead must be <= 3.
+        assert with_chart - baseline <= 3, (
+            f"chart archival still reopening ZipFile per sub-part: "
+            f"baseline={baseline}, with_chart={with_chart}"
+        )

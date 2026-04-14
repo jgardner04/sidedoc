@@ -1,8 +1,10 @@
 """Reconstruct Word documents from sidedoc format."""
 
 import hashlib
+import io
 import re
 import warnings
+import zipfile
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
@@ -16,7 +18,7 @@ from docx.opc.packuri import PackURI
 from docx.oxml import OxmlElement
 from lxml import etree  # type: ignore[import-untyped]
 import click
-from sidedoc.models import Block, ColumnDefinition, SectionProperties, Style, TrackChange, deserialize_sections
+from sidedoc.models import Block, ChartPartsManifest, ColumnDefinition, SectionProperties, Style, TrackChange, deserialize_sections
 from sidedoc.constants import (
     CHART_ALT_TEXT_PREFIX,
     DEFAULT_IMAGE_WIDTH_INCHES,
@@ -43,6 +45,12 @@ from sidedoc.constants import (
 from sidedoc.store import SidedocStore
 
 import mistune
+
+# Private namespace for sidedoc internal attributes (e.g. block ID marker on
+# chart placeholder paragraphs). Word ignores attributes in unknown namespaces
+# on open, and we strip this attribute from the final output before saving.
+SIDEDOC_NS = "https://sidedoc.dev/xmlns/2026"
+SIDEDOC_BLOCK_ID = f"{{{SIDEDOC_NS}}}blockId"
 
 # Known limitation: multi-line footnote definitions not supported.
 # Only single-line [^N]: text definitions are captured; indented continuation
@@ -813,11 +821,13 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
             end_idx = stripped_line.rfind(")")
             image_path = stripped_line[start_idx:end_idx]
 
-            # Convention: alt text starting with "Chart" identifies chart blocks.
-            # This enables round-trip type preservation (extract → build → extract).
-            # Edge case: user-authored images with alt text starting with "Chart"
-            # (e.g., "Chart of accounts") will be misclassified as chart blocks.
-            block_type = "chart" if alt_text.startswith(CHART_ALT_TEXT_PREFIX) else "image"
+            # Determine block type from alt text
+            if alt_text.startswith("Chart:"):
+                block_type = "chart"
+            elif alt_text.startswith("SmartArt:"):
+                block_type = "smartart"
+            else:
+                block_type = "image"
 
             block = Block(
                 id=f"block-{block_id}",
@@ -828,6 +838,18 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 content_end=content_position + len(stripped_line),
                 content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
                 image_path=image_path,
+            )
+        elif stripped_line.startswith("[Chart:") or stripped_line.startswith("[SmartArt:"):
+            # Chart/SmartArt without cached image (no image path)
+            block_type = "chart" if stripped_line.startswith("[Chart:") else "smartart"
+            block = Block(
+                id=f"block-{block_id}",
+                type=block_type,
+                content=stripped_line,
+                docx_paragraph_index=block_id,
+                content_start=content_position,
+                content_end=content_position + len(stripped_line),
+                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
             )
         elif stripped_line.startswith("#"):
             level = 0
@@ -1623,11 +1645,19 @@ def create_docx_from_blocks(
             else:
                 inner_text = _extract_textbox_inner_content(block.content)
                 para = doc.add_paragraph(inner_text)
-        elif block.type in ("image", "chart"):
-            # Charts reconstruct as images for now (full-fidelity in JON-108)
+        elif block.type in ("image", "chart", "smartart"):
+            # Charts/SmartArt reconstruct as cached images; full-fidelity chart round-trip is handled by _inject_chart_parts post-processing
             is_chart = block.type == "chart"
-            missing_label = f"[Missing {'chart' if is_chart else 'image'}: {block.image_path}]"
-            no_path_label = "[Chart: no preview available]" if is_chart else "[Image]"
+            is_smartart = block.type == "smartart"
+            if is_chart:
+                missing_label = f"[Missing chart: {block.image_path}]"
+                no_path_label = "[Chart: no preview available]"
+            elif is_smartart:
+                missing_label = f"[Missing SmartArt: {block.image_path}]"
+                no_path_label = "[SmartArt: no preview available]"
+            else:
+                missing_label = f"[Missing image: {block.image_path}]"
+                no_path_label = "[Image]"
 
             if block.image_path and assets_dir:
                 image_file_path = assets_dir / Path(block.image_path).name
@@ -1640,6 +1670,13 @@ def create_docx_from_blocks(
                     para = doc.add_paragraph(missing_label)
             else:
                 para = doc.add_paragraph(no_path_label)
+
+            # Tag chart/smartart placeholder paragraphs with a private-namespace
+            # attribute so _inject_chart_parts can match them after python-docx
+            # emits the document XML. The attribute is stripped during injection
+            # so it never leaks into the saved docx.
+            if para is not None and (is_chart or is_smartart):
+                para._element.set(SIDEDOC_BLOCK_ID, block.id)
         else:
             # Paragraph and all other block types
             content = block.content
@@ -1674,6 +1711,122 @@ def create_docx_from_blocks(
         _apply_sections_to_doc(doc, sections)
 
     return doc
+
+
+def _inject_chart_parts(
+    docx_bytes: bytes,
+    chart_injections: dict[str, ChartPartsManifest],
+    assets_dir: Path,
+) -> bytes:
+    """Post-process a docx ZIP to inject archived chart XML parts.
+
+    Replaces placeholder paragraphs (tagged with SIDEDOC_BLOCK_ID) with the
+    original chart drawing XML and adds the OOXML parts, relationships, and
+    content types needed for a fully functional chart.
+
+    Uses lxml for OOXML manipulation so namespace prefixes (w:, r:, mc:, …)
+    are preserved on re-serialization — stdlib ElementTree would emit them as
+    ns0/ns1/… and break python-docx round-tripping.
+
+    Args:
+        docx_bytes: Base docx bytes (from python-docx save).
+        chart_injections: Map of block_id → manifest. The block_id must match
+            the SIDEDOC_BLOCK_ID attribute set on chart paragraphs during
+            create_docx_from_blocks.
+        assets_dir: Path to the assets directory containing chart_parts/.
+
+    Returns:
+        Modified docx bytes with chart parts injected.
+    """
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+    CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+
+    all_extra_rels: list[dict[str, str]] = []
+    all_extra_content_types: list[dict[str, str]] = []
+    all_extra_parts: dict[str, bytes] = {}
+
+    for manifest in chart_injections.values():
+        all_extra_rels.extend(manifest.rels)
+        all_extra_content_types.extend(manifest.content_types)
+        for ooxml_path, asset_path in manifest.parts.items():
+            full_ooxml_path = f"word/{ooxml_path}"
+            part_file = assets_dir / asset_path
+            if part_file.exists():
+                all_extra_parts[full_ooxml_path] = part_file.read_bytes()
+
+    def _serialize(tree: Any) -> bytes:
+        result: bytes = etree.tostring(
+            tree, xml_declaration=True, encoding="UTF-8", standalone=True
+        )
+        return result
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as src:
+        out_buf = io.BytesIO()
+        with zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+
+                if item.filename == "word/document.xml":
+                    doc_tree = etree.fromstring(data)
+                    body = doc_tree.find(f"{{{W}}}body")
+                    if body is not None:
+                        for para in body.findall(f".//{{{W}}}p"):
+                            block_id = para.get(SIDEDOC_BLOCK_ID)
+                            if not block_id:
+                                continue
+                            manifest_opt = chart_injections.get(block_id)
+                            # Strip the marker regardless — it must never leak
+                            # into the final docx even if injection is skipped.
+                            del para.attrib[SIDEDOC_BLOCK_ID]
+                            if manifest_opt is None:
+                                continue
+                            drawing_file = assets_dir / manifest_opt.drawing_xml_path
+                            if not drawing_file.exists():
+                                continue
+                            drawing_elem = etree.fromstring(drawing_file.read_bytes())
+                            for child in list(para):
+                                para.remove(child)
+                            para.append(drawing_elem)
+                    data = _serialize(doc_tree.getroottree())
+
+                elif item.filename == "word/_rels/document.xml.rels":
+                    rels_tree = etree.fromstring(data)
+                    existing_ids = {rel.get("Id") for rel in rels_tree}
+                    for rel_dict in all_extra_rels:
+                        if rel_dict["id"] in existing_ids:
+                            continue
+                        rel = etree.SubElement(
+                            rels_tree,
+                            f"{{{REL_NS}}}Relationship",
+                            nsmap={None: REL_NS},
+                        )
+                        rel.set("Id", rel_dict["id"])
+                        rel.set("Type", rel_dict["type"])
+                        rel.set("Target", rel_dict["target"])
+                    data = _serialize(rels_tree.getroottree())
+
+                elif item.filename == "[Content_Types].xml":
+                    ct_tree = etree.fromstring(data)
+                    existing_parts = {o.get("PartName") for o in ct_tree}
+                    for ct_dict in all_extra_content_types:
+                        if ct_dict["part_name"] in existing_parts:
+                            continue
+                        override = etree.SubElement(
+                            ct_tree,
+                            f"{{{CT_NS}}}Override",
+                            nsmap={None: CT_NS},
+                        )
+                        override.set("PartName", ct_dict["part_name"])
+                        override.set("ContentType", ct_dict["content_type"])
+                    data = _serialize(ct_tree.getroottree())
+
+                dst.writestr(item, data)
+
+            for part_path, part_bytes in all_extra_parts.items():
+                dst.writestr(part_path, part_bytes)
+
+        return out_buf.getvalue()
 
 
 def _populate_header_footer(header_footer: Any, paragraphs: list[dict], assets_dir: Optional[Path] = None) -> None:
@@ -1766,7 +1919,8 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         footnote_meta: dict[int, dict] = {}
         hf_sections_data: list[dict] = []
 
-        # Read structure.json for track changes, footnotes, and section properties
+        # Enrich blocks with structure.json metadata (track changes, chart parts, footnotes, sections)
+        chart_blocks_with_parts: dict[str, ChartPartsManifest] = {}
         sections: list[SectionProperties] | None = None
         if store.has_file("structure.json"):
             structure_data = store.read_json("structure.json")
@@ -1788,7 +1942,8 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                         mid = ref.get("note_id")
                         if mid and int(mid) not in footnote_meta:
                             footnote_meta[int(mid)] = {"note_type": ref.get("note_type", "footnote")}
-            for block, struct_block in zip(blocks, structure_blocks):
+            for block_idx, (block, struct_block) in enumerate(zip(blocks, structure_blocks)):
+                # Transfer track changes if present
                 if "track_changes" in struct_block and struct_block["track_changes"]:
                     block.track_changes = [
                         TrackChange(
@@ -1806,6 +1961,19 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                 if "text_box_metadata" in struct_block and struct_block["text_box_metadata"]:
                     block.text_box_metadata = struct_block["text_box_metadata"]
 
+                # Collect chart parts manifests for post-processing
+                if "chart_parts_manifest" in struct_block and struct_block["chart_parts_manifest"]:
+                    manifest_data = struct_block["chart_parts_manifest"]
+                    manifest = ChartPartsManifest(
+                        drawing_xml_path=manifest_data["drawing_xml_path"],
+                        parts=manifest_data["parts"],
+                        rels=manifest_data["rels"],
+                        content_types=manifest_data["content_types"],
+                    )
+                    # Block ID is set as SIDEDOC_BLOCK_ID on the placeholder paragraph
+                    # during create_docx_from_blocks; _inject_chart_parts matches by it.
+                    chart_blocks_with_parts[block.id] = manifest
+
             # Read section properties (column layouts)
             sections = deserialize_sections(structure_data)
 
@@ -1813,4 +1981,13 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         if hf_sections_data:
             apply_sections_to_document(doc, hf_sections_data, assets_dir)
-        doc.save(output_path)
+
+        if chart_blocks_with_parts and assets_dir:
+            # Post-process the docx ZIP to inject chart parts
+            import io
+            buf = io.BytesIO()
+            doc.save(buf)
+            result_bytes = _inject_chart_parts(buf.getvalue(), chart_blocks_with_parts, assets_dir)
+            Path(output_path).write_bytes(result_bytes)
+        else:
+            doc.save(output_path)
