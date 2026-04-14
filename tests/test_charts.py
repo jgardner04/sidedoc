@@ -524,3 +524,45 @@ class TestNamespacePreservation:
             "internal block-N IDs leaked into w:rsidR — invalid OOXML"
         assert 'rsidR="block-' not in doc_xml, \
             "internal block-N IDs leaked into rsidR — invalid OOXML"
+
+
+class TestChartArchivalZipOpens:
+    """_archive_chart_parts should not repeatedly open the docx ZIP per sub-part.
+    The previous implementation opened it ~5-7 times per chart (once per
+    _read_docx_part_raw call plus content-types scan)."""
+
+    def test_chart_archival_does_not_reopen_zip_per_subpart(self, chart_bar_path, monkeypatch):
+        """_archive_chart_parts and its helpers must share one ZipFile handle.
+        Previously _read_docx_part_raw + _extract_content_types_for_parts each
+        opened their own handle, giving O(chart_subparts) ZipFile opens per
+        chart. After H3 the archival block opens exactly once per chart."""
+        import zipfile as zf_mod
+        from sidedoc.extract import _archive_chart_parts
+
+        opens: list[str] = []
+        real_init = zf_mod.ZipFile.__init__
+
+        def counting_init(self, file, *args, **kwargs):
+            opens.append(str(file))
+            real_init(self, file, *args, **kwargs)
+
+        monkeypatch.setattr(zf_mod.ZipFile, "__init__", counting_init)
+
+        # Baseline: no charts => only python-docx + rels opens.
+        simple_path = chart_bar_path.parent / "simple.docx"
+        opens.clear()
+        extract_blocks(str(simple_path))
+        baseline = len([o for o in opens if "simple.docx" in o])
+
+        # With one chart: extra opens must stay bounded.
+        opens.clear()
+        extract_blocks(str(chart_bar_path))
+        with_chart = len([o for o in opens if "chart_bar.docx" in o])
+
+        # Previous code opened ~5 extra ZipFiles per chart (one per sub-part
+        # lookup + content-types scan). After H3 the archival block opens
+        # exactly once, so the per-chart overhead must be <= 3.
+        assert with_chart - baseline <= 3, (
+            f"chart archival still reopening ZipFile per sub-part: "
+            f"baseline={baseline}, with_chart={with_chart}"
+        )

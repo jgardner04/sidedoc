@@ -277,22 +277,21 @@ def _read_docx_part(docx_path: str, part_path: str) -> Optional[bytes]:
             return None
 
 
-def _read_docx_part_raw(docx_path: str, zip_path: str) -> Optional[bytes]:
-    """Read a part from the docx ZIP archive by its full ZIP path."""
-    import zipfile
-
-    with zipfile.ZipFile(docx_path, "r") as zf:
-        try:
-            return zf.read(zip_path)
-        except KeyError:
-            return None
+def _read_zip_part(zf: "zipfile.ZipFile", zip_path: str) -> Optional[bytes]:
+    """Read a part from an already-open docx ZIP handle."""
+    try:
+        return zf.read(zip_path)
+    except KeyError:
+        return None
 
 
-def _extract_content_types_for_parts(docx_path: str, part_paths: list[str]) -> list[dict[str, str]]:
+def _extract_content_types_for_parts(
+    zf: "zipfile.ZipFile", part_paths: list[str]
+) -> list[dict[str, str]]:
     """Extract content type overrides from [Content_Types].xml for given part paths."""
     from xml.etree import ElementTree as ET
 
-    ct_bytes = _read_docx_part_raw(docx_path, "[Content_Types].xml")
+    ct_bytes = _read_zip_part(zf, "[Content_Types].xml")
     if ct_bytes is None:
         return []
 
@@ -313,7 +312,7 @@ def _extract_content_types_for_parts(docx_path: str, part_paths: list[str]) -> l
 
 
 def _archive_chart_parts(
-    docx_path: str,
+    zf: "zipfile.ZipFile",
     run_elem: Any,
     chart_rel_id: str,
     chart_target: str,
@@ -357,7 +356,7 @@ def _archive_chart_parts(
     chart_name = chart_target.rsplit("/", 1)[-1]
     chart_dir = chart_target.rsplit("/", 1)[0] if "/" in chart_target else ""
     chart_rels_zip_path = f"word/{chart_dir}/_rels/{chart_name}.rels" if chart_dir else f"word/_rels/{chart_name}.rels"
-    chart_rels_bytes = _read_docx_part_raw(docx_path, chart_rels_zip_path)
+    chart_rels_bytes = _read_zip_part(zf, chart_rels_zip_path)
     if chart_rels_bytes is not None:
         # Archive the chart's own rels file
         rels_asset_path = f"{prefix}/{chart_dir.replace('/', '_')}__rels_{chart_name}.rels"
@@ -379,7 +378,7 @@ def _archive_chart_parts(
             else:
                 sub_full = f"word/{chart_dir}/{sub_target}" if chart_dir else f"word/{sub_target}"
 
-            sub_bytes = _read_docx_part_raw(docx_path, sub_full)
+            sub_bytes = _read_zip_part(zf, sub_full)
             if sub_bytes is not None:
                 # Normalize the target for storage
                 sub_relative = sub_full.removeprefix("word/")
@@ -400,7 +399,7 @@ def _archive_chart_parts(
                 rels.append({"id": img_rel_id, "type": img_type, "target": img_target})
 
     # 5. Extract content types for all archived OOXML parts
-    content_types = _extract_content_types_for_parts(docx_path, all_ooxml_paths)
+    content_types = _extract_content_types_for_parts(zf, all_ooxml_paths)
 
     manifest = ChartPartsManifest(
         drawing_xml_path=drawing_asset_path,
@@ -468,11 +467,16 @@ def extract_chart_from_paragraph(
                     image_drawing, docx_path, doc_rels, chart_counter, "chart"
                 )
 
-                # Archive chart parts for full-fidelity reconstruction
-                parts_info = _archive_chart_parts(
-                    docx_path, run._element, chart_rel_id, target,
-                    chart_bytes, doc_rels, chart_counter,
-                )
+                # Archive chart parts for full-fidelity reconstruction.
+                # Open the docx ZIP once and thread it through the archival
+                # helpers — they each used to open their own handle, yielding
+                # ~5-7 ZIP opens per chart in the previous implementation.
+                import zipfile
+                with zipfile.ZipFile(docx_path, "r") as zf:
+                    parts_info = _archive_chart_parts(
+                        zf, run._element, chart_rel_id, target,
+                        chart_bytes, doc_rels, chart_counter,
+                    )
 
                 return chart_metadata, cached_image, parts_info
 
