@@ -1756,9 +1756,10 @@ def _inject_chart_parts(
                 all_extra_parts[full_ooxml_path] = part_file.read_bytes()
 
     def _serialize(tree: Any) -> bytes:
-        return etree.tostring(
+        result: bytes = etree.tostring(
             tree, xml_declaration=True, encoding="UTF-8", standalone=True
         )
+        return result
 
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as src:
         out_buf = io.BytesIO()
@@ -1774,13 +1775,13 @@ def _inject_chart_parts(
                             block_id = para.get(SIDEDOC_BLOCK_ID)
                             if not block_id:
                                 continue
-                            manifest = chart_injections.get(block_id)
+                            manifest_opt = chart_injections.get(block_id)
                             # Strip the marker regardless — it must never leak
                             # into the final docx even if injection is skipped.
                             del para.attrib[SIDEDOC_BLOCK_ID]
-                            if manifest is None:
+                            if manifest_opt is None:
                                 continue
-                            drawing_file = assets_dir / manifest.drawing_xml_path
+                            drawing_file = assets_dir / manifest_opt.drawing_xml_path
                             if not drawing_file.exists():
                                 continue
                             drawing_elem = etree.fromstring(drawing_file.read_bytes())
