@@ -430,8 +430,10 @@ def extract_chart_from_paragraph(
     chart_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart"
 
     for run in paragraph.runs:
+        # Recursive search picks up drawings wrapped in mc:AlternateContent > mc:Choice
+        # (the dominant real-world format in Word 2010+) as well as flat w:drawing children.
         drawing_elems = run._element.findall(
-            f'{{{WORDPROCESSINGML_NS}}}drawing'
+            f'.//{{{WORDPROCESSINGML_NS}}}drawing'
         )
         for drawing in drawing_elems:
             graphic_datas = drawing.findall(f'.//{{{DRAWINGML_NS}}}graphicData')
@@ -457,9 +459,13 @@ def extract_chart_from_paragraph(
 
                 chart_metadata = _parse_chart_xml(chart_bytes)
 
-                # Try to extract cached fallback image (blip in same drawing)
+                # Cached fallback image lives in a sibling mc:Fallback > w:drawing
+                # when the chart is wrapped in mc:AlternateContent. Fall back to the
+                # current drawing for the flat (no-wrapper) case.
+                fallback = _find_fallback_drawing(drawing)
+                image_drawing = fallback if fallback is not None else drawing
                 cached_image = _extract_cached_image_from_drawing(
-                    drawing, docx_path, doc_rels, chart_counter, "chart"
+                    image_drawing, docx_path, doc_rels, chart_counter, "chart"
                 )
 
                 # Archive chart parts for full-fidelity reconstruction
@@ -578,7 +584,7 @@ def extract_smartart_from_paragraph(
 
     for run in paragraph.runs:
         drawing_elems = run._element.findall(
-            f'{{{WORDPROCESSINGML_NS}}}drawing'
+            f'.//{{{WORDPROCESSINGML_NS}}}drawing'
         )
         for drawing in drawing_elems:
             graphic_datas = drawing.findall(f'.//{{{DRAWINGML_NS}}}graphicData')
@@ -615,8 +621,10 @@ def extract_smartart_from_paragraph(
                             if diagram_type:
                                 smartart_metadata.diagram_type = diagram_type
 
+                fallback = _find_fallback_drawing(drawing)
+                image_drawing = fallback if fallback is not None else drawing
                 cached_image = _extract_cached_image_from_drawing(
-                    drawing, docx_path, doc_rels, smartart_counter, "smartart"
+                    image_drawing, docx_path, doc_rels, smartart_counter, "smartart"
                 )
                 return smartart_metadata, cached_image
 
@@ -650,6 +658,33 @@ def _parse_smartart_layout_type(layout_bytes: bytes) -> Optional[str]:
     title = root.find(f'{{{DIAGRAM_NS}}}title')
     if title is not None:
         return title.get('val')
+    return None
+
+
+def _find_fallback_drawing(drawing: Any) -> Optional[Any]:
+    """Return the mc:Fallback w:drawing that holds the cached raster image, if any.
+
+    Charts in Word 2010+ are wrapped as w:r > mc:AlternateContent containing
+    both mc:Choice (live chart, no blip) and mc:Fallback (cached image blip).
+    The `drawing` passed in here is the mc:Choice drawing; the renderable
+    fallback is a sibling inside mc:Fallback.
+    """
+    # Walk up at most a few ancestors to find an enclosing mc:Choice, then look
+    # at its AlternateContent sibling mc:Fallback.
+    node = drawing
+    for _ in range(4):
+        parent = node.getparent() if hasattr(node, "getparent") else None
+        if parent is None:
+            return None
+        if parent.tag == f"{{{MC_NS}}}Choice":
+            alt_content = parent.getparent()
+            if alt_content is None:
+                return None
+            fallback = alt_content.find(f"{{{MC_NS}}}Fallback")
+            if fallback is None:
+                return None
+            return fallback.find(f".//{{{WORDPROCESSINGML_NS}}}drawing")
+        node = parent
     return None
 
 

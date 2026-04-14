@@ -403,3 +403,77 @@ class TestNoRegression:
         blocks, _ = extract_blocks(str(simple_path))
         chart_blocks = [b for b in blocks if b.type in ("chart", "smartart")]
         assert len(chart_blocks) == 0
+
+
+# ── Regression coverage for behaviors the JON-108 rewrite left uncovered ──
+
+
+class TestAlternateContentChartDetection:
+    """Charts wrapped in mc:AlternateContent (the dominant Word 2010+ format)
+    must be detected. The legacy charts.docx fixture uses this wrapping;
+    chart_bar.docx uses flat w:drawing and does not exercise this path."""
+
+    def test_alternate_content_wrapped_chart_detected(self, fixtures_dir):
+        charts_path = fixtures_dir / "charts.docx"
+        if not charts_path.exists():
+            pytest.skip("charts.docx fixture not found")
+        # Sanity: fixture actually uses mc:AlternateContent
+        with zipfile.ZipFile(str(charts_path), "r") as zf:
+            doc_xml = zf.read("word/document.xml").decode("utf-8")
+        assert "mc:AlternateContent" in doc_xml, \
+            "charts.docx is expected to use mc:AlternateContent wrappers"
+        blocks, _ = extract_blocks(str(charts_path))
+        chart_blocks = [b for b in blocks if b.type == "chart"]
+        assert len(chart_blocks) >= 1, (
+            "Chart inside mc:AlternateContent was not detected — "
+            "fell through to paragraph placeholder"
+        )
+
+
+class TestValidateImageMetafiles:
+    """EMF and WMF cached-fallback images bypass PIL (which can't open them)
+    but must still be checked via magic bytes."""
+
+    def test_validate_image_emf_passes_without_pil(self):
+        from sidedoc.extract import validate_image
+        # Minimal EMF header — 4-byte magic + padding
+        emf_bytes = b"\x01\x00\x00\x00" + b"\x00" * 60
+        is_valid, err = validate_image(emf_bytes, "emf")
+        assert is_valid, f"EMF with correct magic rejected: {err}"
+        assert err == ""
+
+    def test_validate_image_emf_rejects_wrong_magic(self):
+        from sidedoc.extract import validate_image
+        is_valid, err = validate_image(b"\xFF\xFF\xFF\xFF" + b"\x00" * 60, "emf")
+        assert not is_valid
+        assert "EMF" in err
+
+    def test_validate_image_wmf_passes_without_pil(self):
+        from sidedoc.extract import validate_image
+        # Aldus placeable WMF header
+        wmf_bytes = b"\xD7\xCD\xC6\x9A" + b"\x00" * 60
+        is_valid, err = validate_image(wmf_bytes, "wmf")
+        assert is_valid, f"WMF with correct magic rejected: {err}"
+        assert err == ""
+
+
+class TestExternalRelationshipBlipSkip:
+    """_extract_blip_image must skip blips whose embed relationship is external,
+    to prevent SSRF-ish resolution of remote URLs during extraction."""
+
+    def test_external_relationship_blip_returns_none(self):
+        from unittest.mock import MagicMock
+        from sidedoc.extract import _extract_blip_image, RELATIONSHIPS_NS
+
+        blip = MagicMock()
+        blip.get.return_value = "rId99"
+
+        rel = MagicMock()
+        rel.is_external = True
+
+        doc_part = MagicMock()
+        doc_part.rels = {"rId99": rel}
+
+        result = _extract_blip_image(blip, doc_part, "image", 0)
+        assert result is None, "External-relationship blip should be skipped"
+        blip.get.assert_called_with(f"{{{RELATIONSHIPS_NS}}}embed")
