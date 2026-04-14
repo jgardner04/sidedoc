@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Style preservation** - Apply `docx_style` to paragraphs during reconstruction so rebuilt documents maintain original Word styles (Quote, Title, List Bullet, Heading, etc.) instead of falling back to "Normal". Also extract and preserve paragraph format properties (indentation, spacing, keep_together, keep_with_next, page_break_before) through round-trip. Gracefully falls back to "Normal" with a warning when custom styles are missing in the target document. ([JON-91](https://linear.app/jonathangardner/issue/JON-91/enhanced-style-preservation-docx-style-application))
+
 ## [0.2.0] - 2026-03-19
 
 ### Added

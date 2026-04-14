@@ -161,6 +161,15 @@ def _build_metadata(
                 "italic": style.italic,
                 "underline": style.underline,
                 "table_formatting": style.table_formatting,
+                "left_indent": style.left_indent,
+                "right_indent": style.right_indent,
+                "first_line_indent": style.first_line_indent,
+                "space_before": style.space_before,
+                "space_after": style.space_after,
+                "line_spacing": style.line_spacing,
+                "keep_together": style.keep_together,
+                "keep_with_next": style.keep_with_next,
+                "page_break_before": style.page_break_before,
             }
             for style in styles
         },

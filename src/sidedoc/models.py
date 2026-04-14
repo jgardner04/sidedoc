@@ -73,6 +73,16 @@ class Style:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style, cell_styles
+    # Paragraph format properties (stored in EMUs / English Metric Units)
+    left_indent: Optional[int] = None
+    right_indent: Optional[int] = None
+    first_line_indent: Optional[int] = None
+    space_before: Optional[int] = None
+    space_after: Optional[int] = None
+    line_spacing: Optional[int] = None
+    keep_together: Optional[bool] = None
+    keep_with_next: Optional[bool] = None
+    page_break_before: Optional[bool] = None
 
 
 @dataclass

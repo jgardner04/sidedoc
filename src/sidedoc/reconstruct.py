@@ -1199,12 +1199,26 @@ def create_table_from_gfm(
 def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     """Apply formatting from block_style to a paragraph.
 
+    Applies docx_style first (so style defaults take effect), then direct
+    formatting overrides from the style dictionary.
+
     Args:
         para: python-docx Paragraph object
-        block_style: Style dictionary with font_name, font_size, alignment
+        block_style: Style dictionary with docx_style, font_name, font_size, alignment,
+            and paragraph format properties
     """
     if not block_style:
         return
+
+    # Apply docx_style first — style defaults apply, then direct formatting overrides
+    docx_style = block_style.get("docx_style")
+    if docx_style and docx_style not in ("Normal", "Table", "TextBox"):
+        try:
+            para.style = docx_style
+        except KeyError:
+            warnings.warn(
+                f"Style '{docx_style}' not found in document, falling back to Normal"
+            )
 
     if "font_name" in block_style and para.style:
         para.style.font.name = block_style["font_name"]
@@ -1214,6 +1228,27 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
     if alignment in ALIGNMENT_STRING_TO_ENUM:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+
+    # Apply paragraph format properties (direct formatting overrides)
+    pf = para.paragraph_format
+    if block_style.get("left_indent") is not None:
+        pf.left_indent = block_style["left_indent"]
+    if block_style.get("right_indent") is not None:
+        pf.right_indent = block_style["right_indent"]
+    if block_style.get("first_line_indent") is not None:
+        pf.first_line_indent = block_style["first_line_indent"]
+    if block_style.get("space_before") is not None:
+        pf.space_before = block_style["space_before"]
+    if block_style.get("space_after") is not None:
+        pf.space_after = block_style["space_after"]
+    if block_style.get("line_spacing") is not None:
+        pf.line_spacing = block_style["line_spacing"]
+    if block_style.get("keep_together") is not None:
+        pf.keep_together = block_style["keep_together"]
+    if block_style.get("keep_with_next") is not None:
+        pf.keep_with_next = block_style["keep_with_next"]
+    if block_style.get("page_break_before") is not None:
+        pf.page_break_before = block_style["page_break_before"]
 
 
 def _parse_footnote_definitions(content_md: str) -> dict[int, str]:
