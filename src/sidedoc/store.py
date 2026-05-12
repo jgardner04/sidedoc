@@ -118,7 +118,20 @@ class SidedocStore:
                 return sorted(zf.namelist())
 
     def list_assets(self) -> list[str]:
-        """List asset paths relative to assets/ (including files in subdirectories)."""
+        """List asset paths relative to the assets/ directory.
+
+        Returned values are paths relative to ``assets/`` and **may contain
+        ``/`` separators** when assets live in subdirectories. For example,
+        a chart's archived OOXML parts are stored under
+        ``assets/chart_parts/chartN/`` and will appear here as
+        ``"chart_parts/chart1/drawing.xml"``, not as the bare filename
+        ``"drawing.xml"``. Callers that join the result onto ``assets_dir``
+        get the correct absolute path; callers that treat it as a bare
+        filename will silently produce wrong paths.
+
+        Returns:
+            Sorted list of asset paths relative to ``assets/``.
+        """
         if self._fmt == "directory":
             assets_dir = self._path / "assets"
             if not assets_dir.exists():
