@@ -336,8 +336,11 @@ def _archive_chart_parts(
     rels: list[dict[str, str]] = []
     all_ooxml_paths: list[str] = []
 
-    # 1. Archive the w:r drawing element
-    drawing_xml_bytes = ET.tostring(run_elem, encoding="unicode").encode("utf-8")
+    # 1. Archive the w:r drawing element. Use lxml.etree (not stdlib ET) so
+    # OOXML namespace prefixes are preserved as `w:`/`a:`/`r:` from the
+    # parent tree's nsmap. Stdlib ET would emit `ns0:`/`ns1:`/... instead,
+    # which renders the archived drawing.xml misleading to direct consumers.
+    drawing_xml_bytes = etree.tostring(run_elem, encoding="utf-8")
     drawing_asset_path = f"{prefix}/drawing.xml"
     asset_data[drawing_asset_path] = drawing_xml_bytes
 

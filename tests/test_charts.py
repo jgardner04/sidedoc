@@ -578,6 +578,47 @@ class TestNoPreviewRoundTripPreservesTitle:
         )
 
 
+class TestArchivedDrawingNamespacePreservation:
+    """The archived drawing.xml in assets/chart_parts/chartN/ must use the
+    OOXML `w:` namespace prefix, not stdlib ET's default `ns0:` rewrite.
+    Rebuild itself isn't broken by the corruption (lxml resolves URIs and
+    renormalizes prefixes from the parent nsmap), but the .sidedoc archive
+    is meant to be inspectable OOXML — humans and AI agents reading the
+    archive directly see ns0: and get confused."""
+
+    def test_archived_drawing_xml_uses_w_prefix(self, chart_bar_path, tmp_path):
+        from sidedoc.extract import extract_styles
+        from sidedoc.package import create_sidedoc_directory
+
+        blocks, image_data = extract_blocks(str(chart_bar_path))
+        styles = extract_styles(str(chart_bar_path), blocks)
+        content_md = "\n".join(b.content for b in blocks)
+        sdoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_directory(
+            str(sdoc_dir), content_md, blocks, styles,
+            str(chart_bar_path), image_data,
+        )
+
+        drawing_path = sdoc_dir / "assets" / "chart_parts" / "chart1" / "drawing.xml"
+        assert drawing_path.exists(), (
+            f"Expected archived drawing at {drawing_path}; chart extraction "
+            "may have failed."
+        )
+
+        # String-level check is required: re-parsing with lxml resolves
+        # namespace URIs (not prefixes), so a parse-based assertion would
+        # pass even with the bug present.
+        raw = drawing_path.read_bytes()
+        assert b"w:drawing" in raw, (
+            "archived drawing.xml is missing the canonical w:drawing prefix; "
+            f"first 200 bytes: {raw[:200]!r}"
+        )
+        assert b"ns0:" not in raw, (
+            "stdlib ET corrupted the namespace prefix to ns0: in the "
+            f"archived drawing.xml; first 200 bytes: {raw[:200]!r}"
+        )
+
+
 class TestChartArchivalZipOpens:
     """_archive_chart_parts should not repeatedly open the docx ZIP per sub-part.
     The previous implementation opened it ~5-7 times per chart (once per
