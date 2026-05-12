@@ -526,6 +526,58 @@ class TestNamespacePreservation:
             "internal block-N IDs leaked into rsidR — invalid OOXML"
 
 
+class TestNoPreviewRoundTripPreservesTitle:
+    """Charts/SmartArt without a cached image carry their title in block.content
+    (e.g. "[Chart: Revenue Q1]"). Rebuild must emit that content as the
+    paragraph text — using a hardcoded "no preview available" sentinel
+    silently discards the title on round-trip."""
+
+    @pytest.mark.parametrize(
+        "block_kind,title",
+        [("Chart", "Revenue Q1"), ("SmartArt", "Org Chart")],
+    )
+    def test_no_preview_chart_or_smartart_preserves_title(
+        self, tmp_path, block_kind, title
+    ):
+        content_md = f"[{block_kind}: {title}]"
+        sdoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_dir(
+            sdoc_dir, content_md=content_md, structure={"blocks": []}
+        )
+        rebuilt = tmp_path / "rebuilt.docx"
+        build_docx_from_sidedoc(str(sdoc_dir), str(rebuilt))
+
+        blocks, _ = extract_blocks(str(rebuilt))
+        all_content = " ".join(b.content for b in blocks)
+        assert title in all_content, (
+            f"Title {title!r} should survive extract→build→extract; "
+            f"got {all_content!r}"
+        )
+        assert "no preview available" not in all_content, (
+            f"Sentinel leaked into rebuilt content: {all_content!r}"
+        )
+
+    def test_image_no_path_still_uses_sentinel(self, tmp_path):
+        """Regression guard: only the chart/smartart no-path branch reads
+        block.content. The image branch must keep emitting [Image] (or a
+        missing-image label) because raw markdown image syntax shouldn't
+        leak into the docx body."""
+        content_md = "![alt](assets/missing.png)"
+        sdoc_dir = tmp_path / "test.sidedoc"
+        create_sidedoc_dir(
+            sdoc_dir, content_md=content_md, structure={"blocks": []}
+        )
+        rebuilt = tmp_path / "rebuilt.docx"
+        build_docx_from_sidedoc(str(sdoc_dir), str(rebuilt))
+
+        blocks, _ = extract_blocks(str(rebuilt))
+        all_content = " ".join(b.content for b in blocks)
+        assert "![alt](" not in all_content, (
+            "Raw markdown image syntax leaked into rebuilt docx — image "
+            f"branch should fall back to a sentinel: {all_content!r}"
+        )
+
+
 class TestChartArchivalZipOpens:
     """_archive_chart_parts should not repeatedly open the docx ZIP per sub-part.
     The previous implementation opened it ~5-7 times per chart (once per

@@ -1668,6 +1668,11 @@ def create_docx_from_blocks(
                     run.add_picture(str(image_file_path), width=Inches(DEFAULT_IMAGE_WIDTH_INCHES))
                 else:
                     para = doc.add_paragraph(missing_label)
+            elif is_chart or is_smartart:
+                # Preserve the extracted title (e.g. "[Chart: Revenue Q1]")
+                # through round-trip; falling back to a hardcoded "no preview
+                # available" sentinel discards it.
+                para = doc.add_paragraph(block.content)
             else:
                 para = doc.add_paragraph(no_path_label)
 
