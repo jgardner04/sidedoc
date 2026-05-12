@@ -495,9 +495,9 @@ def _parse_chart_xml(chart_bytes: bytes) -> ChartMetadata:
     title = None
     title_elem = root.find(f'.//{{{CHART_NS}}}title')
     if title_elem is not None:
-        parts = [t.text for t in title_elem.iter(f'{{{DRAWINGML_NS}}}t') if t.text]
-        if parts:
-            title = "".join(parts)
+        title_runs = [t.text for t in title_elem.iter(f'{{{DRAWINGML_NS}}}t') if t.text]
+        if title_runs:
+            title = "".join(title_runs)
 
     # Detect chart type from plot area children
     chart_type = "unknown"
@@ -676,8 +676,10 @@ def _find_fallback_drawing(drawing: Any) -> Optional[Any]:
     The `drawing` passed in here is the mc:Choice drawing; the renderable
     fallback is a sibling inside mc:Fallback.
     """
-    # Walk up at most a few ancestors to find an enclosing mc:Choice, then look
-    # at its AlternateContent sibling mc:Fallback.
+    # Walk up at most 4 ancestors: the valid OOXML path is
+    # w:r > mc:AlternateContent > mc:Choice > w:drawing (3 hops back from
+    # the chart drawing), +1 slack in case future content models nest a
+    # level deeper.
     node = drawing
     for _ in range(4):
         parent = node.getparent() if hasattr(node, "getparent") else None

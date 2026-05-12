@@ -36,13 +36,6 @@ DGM_LAYOUT_CT = "application/vnd.openxmlformats-officedocument.drawingml.diagram
 DGM_STYLE_CT = "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml"
 DGM_COLORS_CT = "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml"
 
-# Register namespaces for clean serialization
-for prefix, uri in [
-    ("a", A), ("c", C), ("r", R), ("wp", WP), ("w", W), ("dgm", DGM),
-]:
-    ET.register_namespace(prefix, uri)
-
-
 def _el(tag: str, text: str | None = None, **attribs: str) -> ET.Element:
     """Shorthand to create an Element."""
     elem = ET.Element(tag, attribs)
@@ -400,6 +393,14 @@ def create_smartart_orgchart_docx() -> None:
 
 
 if __name__ == "__main__":
+    # Register namespaces for clean serialization. Inside the __main__
+    # guard so that importing this module (e.g. accidentally via pytest
+    # collection) doesn't mutate stdlib ET's global prefix table.
+    for prefix, uri in [
+        ("a", A), ("c", C), ("r", R), ("wp", WP), ("w", W), ("dgm", DGM),
+    ]:
+        ET.register_namespace(prefix, uri)
+
     print("Creating chart and SmartArt test fixtures...")
     create_chart_bar_docx()
     create_chart_pie_docx()

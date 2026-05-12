@@ -1989,7 +1989,6 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 
         if chart_blocks_with_parts and assets_dir:
             # Post-process the docx ZIP to inject chart parts
-            import io
             buf = io.BytesIO()
             doc.save(buf)
             result_bytes = _inject_chart_parts(buf.getvalue(), chart_blocks_with_parts, assets_dir)
