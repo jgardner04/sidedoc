@@ -28,5 +28,5 @@ imagehash>=4.3.0
 Pillow>=10.0.0
 
 # HTTP requests for corpus download
-requests>=2.31.0
+requests>=2.33.0
 types-requests>=2.31.0
