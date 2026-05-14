@@ -1,0 +1,4 @@
+.graphify_python
+.graphify_root
+.graphify_*.json
+cache/
