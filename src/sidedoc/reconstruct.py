@@ -1970,10 +1970,10 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                 if "chart_parts_manifest" in struct_block and struct_block["chart_parts_manifest"]:
                     manifest_data = struct_block["chart_parts_manifest"]
                     manifest = ChartPartsManifest(
-                        drawing_xml_path=manifest_data["drawing_xml_path"],
-                        parts=manifest_data["parts"],
-                        rels=manifest_data["rels"],
-                        content_types=manifest_data["content_types"],
+                        drawing_xml_path=manifest_data.get("drawing_xml_path", ""),
+                        parts=manifest_data.get("parts", {}),
+                        rels=manifest_data.get("rels", []),
+                        content_types=manifest_data.get("content_types", []),
                     )
                     # Block ID is set as SIDEDOC_BLOCK_ID on the placeholder paragraph
                     # during create_docx_from_blocks; _inject_chart_parts matches by it.
