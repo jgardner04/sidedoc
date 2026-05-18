@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, Emu
 from docx.document import Document as DocumentType
 from docx.enum.section import WD_ORIENT
+from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.opc.part import Part
 from docx.opc.packuri import PackURI
@@ -51,6 +52,21 @@ import mistune
 # on open, and we strip this attribute from the final output before saving.
 SIDEDOC_NS = "https://sidedoc.dev/xmlns/2026"
 SIDEDOC_BLOCK_ID = f"{{{SIDEDOC_NS}}}blockId"
+
+# Paragraph format properties applied as direct formatting overrides in
+# _apply_block_formatting. Each name maps 1:1 to a python-docx
+# `paragraph_format` attribute and to a Style dataclass field.
+_PARAGRAPH_FORMAT_PROPS = (
+    "left_indent",
+    "right_indent",
+    "first_line_indent",
+    "space_before",
+    "space_after",
+    "line_spacing",
+    "keep_together",
+    "keep_with_next",
+    "page_break_before",
+)
 
 # Known limitation: multi-line footnote definitions not supported.
 # Only single-line [^N]: text definitions are captured; indented continuation
@@ -1221,21 +1237,81 @@ def create_table_from_gfm(
 def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     """Apply formatting from block_style to a paragraph.
 
+    Applies docx_style first (so style defaults take effect), then direct
+    formatting overrides from the style dictionary.
+
     Args:
         para: python-docx Paragraph object
-        block_style: Style dictionary with font_name, font_size, alignment
+        block_style: Style dictionary with docx_style, font_name, font_size, alignment,
+            and paragraph format properties
     """
     if not block_style:
         return
 
-    if "font_name" in block_style and para.style:
-        para.style.font.name = block_style["font_name"]
-    if "font_size" in block_style and para.style:
-        para.style.font.size = Pt(block_style["font_size"])
+    # Apply docx_style first — style defaults apply, then direct formatting overrides.
+    # "Normal" is skipped because it's the default style (no-op assignment can fail on
+    # paragraphs whose style is treated as read-only). "Table" and "TextBox" are
+    # skipped because their paragraphs apply formatting through different code paths
+    # (table cells via _apply_cell_styles; text boxes via their own reconstruct path).
+    docx_style = block_style.get("docx_style")
+    if docx_style and docx_style not in ("Normal", "Table", "TextBox"):
+        try:
+            para.style = docx_style
+        except KeyError:
+            warnings.warn(
+                f"Style '{docx_style}' not found in document, falling back to Normal",
+                stacklevel=2,
+            )
+
+    # Apply font overrides per-run, not on para.style.font — para.style is the
+    # SHARED style object, so mutating it would change every paragraph using the
+    # same docx_style. Direct run formatting is the correct override layer above
+    # the style's defaults.
+    font_name = block_style.get("font_name")
+    font_size = block_style.get("font_size")
+    if font_name is not None or font_size is not None:
+        for run in para.runs:
+            if font_name is not None:
+                run.font.name = font_name
+            if font_size is not None:
+                run.font.size = Pt(font_size)
 
     alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
     if alignment in ALIGNMENT_STRING_TO_ENUM:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
+
+    # Apply paragraph format properties as direct formatting overrides. The
+    # `is not None` guard (vs. a truthy check) preserves explicit False/0
+    # overrides that would otherwise be dropped as falsy.
+    pf = para.paragraph_format
+    line_spacing_rule = block_style.get("line_spacing_rule")
+    resolved_line_spacing_rule = None
+    if line_spacing_rule is not None:
+        try:
+            resolved_line_spacing_rule = WD_LINE_SPACING[line_spacing_rule]
+            pf.line_spacing_rule = resolved_line_spacing_rule
+        except KeyError:
+            warnings.warn(
+                f"Unknown line_spacing_rule '{line_spacing_rule}', skipping",
+                stacklevel=2,
+            )
+    for prop in _PARAGRAPH_FORMAT_PROPS:
+        value = block_style.get(prop)
+        if value is None:
+            continue
+        if prop == "line_spacing":
+            if (
+                resolved_line_spacing_rule
+                in (WD_LINE_SPACING.EXACTLY, WD_LINE_SPACING.AT_LEAST)
+                and isinstance(value, int)
+                and not isinstance(value, bool)
+            ):
+                value = Emu(value)
+            setattr(pf, prop, value)
+            if resolved_line_spacing_rule is not None:
+                pf.line_spacing_rule = resolved_line_spacing_rule
+            continue
+        setattr(pf, prop, value)
 
 
 def _parse_footnote_definitions(content_md: str) -> dict[int, str]:

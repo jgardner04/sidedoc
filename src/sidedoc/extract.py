@@ -2359,6 +2359,11 @@ def extract_table_formatting(table: Any) -> dict[str, Any]:
     return result
 
 
+def _to_emu_int(value: Any) -> Optional[int]:
+    """Cast a python-docx Length to int EMU, or return None if absent."""
+    return int(value) if value is not None else None
+
+
 def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
     """Extract style information from Word document.
 
@@ -2431,12 +2436,34 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
                     paragraph.alignment, DEFAULT_ALIGNMENT
                 )
 
+            # Extract paragraph format properties. Indent/spacing values are
+            # python-docx Length objects (subclasses of int); cast to int for
+            # JSON-safe storage. line_spacing is left untouched — it may be a
+            # float for proportional spacing (1.5x) or an int EMU for exact.
+            # line_spacing_rule is stored as a JSON-safe WD_LINE_SPACING enum name.
+            # Booleans are stored verbatim so an explicit False override of a
+            # style's True default is preserved.
+            pf = paragraph.paragraph_format
             style = Style(
                 block_id=block.id,
                 docx_style=paragraph.style.name if paragraph.style else "Normal",
                 font_name=font_name,
                 font_size=font_size,
                 alignment=alignment,
+                left_indent=_to_emu_int(pf.left_indent),
+                right_indent=_to_emu_int(pf.right_indent),
+                first_line_indent=_to_emu_int(pf.first_line_indent),
+                space_before=_to_emu_int(pf.space_before),
+                space_after=_to_emu_int(pf.space_after),
+                line_spacing=pf.line_spacing,
+                line_spacing_rule=(
+                    pf.line_spacing_rule.name
+                    if pf.line_spacing_rule is not None
+                    else None
+                ),
+                keep_together=pf.keep_together,
+                keep_with_next=pf.keep_with_next,
+                page_break_before=pf.page_break_before,
             )
             styles.append(style)
             block_index += 1
