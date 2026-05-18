@@ -52,6 +52,21 @@ import mistune
 SIDEDOC_NS = "https://sidedoc.dev/xmlns/2026"
 SIDEDOC_BLOCK_ID = f"{{{SIDEDOC_NS}}}blockId"
 
+# Paragraph format properties applied as direct formatting overrides in
+# _apply_block_formatting. Each name maps 1:1 to a python-docx
+# `paragraph_format` attribute and to a Style dataclass field.
+_PARAGRAPH_FORMAT_PROPS = (
+    "left_indent",
+    "right_indent",
+    "first_line_indent",
+    "space_before",
+    "space_after",
+    "line_spacing",
+    "keep_together",
+    "keep_with_next",
+    "page_break_before",
+)
+
 # Known limitation: multi-line footnote definitions not supported.
 # Only single-line [^N]: text definitions are captured; indented continuation
 # lines (per Markdown spec) are silently dropped.
@@ -1243,44 +1258,35 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
             para.style = docx_style
         except KeyError:
             warnings.warn(
-                f"Style '{docx_style}' not found in document, falling back to Normal"
+                f"Style '{docx_style}' not found in document, falling back to Normal",
+                stacklevel=2,
             )
 
     # Apply font overrides per-run, not on para.style.font — para.style is the
     # SHARED style object, so mutating it would change every paragraph using the
     # same docx_style. Direct run formatting is the correct override layer above
     # the style's defaults.
-    if "font_name" in block_style:
+    font_name = block_style.get("font_name")
+    font_size = block_style.get("font_size")
+    if font_name is not None or font_size is not None:
         for run in para.runs:
-            run.font.name = block_style["font_name"]
-    if "font_size" in block_style:
-        for run in para.runs:
-            run.font.size = Pt(block_style["font_size"])
+            if font_name is not None:
+                run.font.name = font_name
+            if font_size is not None:
+                run.font.size = Pt(font_size)
 
     alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
     if alignment in ALIGNMENT_STRING_TO_ENUM:
         para.alignment = ALIGNMENT_STRING_TO_ENUM[alignment]
 
-    # Apply paragraph format properties (direct formatting overrides)
+    # Apply paragraph format properties as direct formatting overrides. The
+    # `is not None` guard (vs. a truthy check) preserves explicit False/0
+    # overrides that would otherwise be dropped as falsy.
     pf = para.paragraph_format
-    if block_style.get("left_indent") is not None:
-        pf.left_indent = block_style["left_indent"]
-    if block_style.get("right_indent") is not None:
-        pf.right_indent = block_style["right_indent"]
-    if block_style.get("first_line_indent") is not None:
-        pf.first_line_indent = block_style["first_line_indent"]
-    if block_style.get("space_before") is not None:
-        pf.space_before = block_style["space_before"]
-    if block_style.get("space_after") is not None:
-        pf.space_after = block_style["space_after"]
-    if block_style.get("line_spacing") is not None:
-        pf.line_spacing = block_style["line_spacing"]
-    if block_style.get("keep_together") is not None:
-        pf.keep_together = block_style["keep_together"]
-    if block_style.get("keep_with_next") is not None:
-        pf.keep_with_next = block_style["keep_with_next"]
-    if block_style.get("page_break_before") is not None:
-        pf.page_break_before = block_style["page_break_before"]
+    for prop in _PARAGRAPH_FORMAT_PROPS:
+        value = block_style.get(prop)
+        if value is not None:
+            setattr(pf, prop, value)
 
 
 def _parse_footnote_definitions(content_md: str) -> dict[int, str]:
