@@ -1232,7 +1232,11 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     if not block_style:
         return
 
-    # Apply docx_style first — style defaults apply, then direct formatting overrides
+    # Apply docx_style first — style defaults apply, then direct formatting overrides.
+    # "Normal" is skipped because it's the default style (no-op assignment can fail on
+    # paragraphs whose style is treated as read-only). "Table" and "TextBox" are
+    # skipped because their paragraphs apply formatting through different code paths
+    # (table cells via _apply_cell_styles; text boxes via their own reconstruct path).
     docx_style = block_style.get("docx_style")
     if docx_style and docx_style not in ("Normal", "Table", "TextBox"):
         try:
@@ -1242,10 +1246,16 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
                 f"Style '{docx_style}' not found in document, falling back to Normal"
             )
 
-    if "font_name" in block_style and para.style:
-        para.style.font.name = block_style["font_name"]
-    if "font_size" in block_style and para.style:
-        para.style.font.size = Pt(block_style["font_size"])
+    # Apply font overrides per-run, not on para.style.font — para.style is the
+    # SHARED style object, so mutating it would change every paragraph using the
+    # same docx_style. Direct run formatting is the correct override layer above
+    # the style's defaults.
+    if "font_name" in block_style:
+        for run in para.runs:
+            run.font.name = block_style["font_name"]
+    if "font_size" in block_style:
+        for run in para.runs:
+            run.font.size = Pt(block_style["font_size"])
 
     alignment = block_style.get("alignment", DEFAULT_ALIGNMENT)
     if alignment in ALIGNMENT_STRING_TO_ENUM:

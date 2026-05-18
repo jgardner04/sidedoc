@@ -2438,10 +2438,14 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
             first_line_indent = int(pf.first_line_indent) if pf.first_line_indent is not None else None
             space_before = int(pf.space_before) if pf.space_before is not None else None
             space_after = int(pf.space_after) if pf.space_after is not None else None
-            line_spacing = int(pf.line_spacing) if pf.line_spacing is not None else None
-            keep_together = pf.keep_together if pf.keep_together else None
-            keep_with_next = pf.keep_with_next if pf.keep_with_next else None
-            page_break_before = pf.page_break_before if pf.page_break_before else None
+            # line_spacing can be a float (proportional, e.g. 1.5) or an int EMU
+            # (exact). Store as-is — int() would truncate proportional values.
+            line_spacing = pf.line_spacing if pf.line_spacing is not None else None
+            # Booleans need `is not None` so an explicit False override (e.g.
+            # overriding a style's True default) is preserved, not silently dropped.
+            keep_together = pf.keep_together if pf.keep_together is not None else None
+            keep_with_next = pf.keep_with_next if pf.keep_with_next is not None else None
+            page_break_before = pf.page_break_before if pf.page_break_before is not None else None
 
             style = Style(
                 block_id=block.id,

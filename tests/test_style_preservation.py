@@ -1,8 +1,10 @@
 """Tests for docx_style application and paragraph format preservation (JON-91)."""
 
 import json
+import warnings
 from pathlib import Path
 
+import pytest
 from docx import Document
 from docx.shared import Pt, Inches
 from click.testing import CliRunner
@@ -24,7 +26,8 @@ class TestDocxStyleApplication:
             doc.add_paragraph("Title text", style="Title")
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -41,7 +44,8 @@ class TestDocxStyleApplication:
             doc.add_paragraph("Bullet item", style="List Bullet")
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -61,7 +65,8 @@ class TestDocxStyleApplication:
             doc.add_paragraph("Body text")
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -71,22 +76,41 @@ class TestDocxStyleApplication:
             assert texts_and_styles.get("Section A") == "Heading 2"
 
     def test_missing_custom_style_falls_back_to_normal(self):
-        """When a custom style doesn't exist in the target document, fall back to Normal."""
+        """When a custom style doesn't exist in the target document, fall back to
+        Normal and emit a UserWarning so the user can spot silent fidelity loss.
+        """
         runner = CliRunner()
         with runner.isolated_filesystem():
-            # Create a document with a custom style
+            # Create a document with a custom style.
             doc = Document()
             doc.styles.add_style("Legal Citation", 1)  # WD_STYLE_TYPE.PARAGRAPH = 1
             doc.add_paragraph("Case law reference", style="Legal Citation")
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
 
-            # Build should succeed even though the rebuilt doc won't have the custom style
+            # Build should succeed (Normal fallback) AND emit a warning naming the style.
+            # CliRunner swallows warnings emitted in the subprocess by default, so call
+            # _apply_block_formatting directly to verify the warning fires.
+            from sidedoc.reconstruct import _apply_block_formatting
+
+            target_doc = Document()
+            target_para = target_doc.add_paragraph("Case law reference")
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                _apply_block_formatting(
+                    target_para,
+                    {"docx_style": "Legal Citation", "alignment": "left"},
+                )
+            assert any(
+                "Legal Citation" in str(w.message) and issubclass(w.category, UserWarning)
+                for w in caught
+            ), f"Expected UserWarning naming 'Legal Citation'; got {[str(w.message) for w in caught]}"
+
+            # End-to-end build still succeeds and preserves the paragraph text.
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
-
-            # Verify the paragraph exists (with Normal fallback)
             rebuilt = Document("rebuilt.docx")
             texts = [p.text for p in rebuilt.paragraphs]
             assert "Case law reference" in texts
@@ -163,7 +187,8 @@ class TestParagraphFormatRoundtrip:
             para.paragraph_format.left_indent = Inches(0.5)
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -183,7 +208,8 @@ class TestParagraphFormatRoundtrip:
             para.paragraph_format.space_after = Pt(6)
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -203,7 +229,8 @@ class TestParagraphFormatRoundtrip:
             doc.add_paragraph("Following text")
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -221,7 +248,8 @@ class TestParagraphFormatRoundtrip:
             para.paragraph_format.first_line_indent = Inches(0.25)
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -243,7 +271,8 @@ class TestStyleWithDirectFormatting:
             para.paragraph_format.space_before = Pt(24)
             doc.save("original.docx")
 
-            runner.invoke(main, ["extract", "original.docx"])
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
             result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
             assert result.exit_code == 0
 
@@ -252,3 +281,131 @@ class TestStyleWithDirectFormatting:
             assert len(heading) > 0
             assert heading[0].style.name == "Heading 1"
             assert heading[0].paragraph_format.space_before == Pt(24)
+
+
+class TestClaudeReviewRegressions:
+    """Regression tests for issues flagged in the Claude bot review on PR #65."""
+
+    # Issue #1: boolean falsy-check dropped explicit False overrides.
+    def test_explicit_false_keep_with_next_survives_roundtrip(self):
+        """A paragraph that overrides Heading 1's default keep_with_next=True with an
+        explicit False must round-trip with the False preserved, not silently dropped.
+        """
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            para = doc.add_paragraph("Heading override", style="Heading 1")
+            para.paragraph_format.keep_with_next = False
+            doc.save("original.docx")
+
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
+            result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0
+
+            # Verify styles.json captured the False, not None
+            with open("original.sidedoc/styles.json") as f:
+                styles_data = json.load(f)
+            block_styles = list(styles_data["block_styles"].values())
+            assert any(bs.get("keep_with_next") is False for bs in block_styles), \
+                f"keep_with_next=False was not persisted to styles.json: {block_styles}"
+
+            rebuilt = Document("rebuilt.docx")
+            paras = [p for p in rebuilt.paragraphs if "Heading override" in p.text]
+            assert len(paras) > 0
+            assert paras[0].paragraph_format.keep_with_next is False
+
+    # Issue #2: int() cast truncated proportional line_spacing (e.g. 1.5 → 1).
+    def test_proportional_line_spacing_survives_roundtrip(self):
+        """A paragraph with line_spacing=1.5 (proportional) must round-trip as 1.5,
+        not be silently truncated to 1 by an int() cast.
+        """
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            doc = Document()
+            para = doc.add_paragraph("Proportionally spaced text")
+            para.paragraph_format.line_spacing = 1.5
+            doc.save("original.docx")
+
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
+            result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0
+
+            with open("original.sidedoc/styles.json") as f:
+                styles_data = json.load(f)
+            line_spacings = [bs.get("line_spacing") for bs in styles_data["block_styles"].values()]
+            assert any(ls == pytest.approx(1.5) for ls in line_spacings), \
+                f"line_spacing 1.5 was truncated/lost: {line_spacings}"
+
+            rebuilt = Document("rebuilt.docx")
+            spaced = [p for p in rebuilt.paragraphs if "Proportionally spaced" in p.text]
+            assert len(spaced) > 0
+            assert spaced[0].paragraph_format.line_spacing == pytest.approx(1.5)
+
+    # Issue #3: para.style.font.* mutation leaked across paragraphs sharing a style.
+    def test_block_style_font_does_not_leak_via_shared_style(self):
+        """Applying font_name to one paragraph must not mutate the shared style object
+        and bleed into other paragraphs that share the same docx_style.
+        """
+        from sidedoc.reconstruct import _apply_block_formatting
+
+        doc = Document()
+        para_a = doc.add_paragraph("Paragraph A", style="Heading 1")
+        para_b = doc.add_paragraph("Paragraph B", style="Heading 1")
+
+        # Snapshot Heading 1's font.name before any mutation so we have a baseline.
+        baseline_font = para_b.style.font.name
+
+        _apply_block_formatting(
+            para_a,
+            {"docx_style": "Heading 1", "font_name": "Courier New", "alignment": "left"},
+        )
+        _apply_block_formatting(
+            para_b,
+            {"docx_style": "Heading 1", "alignment": "left"},
+        )
+
+        # Pre-fix: para_b.style.font.name is "Courier New" (shared style mutated by A).
+        # Post-fix: para_b.style.font.name is unchanged from baseline.
+        assert para_b.style.font.name != "Courier New", (
+            f"Shared 'Heading 1' style was mutated: font.name leaked to {para_b.style.font.name!r}"
+        )
+        assert para_b.style.font.name == baseline_font, (
+            f"Shared 'Heading 1' style was mutated: was {baseline_font!r}, now {para_b.style.font.name!r}"
+        )
+
+    # Issue #8: pre-existing archives without the new paragraph format fields
+    # must still build successfully (forward compatibility).
+    def test_old_styles_json_without_new_fields_builds(self):
+        """A styles.json that predates the JON-91 fields (no left_indent, line_spacing,
+        keep_with_next, etc.) must still build without errors.
+        """
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            sidedoc_dir = Path("legacy.sidedoc")
+            sidedoc_dir.mkdir()
+            (sidedoc_dir / "content.md").write_text("Hello world\n")
+            # Minimal styles.json with only the pre-JON-91 fields.
+            legacy_styles = {
+                "block_styles": {
+                    "block-0": {
+                        "docx_style": "Normal",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "alignment": "left",
+                        "bold": None,
+                        "italic": None,
+                        "underline": None,
+                        "table_formatting": None,
+                    },
+                },
+                "document_defaults": {"font_name": "Calibri", "font_size": 11},
+            }
+            (sidedoc_dir / "styles.json").write_text(json.dumps(legacy_styles))
+
+            result = runner.invoke(main, ["build", str(sidedoc_dir), "-o", "rebuilt.docx"])
+            assert result.exit_code == 0, result.output
+            rebuilt = Document("rebuilt.docx")
+            texts = [p.text for p in rebuilt.paragraphs]
+            assert "Hello world" in texts

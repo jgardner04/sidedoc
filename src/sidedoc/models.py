@@ -113,13 +113,15 @@ class Style:
     italic: Optional[bool] = None
     underline: Optional[bool] = None
     table_formatting: Optional[dict[str, Any]] = None  # For tables: column_widths, table_alignment, table_style, cell_styles
-    # Paragraph format properties (stored in EMUs / English Metric Units)
+    # Paragraph format properties. Indents/spacing in EMUs (int); line_spacing
+    # is a float for proportional spacing (1.5 = 1.5x lines) or an int EMU for
+    # exact spacing; the flags are bool.
     left_indent: Optional[int] = None
     right_indent: Optional[int] = None
     first_line_indent: Optional[int] = None
     space_before: Optional[int] = None
     space_after: Optional[int] = None
-    line_spacing: Optional[int] = None
+    line_spacing: Optional[float] = None
     keep_together: Optional[bool] = None
     keep_with_next: Optional[bool] = None
     page_break_before: Optional[bool] = None
