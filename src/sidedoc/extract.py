@@ -2440,6 +2440,7 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
             # python-docx Length objects (subclasses of int); cast to int for
             # JSON-safe storage. line_spacing is left untouched — it may be a
             # float for proportional spacing (1.5x) or an int EMU for exact.
+            # line_spacing_rule is stored as a JSON-safe WD_LINE_SPACING enum name.
             # Booleans are stored verbatim so an explicit False override of a
             # style's True default is preserved.
             pf = paragraph.paragraph_format
@@ -2455,6 +2456,11 @@ def extract_styles(docx_path: str, blocks: list[Block]) -> list[Style]:
                 space_before=_to_emu_int(pf.space_before),
                 space_after=_to_emu_int(pf.space_after),
                 line_spacing=pf.line_spacing,
+                line_spacing_rule=(
+                    pf.line_spacing_rule.name
+                    if pf.line_spacing_rule is not None
+                    else None
+                ),
                 keep_together=pf.keep_together,
                 keep_with_next=pf.keep_with_next,
                 page_break_before=pf.page_break_before,

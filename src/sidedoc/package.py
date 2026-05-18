@@ -174,6 +174,7 @@ def _build_metadata(
                 "space_before": style.space_before,
                 "space_after": style.space_after,
                 "line_spacing": style.line_spacing,
+                "line_spacing_rule": style.line_spacing_rule,
                 "keep_together": style.keep_together,
                 "keep_with_next": style.keep_with_next,
                 "page_break_before": style.page_break_before,

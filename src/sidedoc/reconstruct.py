@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, Emu
 from docx.document import Document as DocumentType
 from docx.enum.section import WD_ORIENT
+from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.opc.part import Part
 from docx.opc.packuri import PackURI
@@ -1283,10 +1284,34 @@ def _apply_block_formatting(para: Any, block_style: dict[str, Any]) -> None:
     # `is not None` guard (vs. a truthy check) preserves explicit False/0
     # overrides that would otherwise be dropped as falsy.
     pf = para.paragraph_format
+    line_spacing_rule = block_style.get("line_spacing_rule")
+    resolved_line_spacing_rule = None
+    if line_spacing_rule is not None:
+        try:
+            resolved_line_spacing_rule = WD_LINE_SPACING[line_spacing_rule]
+            pf.line_spacing_rule = resolved_line_spacing_rule
+        except KeyError:
+            warnings.warn(
+                f"Unknown line_spacing_rule '{line_spacing_rule}', skipping",
+                stacklevel=2,
+            )
     for prop in _PARAGRAPH_FORMAT_PROPS:
         value = block_style.get(prop)
-        if value is not None:
+        if value is None:
+            continue
+        if prop == "line_spacing":
+            if (
+                resolved_line_spacing_rule
+                in (WD_LINE_SPACING.EXACTLY, WD_LINE_SPACING.AT_LEAST)
+                and isinstance(value, int)
+                and not isinstance(value, bool)
+            ):
+                value = Emu(value)
             setattr(pf, prop, value)
+            if resolved_line_spacing_rule is not None:
+                pf.line_spacing_rule = resolved_line_spacing_rule
+            continue
+        setattr(pf, prop, value)
 
 
 def _parse_footnote_definitions(content_md: str) -> dict[int, str]:

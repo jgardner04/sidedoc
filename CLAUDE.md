@@ -142,7 +142,8 @@ Charts are extracted using their cached PNG/EMF fallback image from the `mc:Alte
 The `Style` dataclass (in `models.py`) carries paragraph-level formatting alongside font and alignment:
 
 - **Indents/spacing** (`left_indent`, `right_indent`, `first_line_indent`, `space_before`, `space_after`): `Optional[int]` in EMUs
-- **`line_spacing`**: `Optional[float]` — proportional (e.g. `1.5` = 1.5× lines) or int EMUs for exact spacing; use `float` not `int` because python-docx returns float for proportional values
+- **`line_spacing`**: `Optional[int | float]` — proportional spacing is a float (e.g. `1.5` = 1.5× lines); exact/at-least spacing is an integer EMU value
+- **`line_spacing_rule`**: `Optional[str]` — JSON-safe `WD_LINE_SPACING` enum name (e.g. `"EXACTLY"`, `"AT_LEAST"`) needed to interpret integer `line_spacing` values during reconstruction
 - **Paragraph flags** (`keep_together`, `keep_with_next`, `page_break_before`): `Optional[bool]`
 
 **Guard rule:** Always check `is not None` (not truthiness) when applying boolean Style fields. `False` is a meaningful override (e.g. turn off keep_together) and must survive round-trip:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.enum.text import WD_LINE_SPACING
 from docx.shared import Pt, Inches
 from click.testing import CliRunner
 
@@ -286,6 +287,33 @@ class TestStyleWithDirectFormatting:
 class TestClaudeReviewRegressions:
     """Regression tests for issues flagged in the Claude bot review on PR #65."""
 
+    def _assert_styles_json_has_line_spacing_rule(
+        self, sidedoc_dir: str, expected_rule: str, expected_spacing: int
+    ) -> None:
+        """Assert styles.json stores line spacing rule as a JSON-safe enum name."""
+        with open(Path(sidedoc_dir) / "styles.json") as f:
+            styles_data = json.load(f)
+        block_styles = list(styles_data["block_styles"].values())
+        assert any(
+            bs.get("line_spacing_rule") == expected_rule
+            and bs.get("line_spacing") == expected_spacing
+            for bs in block_styles
+        ), (
+            f"line_spacing={expected_spacing} with rule {expected_rule!r} "
+            f"was not persisted to styles.json: {block_styles}"
+        )
+
+    def _assert_paragraph_line_spacing(
+        self, docx_path: str, text: str, expected_rule: WD_LINE_SPACING, expected_spacing: int
+    ) -> None:
+        """Assert paragraph line spacing value and rule survived in the rebuilt docx."""
+        doc = Document(docx_path)
+        paragraphs = [p for p in doc.paragraphs if text in p.text]
+        assert len(paragraphs) > 0
+        paragraph_format = paragraphs[0].paragraph_format
+        assert paragraph_format.line_spacing_rule == expected_rule
+        assert paragraph_format.line_spacing == expected_spacing
+
     # Issue #1: boolean falsy-check dropped explicit False overrides.
     def test_explicit_false_keep_with_next_survives_roundtrip(self):
         """A paragraph that overrides Heading 1's default keep_with_next=True with an
@@ -342,6 +370,89 @@ class TestClaudeReviewRegressions:
             spaced = [p for p in rebuilt.paragraphs if "Proportionally spaced" in p.text]
             assert len(spaced) > 0
             assert spaced[0].paragraph_format.line_spacing == pytest.approx(1.5)
+
+    # Latest Claude review: line_spacing needs line_spacing_rule to interpret
+    # exact/at-least EMU values correctly.
+    def test_exact_line_spacing_rule_survives_roundtrip(self):
+        """Exact line spacing must round-trip with its interpretation rule."""
+        runner = CliRunner()
+        expected_spacing = int(Pt(12))
+        with runner.isolated_filesystem():
+            doc = Document()
+            para = doc.add_paragraph("Exactly spaced text")
+            para.paragraph_format.line_spacing = Pt(12)
+            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            doc.save("original.docx")
+
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
+            self._assert_styles_json_has_line_spacing_rule(
+                "original.sidedoc", "EXACTLY", expected_spacing
+            )
+
+            result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0, result.output
+            self._assert_paragraph_line_spacing(
+                "rebuilt.docx",
+                "Exactly spaced text",
+                WD_LINE_SPACING.EXACTLY,
+                expected_spacing,
+            )
+
+    def test_at_least_line_spacing_rule_survives_roundtrip(self):
+        """At-least line spacing must round-trip with its interpretation rule."""
+        runner = CliRunner()
+        expected_spacing = int(Pt(14))
+        with runner.isolated_filesystem():
+            doc = Document()
+            para = doc.add_paragraph("At least spaced text")
+            para.paragraph_format.line_spacing = Pt(14)
+            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.AT_LEAST
+            doc.save("original.docx")
+
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
+            self._assert_styles_json_has_line_spacing_rule(
+                "original.sidedoc", "AT_LEAST", expected_spacing
+            )
+
+            result = runner.invoke(main, ["build", "original.sidedoc", "-o", "rebuilt.docx"])
+            assert result.exit_code == 0, result.output
+            self._assert_paragraph_line_spacing(
+                "rebuilt.docx",
+                "At least spaced text",
+                WD_LINE_SPACING.AT_LEAST,
+                expected_spacing,
+            )
+
+    def test_sync_preserves_exact_line_spacing_rule(self):
+        """Sync should preserve exact line spacing after content.md text edits."""
+        runner = CliRunner()
+        expected_spacing = int(Pt(12))
+        with runner.isolated_filesystem():
+            doc = Document()
+            para = doc.add_paragraph("Original exact spacing")
+            para.paragraph_format.line_spacing = Pt(12)
+            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+            doc.save("original.docx")
+
+            extract_result = runner.invoke(main, ["extract", "original.docx"])
+            assert extract_result.exit_code == 0, extract_result.output
+            content_path = Path("original.sidedoc/content.md")
+            content_path.write_text(
+                content_path.read_text().replace(
+                    "Original exact spacing", "Edited exact spacing"
+                )
+            )
+
+            result = runner.invoke(main, ["sync", "original.sidedoc", "-o", "synced.docx"])
+            assert result.exit_code == 0, result.output
+            self._assert_paragraph_line_spacing(
+                "synced.docx",
+                "Edited exact spacing",
+                WD_LINE_SPACING.EXACTLY,
+                expected_spacing,
+            )
 
     # Issue #3: para.style.font.* mutation leaked across paragraphs sharing a style.
     def test_block_style_font_does_not_leak_via_shared_style(self):
