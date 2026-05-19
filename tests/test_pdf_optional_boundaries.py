@@ -3,6 +3,8 @@
 import hashlib
 import json
 import sys
+import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -154,6 +156,47 @@ def test_extract_pdf_document_restarts_ordered_lists_after_paragraph(tmp_path, m
     ]
 
 
+def test_extract_pdf_offsets_slice_serialized_markdown_exactly(tmp_path, monkeypatch):
+    """PDF block offsets should exactly slice blocks_to_markdown output."""
+    from sidedoc.extract import blocks_to_markdown
+    import sidedoc.extract_pdf as extract_pdf
+
+    class SectionHeaderItem:
+        text = "Title"
+        label = "section_header"
+        level = 1
+        content_layer = "body"
+
+    class TextItem:
+        text = "Body paragraph"
+        label = "paragraph"
+        content_layer = "body"
+
+    class FakeDoc:
+        def export_to_dict(self):
+            return {"tables": []}
+
+        def iterate_items(self):
+            yield SectionHeaderItem(), 0
+            yield TextItem(), 0
+
+    class FakeConverter:
+        def convert(self, _pdf_path: str):
+            return SimpleNamespace(document=FakeDoc())
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF")
+    monkeypatch.setattr(extract_pdf, "require_docling", lambda: FakeConverter)
+
+    blocks, _image_data, _sections = extract_pdf.extract_pdf_document(str(pdf_path))
+    content_md = blocks_to_markdown(blocks)
+
+    for index, block in enumerate(blocks):
+        assert content_md[block.content_start:block.content_end] == block.content
+        next_char = content_md[block.content_end:block.content_end + 1]
+        assert next_char == ("\n" if index < len(blocks) - 1 else "")
+
+
 def test_extract_pdf_document_missing_file_raises_before_docling(tmp_path, monkeypatch):
     """Direct PDF extraction should precheck missing paths before loading Docling."""
     import sidedoc.extract_pdf as extract_pdf
@@ -287,6 +330,99 @@ def test_extract_pdf_without_extra_has_actionable_error(tmp_path, monkeypatch):
     assert "PDF extraction requires docling" in result.output
     assert "pip install sidedoc[pdf]" in result.output
     assert "Traceback" not in result.output
+
+
+def test_build_pdf_from_sdoc_without_assets_uses_live_directory_base_url(tmp_path, monkeypatch):
+    """PDF builds should support .sdoc archives even when no assets exist."""
+    import sidedoc.reconstruct_pdf as reconstruct_pdf
+
+    sdoc_path = tmp_path / "sample.sdoc"
+    with zipfile.ZipFile(sdoc_path, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"source_format": "pdf"}))
+        zf.writestr("content.md", "Hello archive")
+
+    observed = {}
+
+    class FakeHTML:
+        def __init__(self, string: str, base_url: str) -> None:
+            observed["html"] = string
+            observed["base_url"] = base_url
+
+        def write_pdf(self, output_path: str) -> None:
+            assert Path(observed["base_url"]).is_dir()
+            Path(output_path).write_bytes(b"%PDF-1.4\n%%EOF")
+
+    monkeypatch.setattr(reconstruct_pdf, "require_weasyprint", lambda: SimpleNamespace(HTML=FakeHTML))
+
+    output_path = tmp_path / "out.pdf"
+    reconstruct_pdf.build_pdf_from_sidedoc(str(sdoc_path), str(output_path))
+
+    assert output_path.exists()
+    assert "Hello archive" in observed["html"]
+
+
+def test_build_pdf_from_sdoc_resolves_assets_during_write_pdf(tmp_path, monkeypatch):
+    """Archive assets should exist relative to base_url while WeasyPrint renders."""
+    import sidedoc.reconstruct_pdf as reconstruct_pdf
+
+    sdoc_path = tmp_path / "sample.sdoc"
+    with zipfile.ZipFile(sdoc_path, "w") as zf:
+        zf.writestr("manifest.json", json.dumps({"source_format": "pdf"}))
+        zf.writestr("content.md", "![Alt](assets/image.png)")
+        zf.writestr("assets/image.png", b"fake image bytes")
+
+    observed = {}
+
+    class FakeHTML:
+        def __init__(self, string: str, base_url: str) -> None:
+            observed["html"] = string
+            observed["base_url"] = base_url
+
+        def write_pdf(self, output_path: str) -> None:
+            base_url = Path(observed["base_url"])
+            assert base_url.is_dir()
+            assert (base_url / "assets" / "image.png").exists()
+            assert "assets/image.png" in observed["html"]
+            Path(output_path).write_bytes(b"%PDF-1.4\n%%EOF")
+
+    monkeypatch.setattr(reconstruct_pdf, "require_weasyprint", lambda: SimpleNamespace(HTML=FakeHTML))
+
+    output_path = tmp_path / "out.pdf"
+    reconstruct_pdf.build_pdf_from_sidedoc(str(sdoc_path), str(output_path))
+
+    assert output_path.exists()
+
+
+def test_build_pdf_from_sidedoc_directory_uses_directory_base_url(tmp_path, monkeypatch):
+    """Directory PDF builds should resolve assets relative to the .sidedoc directory."""
+    import sidedoc.reconstruct_pdf as reconstruct_pdf
+
+    sidedoc_dir = tmp_path / "sample.sidedoc"
+    assets_dir = sidedoc_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "pdf"}))
+    (sidedoc_dir / "content.md").write_text("![Alt](assets/image.png)")
+    (assets_dir / "image.png").write_bytes(b"fake image bytes")
+
+    observed = {}
+
+    class FakeHTML:
+        def __init__(self, string: str, base_url: str) -> None:
+            observed["html"] = string
+            observed["base_url"] = base_url
+
+        def write_pdf(self, output_path: str) -> None:
+            assert Path(observed["base_url"]) == sidedoc_dir.resolve()
+            assert (Path(observed["base_url"]) / "assets" / "image.png").exists()
+            assert "assets/image.png" in observed["html"]
+            Path(output_path).write_bytes(b"%PDF-1.4\n%%EOF")
+
+    monkeypatch.setattr(reconstruct_pdf, "require_weasyprint", lambda: SimpleNamespace(HTML=FakeHTML))
+
+    output_path = tmp_path / "out.pdf"
+    reconstruct_pdf.build_pdf_from_sidedoc(str(sidedoc_dir), str(output_path))
+
+    assert output_path.exists()
 
 
 def test_build_pdf_without_extra_has_actionable_error(tmp_path, monkeypatch):

@@ -6,6 +6,7 @@ This is the PDF equivalent of reconstruct.py (which builds DOCX).
 
 from importlib import import_module
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import mistune
@@ -88,9 +89,9 @@ def build_pdf_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
         except FileNotFoundError as e:
             raise FileNotFoundError("content.md not found in sidedoc") from e
 
-    html_content = _markdown_to_html(content_md)
+        html_content = _markdown_to_html(content_md)
 
-    full_html = f"""\
+        full_html = f"""\
 <!DOCTYPE html>
 <html>
 <head>
@@ -103,6 +104,22 @@ def build_pdf_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 </html>
 """
 
-    weasyprint = require_weasyprint()
-    doc = weasyprint.HTML(string=full_html, base_url=str(Path(sidedoc_path).resolve()))
-    doc.write_pdf(output_path)
+        weasyprint = require_weasyprint()
+        if store.is_directory:
+            doc = weasyprint.HTML(string=full_html, base_url=str(store.path.resolve()))
+            doc.write_pdf(output_path)
+            return
+
+        with tempfile.TemporaryDirectory() as render_root:
+            render_root_path = Path(render_root)
+            for name in store.list_files():
+                if not name.startswith("assets/") or name.endswith("/"):
+                    continue
+                target = (render_root_path / name).resolve()
+                if not target.is_relative_to(render_root_path.resolve()):
+                    raise ValueError(f"Unsafe path traversal detected: {name}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(store.read_bytes(name))
+
+            doc = weasyprint.HTML(string=full_html, base_url=str(render_root_path))
+            doc.write_pdf(output_path)

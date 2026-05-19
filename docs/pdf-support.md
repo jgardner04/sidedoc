@@ -10,6 +10,7 @@ pip install sidedoc[pdf]
 
 - `sidedoc extract document.pdf` creates a `.sidedoc/` directory or `.sdoc` archive from PDF content.
 - `sidedoc build document.sidedoc` rebuilds to PDF when `manifest.json` has `"source_format": "pdf"`.
+- `sidedoc build document.sdoc` also rebuilds PDF-sourced `.sdoc` archives; relative assets already present in the container (for example `assets/image.png`) are exposed during the WeasyPrint render step.
 - `sidedoc sync` remains DOCX-only and rejects PDF-sourced containers.
 - Rebuilt PDFs are best-effort markdown/HTML/CSS output via WeasyPrint, not exact original-layout preservation.
 
@@ -20,7 +21,7 @@ pip install sidedoc[pdf]
 - **Do not coerce `header_rows` to `max(1, ...)`.** Docling tables without any `column_header=True` cells legitimately have `header_rows=0`. Forcing it to 1 creates incorrect GFM (treats a data row as a header) and corrupts `table_metadata`.
 - **Guard optional heavy deps.** `fitz` (PyMuPDF), `weasyprint`, and `docling` are all optional. Import them lazily or behind guarded helpers so base imports and non-PDF commands work without `sidedoc[pdf]`.
 - **Skip `PictureItem` blocks when image extraction is unimplemented.** Do not emit a block with a broken asset reference. Use `continue` to skip the item entirely; the block list stays clean and no dangling `![alt](assets/...)` references appear in `content.md`.
-- **WeasyPrint requires `base_url`.** `weasyprint.HTML(string=full_html)` cannot resolve relative paths to assets. Always pass `base_url=str(Path(sidedoc_path).resolve())` so embedded images in `assets/` resolve correctly.
+- **WeasyPrint requires a directory `base_url`.** `weasyprint.HTML(string=full_html)` cannot resolve relative paths to assets by itself. For `.sidedoc/` directories, pass the `.sidedoc` directory as `base_url`. For `.sdoc` archives, expose archive assets from a temporary render root and keep that directory alive through `write_pdf()` so container-relative references like `assets/image.png` resolve correctly.
 
 ## Current Limitations
 
