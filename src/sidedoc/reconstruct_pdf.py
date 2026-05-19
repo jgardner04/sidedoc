@@ -4,6 +4,7 @@ Converts sidedoc content.md → HTML → styled PDF via WeasyPrint.
 This is the PDF equivalent of reconstruct.py (which builds DOCX).
 """
 
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +16,11 @@ from sidedoc.store import SidedocStore
 def require_weasyprint() -> Any:
     """Return the WeasyPrint module or raise an actionable error."""
     try:
-        import weasyprint  # type: ignore[import-not-found]
+        return import_module("weasyprint")
     except ImportError as e:
         raise ImportError(
             "PDF reconstruction requires weasyprint. Install with: pip install sidedoc[pdf]"
         ) from e
-    return weasyprint
 
 
 _CSS = """\
@@ -83,7 +83,10 @@ def build_pdf_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
     """
     store = SidedocStore.open(sidedoc_path)
     with store:
-        content_md = store.read_text("content.md")
+        try:
+            content_md = store.read_text("content.md")
+        except FileNotFoundError as e:
+            raise FileNotFoundError("content.md not found in sidedoc") from e
 
     html_content = _markdown_to_html(content_md)
 

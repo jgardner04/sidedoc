@@ -264,7 +264,11 @@ def build(input_file: str, output: str | None) -> None:
     """
     try:
         source_format = _read_source_format(input_file)
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(EXIT_INVALID_FORMAT)
 
+    try:
         input_path = Path(input_file)
         if source_format == "pdf":
             from sidedoc.reconstruct_pdf import build_pdf_from_sidedoc
@@ -279,8 +283,12 @@ def build(input_file: str, output: str | None) -> None:
 
         click.echo(f"✓ Built document: {output}")
         sys.exit(EXIT_SUCCESS)
-    except FileNotFoundError:
-        click.echo(f"Error: File not found: {input_file}", err=True)
+    except FileNotFoundError as e:
+        message = str(e)
+        if "content.md not found in sidedoc" in message:
+            click.echo(f"Error: {message}", err=True)
+        else:
+            click.echo(f"Error: File not found: {input_file}", err=True)
         sys.exit(EXIT_NOT_FOUND)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -302,7 +310,13 @@ def sync(input_file: str, output: str | None, author: str) -> None:
     """
     try:
         _reject_if_zip(Path(input_file), "sync")
-        if _read_source_format(input_file) == "pdf":
+        try:
+            source_format = _read_source_format(input_file)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            sys.exit(EXIT_INVALID_FORMAT)
+
+        if source_format == "pdf":
             click.echo("Error: PDF sync is not supported. Rebuild PDF with 'sidedoc build' instead.", err=True)
             sys.exit(EXIT_ERROR)
 

@@ -1,6 +1,8 @@
 """Extract content from PDF files into Sidedoc Block/Style format using Docling."""
 
 import hashlib
+from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 from sidedoc.extract import generate_block_id
@@ -10,12 +12,12 @@ from sidedoc.models import Block, SectionProperties, Style
 def require_docling() -> Any:
     """Return Docling's DocumentConverter class or raise an actionable error."""
     try:
-        from docling.document_converter import DocumentConverter  # type: ignore[import-not-found]
+        module = import_module("docling.document_converter")
     except ImportError as e:
         raise ImportError(
             "PDF extraction requires docling. Install with: pip install sidedoc[pdf]"
         ) from e
-    return DocumentConverter
+    return module.DocumentConverter
 
 
 def _compute_content_hash(content: str) -> str:
@@ -56,11 +58,10 @@ def _table_to_gfm(table_data: dict[str, Any]) -> str:
         if header_rows > 0 and i == header_rows - 1:
             sep = "| " + " | ".join("---" for _ in row) + " |"
             lines.append(sep)
-
-    # If no header rows detected, put separator after first row
-    if header_rows == 0 and lines:
-        sep = "| " + " | ".join("---" for _ in grid[0]) + " |"
-        lines.insert(1, sep)
+        elif header_rows == 0 and i == 0:
+            # If no header rows detected, put separator after first row.
+            sep = "| " + " | ".join("---" for _ in row) + " |"
+            lines.append(sep)
 
     return "\n".join(lines)
 
@@ -114,6 +115,9 @@ def extract_pdf_document(
     Returns:
         Tuple of (blocks, image_data, sections)
     """
+    if not Path(pdf_path).exists():
+        raise FileNotFoundError(pdf_path)
+
     DocumentConverter = require_docling()
     converter = DocumentConverter()
     result = converter.convert(pdf_path)
@@ -127,6 +131,7 @@ def extract_pdf_document(
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
     table_idx = 0
+    ordered_list_index = 0
 
     # Track markdown content position for content_start/content_end
     content_parts: list[str] = []
@@ -144,6 +149,7 @@ def extract_pdf_document(
         block_index = len(blocks)
 
         if item_type == "SectionHeaderItem" and label == "section_header":
+            ordered_list_index = 0
             doc_level = getattr(item, "level", 1) or 1
             text = getattr(item, "text", "")
             content = "#" * doc_level + " " + text
@@ -162,6 +168,7 @@ def extract_pdf_document(
             current_offset += len(content) + 1  # +1 for newline join
 
         elif item_type == "TableItem" and label == "table":
+            ordered_list_index = 0
             if table_idx < len(tables_data):
                 tbl = tables_data[table_idx]
                 tbl_data = tbl.get("data", {})
@@ -186,6 +193,7 @@ def extract_pdf_document(
 
         elif item_type == "PictureItem" and label == "picture":
             # Image extraction not yet implemented — skip to avoid broken asset refs
+            ordered_list_index = 0
             continue
 
         elif item_type == "TextItem":
@@ -194,17 +202,20 @@ def extract_pdf_document(
                 continue
 
             if label == "list_item":
-                marker = getattr(item, "marker", "-")
                 enumerated = getattr(item, "enumerated", False)
                 if enumerated:
-                    content = f"1. {text}"
+                    ordered_list_index += 1
+                    content = f"{ordered_list_index}. {text}"
                 else:
+                    ordered_list_index = 0
                     content = f"- {text}"
                 block_type = "list"
             elif label == "caption":
+                ordered_list_index = 0
                 content = f"*{text}*"
                 block_type = "paragraph"
             else:
+                ordered_list_index = 0
                 content = text
                 block_type = "paragraph"
 

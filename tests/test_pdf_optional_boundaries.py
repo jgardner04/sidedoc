@@ -3,10 +3,13 @@
 import hashlib
 import json
 import sys
+from types import SimpleNamespace
+
+import pytest
 
 from click.testing import CliRunner
 
-from sidedoc.cli import main
+from sidedoc.cli import EXIT_INVALID_FORMAT, main
 from sidedoc.models import Block, Style
 from sidedoc.package import create_sidedoc_directory
 
@@ -66,6 +69,209 @@ def test_table_to_gfm_uses_one_separator_for_headerless_tables():
     lines = _table_to_gfm(table_data).splitlines()
     separators = [line for line in lines if line == "| --- | --- |"]
     assert separators == ["| --- | --- |"]
+
+
+def test_extract_pdf_document_numbers_contiguous_ordered_lists(tmp_path, monkeypatch):
+    """PDF ordered lists should use increasing markers without importing real Docling."""
+    from sidedoc.extract import blocks_to_markdown
+    import sidedoc.extract_pdf as extract_pdf
+
+    class TextItem:
+        def __init__(self, text: str, enumerated: bool = True) -> None:
+            self.text = text
+            self.label = "list_item"
+            self.enumerated = enumerated
+            self.content_layer = "body"
+
+    class FakeDoc:
+        def export_to_dict(self):
+            return {"tables": []}
+
+        def iterate_items(self):
+            yield TextItem("First"), 0
+            yield TextItem("Second"), 0
+            yield TextItem("Third"), 0
+            yield TextItem("Bullet", enumerated=False), 0
+
+    class FakeConverter:
+        def convert(self, _pdf_path: str):
+            return SimpleNamespace(document=FakeDoc())
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF")
+    monkeypatch.setattr(extract_pdf, "require_docling", lambda: FakeConverter)
+
+    blocks, _image_data, _sections = extract_pdf.extract_pdf_document(str(pdf_path))
+
+    assert [block.content for block in blocks] == [
+        "1. First",
+        "2. Second",
+        "3. Third",
+        "- Bullet",
+    ]
+    assert blocks_to_markdown(blocks).splitlines() == [
+        "1. First",
+        "2. Second",
+        "3. Third",
+        "- Bullet",
+    ]
+
+
+def test_extract_pdf_document_restarts_ordered_lists_after_paragraph(tmp_path, monkeypatch):
+    """PDF ordered list numbering should reset after a non-list paragraph."""
+    import sidedoc.extract_pdf as extract_pdf
+
+    class TextItem:
+        def __init__(self, text: str, label: str = "list_item", enumerated: bool = True) -> None:
+            self.text = text
+            self.label = label
+            self.enumerated = enumerated
+            self.content_layer = "body"
+
+    class FakeDoc:
+        def export_to_dict(self):
+            return {"tables": []}
+
+        def iterate_items(self):
+            yield TextItem("First"), 0
+            yield TextItem("Paragraph break", label="paragraph", enumerated=False), 0
+            yield TextItem("Restarted"), 0
+
+    class FakeConverter:
+        def convert(self, _pdf_path: str):
+            return SimpleNamespace(document=FakeDoc())
+
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%%EOF")
+    monkeypatch.setattr(extract_pdf, "require_docling", lambda: FakeConverter)
+
+    blocks, _image_data, _sections = extract_pdf.extract_pdf_document(str(pdf_path))
+
+    assert [block.content for block in blocks] == [
+        "1. First",
+        "Paragraph break",
+        "1. Restarted",
+    ]
+
+
+def test_extract_pdf_document_missing_file_raises_before_docling(tmp_path, monkeypatch):
+    """Direct PDF extraction should precheck missing paths before loading Docling."""
+    import sidedoc.extract_pdf as extract_pdf
+
+    def fail_require_docling():
+        raise AssertionError("require_docling should not be called for missing files")
+
+    monkeypatch.setattr(extract_pdf, "require_docling", fail_require_docling)
+
+    with pytest.raises(FileNotFoundError):
+        extract_pdf.extract_pdf_document(str(tmp_path / "missing.pdf"))
+
+
+def test_build_pdf_missing_content_fails_before_weasyprint(tmp_path, monkeypatch):
+    """Malformed PDF sidedoc containers should identify missing content.md early."""
+    import sidedoc.reconstruct_pdf as reconstruct_pdf
+
+    sidedoc_dir = tmp_path / "broken.sidedoc"
+    sidedoc_dir.mkdir()
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "pdf"}))
+
+    def fail_require_weasyprint():
+        raise AssertionError("require_weasyprint should not be called without content.md")
+
+    monkeypatch.setattr(reconstruct_pdf, "require_weasyprint", fail_require_weasyprint)
+
+    with pytest.raises(FileNotFoundError, match="content.md not found in sidedoc"):
+        reconstruct_pdf.build_pdf_from_sidedoc(str(sidedoc_dir), str(tmp_path / "out.pdf"))
+
+
+def test_build_pdf_missing_content_cli_has_clear_error(tmp_path):
+    """CLI build should report missing content.md without a traceback."""
+    sidedoc_dir = tmp_path / "broken.sidedoc"
+    sidedoc_dir.mkdir()
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "pdf"}))
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["build", str(sidedoc_dir)])
+
+    assert result.exit_code != 0
+    assert "content.md not found in sidedoc" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_build_invalid_source_format_exits_invalid_format(tmp_path):
+    """Build should classify explicit unsupported source_format as invalid metadata."""
+    sidedoc_dir = tmp_path / "invalid.sidedoc"
+    sidedoc_dir.mkdir()
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "bogus"}))
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["build", str(sidedoc_dir)])
+
+    assert result.exit_code == EXIT_INVALID_FORMAT
+    assert "Unsupported source_format in manifest.json: bogus" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_sync_invalid_source_format_exits_invalid_format(tmp_path):
+    """Sync should classify explicit unsupported source_format as invalid metadata."""
+    sidedoc_dir = tmp_path / "invalid.sidedoc"
+    sidedoc_dir.mkdir()
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "bogus"}))
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["sync", str(sidedoc_dir)])
+
+    assert result.exit_code == EXIT_INVALID_FORMAT
+    assert "Unsupported source_format in manifest.json: bogus" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_build_unrelated_value_error_uses_generic_exit(tmp_path, monkeypatch):
+    """Only source_format ValueError should be classified as invalid format."""
+    import sidedoc.cli as cli
+
+    sidedoc_dir = tmp_path / "valid.sidedoc"
+    sidedoc_dir.mkdir()
+    (sidedoc_dir / "manifest.json").write_text(json.dumps({"source_format": "docx"}))
+
+    def raise_value_error(_input_file: str, _output: str) -> None:
+        raise ValueError("downstream build problem")
+
+    monkeypatch.setattr(cli, "build_docx_from_sidedoc", raise_value_error)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["build", str(sidedoc_dir)])
+
+    assert result.exit_code == cli.EXIT_ERROR
+    assert "downstream build problem" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_sync_unrelated_value_error_uses_generic_exit(tmp_path, monkeypatch):
+    """Only source_format ValueError should be classified as invalid format during sync."""
+    import sidedoc.cli as cli
+
+    sidedoc_dir = tmp_path / "valid.sidedoc"
+    create_sidedoc_directory(
+        str(sidedoc_dir),
+        "Hello",
+        [Block(id="block-0", type="paragraph", content="Hello", docx_paragraph_index=0, content_start=0, content_end=5, content_hash=hashlib.sha256(b"Hello").hexdigest())],
+        [_style()],
+        __file__,
+        source_format="docx",
+    )
+
+    def raise_value_error(_content_md: str):
+        raise ValueError("downstream sync problem")
+
+    monkeypatch.setattr(cli, "parse_markdown_to_blocks", raise_value_error)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["sync", str(sidedoc_dir)])
+
+    assert result.exit_code == cli.EXIT_ERROR
+    assert "downstream sync problem" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_extract_pdf_without_extra_has_actionable_error(tmp_path, monkeypatch):
