@@ -265,7 +265,7 @@ class TestExtractPdfCli:
         )
 
         assert result.exit_code == 0
-        assert "ignored for PDF" in result.output or "ignored for PDF" in (result.stderr_bytes or b"").decode()
+        assert "ignored for PDF" in result.output
 
 
 class TestExtractPdfEndToEnd:

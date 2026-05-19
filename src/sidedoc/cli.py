@@ -121,14 +121,17 @@ def _read_sidedoc_files(input_path: str) -> tuple[str, dict, dict]:
 
 
 def _read_source_format(sidedoc_path: str) -> str:
-    """Read source_format from manifest.json, default to 'docx'."""
+    """Read source_format from manifest.json, defaulting old manifests to 'docx'."""
     try:
         store = SidedocStore.open(sidedoc_path)
         with store:
             if store.has_file("manifest.json"):
                 manifest = store.read_json("manifest.json")
-                return str(manifest.get("source_format", "docx"))
-    except (FileNotFoundError, ValueError):
+                source_format = str(manifest.get("source_format", "docx")).lower()
+                if source_format not in {"docx", "pdf"}:
+                    raise ValueError(f"Unsupported source_format in manifest.json: {source_format}")
+                return source_format
+    except FileNotFoundError:
         pass
     return "docx"
 
@@ -299,6 +302,9 @@ def sync(input_file: str, output: str | None, author: str) -> None:
     """
     try:
         _reject_if_zip(Path(input_file), "sync")
+        if _read_source_format(input_file) == "pdf":
+            click.echo("Error: PDF sync is not supported. Rebuild PDF with 'sidedoc build' instead.", err=True)
+            sys.exit(EXIT_ERROR)
 
         content_md, styles_data, old_structure = _read_sidedoc_files(input_file)
         new_blocks = parse_markdown_to_blocks(content_md)

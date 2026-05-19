@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import zipfile
+from dataclasses import asdict
 from pathlib import Path
 from sidedoc.models import Block, SectionProperties, Style, Manifest
 from sidedoc.utils import compute_file_hash, get_iso_timestamp
@@ -24,7 +25,7 @@ def block_to_structure_dict(block: Block) -> dict:
     Returns:
         Dictionary suitable for structure.json
     """
-    return {
+    result = {
         "id": block.id,
         "type": block.type,
         "docx_paragraph_index": block.docx_paragraph_index,
@@ -49,8 +50,14 @@ def block_to_structure_dict(block: Block) -> dict:
         ] if block.track_changes else None,
         "footnote_references": block.footnote_references,
         "text_box_metadata": block.text_box_metadata,
-        "chart_metadata": block.chart_metadata,
     }
+
+    # Serialize dataclass fields to dicts (or None if not present)
+    result["chart_metadata"] = asdict(block.chart_metadata) if block.chart_metadata is not None else None
+    result["smartart_metadata"] = asdict(block.smartart_metadata) if block.smartart_metadata is not None else None
+    result["chart_parts_manifest"] = asdict(block.chart_parts_manifest) if block.chart_parts_manifest is not None else None
+
+    return result
 
 
 def _collect_footnotes_metadata(
@@ -128,6 +135,8 @@ def _build_metadata(
     Returns:
         Tuple of (structure_data, styles_data, manifest_data)
     """
+    if source_format not in {"docx", "pdf"}:
+        raise ValueError(f"Unsupported source_format: {source_format}")
     structure_data: dict = {
         "blocks": [block_to_structure_dict(block) for block in blocks]
     }
@@ -163,6 +172,16 @@ def _build_metadata(
                 "italic": style.italic,
                 "underline": style.underline,
                 "table_formatting": style.table_formatting,
+                "left_indent": style.left_indent,
+                "right_indent": style.right_indent,
+                "first_line_indent": style.first_line_indent,
+                "space_before": style.space_before,
+                "space_after": style.space_after,
+                "line_spacing": style.line_spacing,
+                "line_spacing_rule": style.line_spacing_rule,
+                "keep_together": style.keep_together,
+                "keep_with_next": style.keep_with_next,
+                "page_break_before": style.page_break_before,
             }
             for style in styles
         },
@@ -282,4 +301,6 @@ def create_sidedoc_directory(
         assets_dir = out / "assets"
         assets_dir.mkdir(exist_ok=True)
         for filename, image_bytes in image_data.items():
-            (assets_dir / filename).write_bytes(image_bytes)
+            file_path = assets_dir / filename
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(image_bytes)

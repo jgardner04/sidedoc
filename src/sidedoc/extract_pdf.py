@@ -6,12 +6,16 @@ from typing import Any
 from sidedoc.extract import generate_block_id
 from sidedoc.models import Block, SectionProperties, Style
 
-try:
-    from docling.document_converter import DocumentConverter
-except ImportError as e:
-    raise ImportError(
-        "PDF extraction requires docling. Install with: pip install sidedoc[pdf]"
-    ) from e
+
+def require_docling() -> Any:
+    """Return Docling's DocumentConverter class or raise an actionable error."""
+    try:
+        from docling.document_converter import DocumentConverter  # type: ignore[import-not-found]
+    except ImportError as e:
+        raise ImportError(
+            "PDF extraction requires docling. Install with: pip install sidedoc[pdf]"
+        ) from e
+    return DocumentConverter
 
 
 def _compute_content_hash(content: str) -> str:
@@ -110,6 +114,7 @@ def extract_pdf_document(
     Returns:
         Tuple of (blocks, image_data, sections)
     """
+    DocumentConverter = require_docling()
     converter = DocumentConverter()
     result = converter.convert(pdf_path)
     doc = result.document

@@ -33,6 +33,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "mypy>=1.11.0",
+    "fpdf2>=2.8.0",
 ]
 pdf = [
     "docling>=2.0.0",

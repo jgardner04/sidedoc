@@ -1,0 +1,474 @@
+{
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/conftest.py": {
+    "mtime": 1778772255.3629694,
+    "hash": "f49b93380695989eccefb582795320ff"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_hyperlinks.py": {
+    "mtime": 1778772255.3675048,
+    "hash": "0fec516889b263573a6ae7d9f423de77"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_textboxes.py": {
+    "mtime": 1778772255.368329,
+    "hash": "250f7bcbecf6119a7ec846239c396647"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_sync.py": {
+    "mtime": 1778772255.3680532,
+    "hash": "53b80034959eac578c4b1dee8a6537c2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_tables.py": {
+    "mtime": 1778772255.3682535,
+    "hash": "3fe683eef15b342373d55123005aca1b"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_track_changes.py": {
+    "mtime": 1778772255.3684642,
+    "hash": "a66baa6bdd6f1ad0f560f7eecaeeff8b"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_footnotes.py": {
+    "mtime": 1778772255.367334,
+    "hash": "9ca3a1adbc10425191bff0bfc3d61be8"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_build_command.py": {
+    "mtime": 1778772255.3663726,
+    "hash": "35aa6c761ae7cc80537e97be0690c5dc"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_project_setup.py": {
+    "mtime": 1778772255.3676538,
+    "hash": "88d2bde75e4ba7296dadac94d065045e"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_extract_command.py": {
+    "mtime": 1778772255.3670607,
+    "hash": "ef2a84781cfd717c2ca1eeb844038f99"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/__init__.py": {
+    "mtime": 1778772255.3629045,
+    "hash": "3ff8b65fc0e4b477128c614905630d91"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_roundtrip.py": {
+    "mtime": 1778772255.3677456,
+    "hash": "b4734227b504ac6a578a8943124574bc"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_sync_command.py": {
+    "mtime": 1778772255.3681273,
+    "hash": "e1d7dae7ecc1668875f0c7f98f213eb6"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_store.py": {
+    "mtime": 1778772255.3679333,
+    "hash": "f708cfe0f141e962f36129044f4baed8"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_headers_footers.py": {
+    "mtime": 1778772255.3674116,
+    "hash": "54dfb46fd62c39c36c2f078d2933190c"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_columns.py": {
+    "mtime": 1778772255.3666217,
+    "hash": "56ea65bc29ef8839d799d533affebf07"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_diff_command.py": {
+    "mtime": 1778772255.3667927,
+    "hash": "bf8206fae3dcf272f6bf96b4de0b5c4d"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_charts.py": {
+    "mtime": 1778772255.3664494,
+    "hash": "c1c6d80cfe89042cba28181564f16ca3"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_models.py": {
+    "mtime": 1778772255.3675969,
+    "hash": "6963a225fb60bf3420a9a8f0914df292"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_fixtures.py": {
+    "mtime": 1778772255.3672595,
+    "hash": "65ab3c785a7e534b24017e36f12fc7d9"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_extract.py": {
+    "mtime": 1778772255.3669636,
+    "hash": "dd37d710536c48aebd2334843ee3592d"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_error_paths.py": {
+    "mtime": 1778772255.3668685,
+    "hash": "b4faa36ec2b9e91d3637fa4a827596ea"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_cli.py": {
+    "mtime": 1778772255.366552,
+    "hash": "f7a1ac4894da3d790446f3edbc6ff325"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/helpers.py": {
+    "mtime": 1778772255.3662713,
+    "hash": "2d1c79229b45858ef5f6afd71dca1549"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_constants.py": {
+    "mtime": 1778772255.366686,
+    "hash": "bb5a8cb2ddc0de74ab04c7797ab728c6"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/test_unpack_command.py": {
+    "mtime": 1778772255.368576,
+    "hash": "1476fa3f15d5cf3ec1986815470777e4"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/create_footnote_fixtures.py": {
+    "mtime": 1778772255.3638117,
+    "hash": "6d735c4861c459be657bacdca164170b"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/create_fixtures.py": {
+    "mtime": 1778772255.3636177,
+    "hash": "d963e53f219662fef16b2f434f9b3416"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/create_track_changes_fixtures.py": {
+    "mtime": 1778772255.3639917,
+    "hash": "50d9cdab1bec781d11ad63f67f28765f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/create_chart_fixture.py": {
+    "mtime": 1778772255.363503,
+    "hash": "5d8fc1d63b11188ebe8223ac62a989ed"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/run_benchmark.py": {
+    "mtime": 1778772255.356669,
+    "hash": "335a05d70db0b5dacabd0cde8fd07b87"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/benchmark_executor.py": {
+    "mtime": 1778772255.339744,
+    "hash": "5971de56f7da48213d9746417bcb8202"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/__init__.py": {
+    "mtime": 1778772255.3395479,
+    "hash": "af554e9889d79ac01c6c4f4a6fbe59e5"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/generate_report.py": {
+    "mtime": 1778772255.3483844,
+    "hash": "9a24d0dc6e2f2b9cca31e05f5501263e"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/metrics/fidelity_scorer.py": {
+    "mtime": 1778772255.3490546,
+    "hash": "d7410be8f061bfa6054992df433a53f2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/metrics/token_counter.py": {
+    "mtime": 1778772255.3491194,
+    "hash": "13c2275bd05b1f296c81d6a7688ca64c"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/metrics/cost_calculator.py": {
+    "mtime": 1778772255.3489697,
+    "hash": "12192589175dd1dfd30c5f29c7923b20"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/metrics/__init__.py": {
+    "mtime": 1778772255.3489099,
+    "hash": "159a9a74377825247c5a871a71bb1260"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tasks/edit_multiturn.py": {
+    "mtime": 1778772255.3571103,
+    "hash": "e4c715077a5052d1771258dd5e05e119"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tasks/edit_single.py": {
+    "mtime": 1778772255.3571844,
+    "hash": "0cc6c8097bcb8344029aeb3b7e92eff2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tasks/__init__.py": {
+    "mtime": 1778772255.3570106,
+    "hash": "86041d9a2f6f0acb757854bfc4ae48ce"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tasks/summarize.py": {
+    "mtime": 1778772255.3572617,
+    "hash": "48933afa2a88d7e49aab884b07604765"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tasks/base.py": {
+    "mtime": 1778772255.3570592,
+    "hash": "b9690cdf6028b02d74df4f44010e92b2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/corpus/__init__.py": {
+    "mtime": 1778772255.3398008,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/corpus/real/__init__.py": {
+    "mtime": 1778772255.339869,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_docint_pipeline.py": {
+    "mtime": 1778772255.3578644,
+    "hash": "ede660b7e6389c7306a622f43ccd166c"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_structure.py": {
+    "mtime": 1778772255.3590226,
+    "hash": "2b09fb11a5cfcfadf36af6ee2ed6d6cf"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_token_counter.py": {
+    "mtime": 1778772255.3591886,
+    "hash": "ae8bad49ed234e57d6155e60643a63c2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/conftest.py": {
+    "mtime": 1778772255.3574018,
+    "hash": "eb32e1d2e52d37b53236a19638f49edb"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_run_benchmark.py": {
+    "mtime": 1778772255.3588548,
+    "hash": "c2dc4d9d26abc6277cc6ae1dd4e821a7"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_generate_report.py": {
+    "mtime": 1778772255.3584294,
+    "hash": "d33fd2ba1691632d2b9c936cdaf47557"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_download_corpus.py": {
+    "mtime": 1778772255.3579535,
+    "hash": "befa3bfa35e1cb276440a1d2845582d7"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/__init__.py": {
+    "mtime": 1778772255.3573477,
+    "hash": "77299130e3d55585dfb4ce773e41ae30"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_requirements.py": {
+    "mtime": 1778772255.3588014,
+    "hash": "eaaf69307cb8b5ee0eb5d4378e5437ff"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_fidelity_scorer.py": {
+    "mtime": 1778772255.358239,
+    "hash": "26dc07cdbf8c7adf1c0a5aec76c4686a"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_convert_corpus.py": {
+    "mtime": 1778772255.357685,
+    "hash": "8b188c4a45d5d5cc773234a9042fc73b"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_summarize_task.py": {
+    "mtime": 1778772255.3591168,
+    "hash": "b6cac06fd7119a53b90275774bd5c746"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_edit_multiturn_task.py": {
+    "mtime": 1778772255.3580499,
+    "hash": "0c992ae07acc38da28159ec43ae96c78"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_readme.py": {
+    "mtime": 1778772255.3587382,
+    "hash": "b791da16bb3bf25804ce04b221e9b853"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_sidedoc_pipeline.py": {
+    "mtime": 1778772255.3589544,
+    "hash": "e4b6110fba61c5a8f1bea172fdcfc55e"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_base_pipeline.py": {
+    "mtime": 1778772255.3574588,
+    "hash": "64a20886ad8d61332e43e1e0bdfa558d"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_raw_docx_pipeline.py": {
+    "mtime": 1778772255.3586893,
+    "hash": "62513618ee62d5530296300f38500333"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_ooxml_pipeline.py": {
+    "mtime": 1778772255.3585227,
+    "hash": "d5662b949d565b11e5381c946e25d300"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_base_task.py": {
+    "mtime": 1778772255.357519,
+    "hash": "3e95f31d46f442f1594822f32a805b2a"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_pandoc_pipeline.py": {
+    "mtime": 1778772255.358614,
+    "hash": "8391dd399772b5948a59de90d6e1ab4f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_benchmark_executor.py": {
+    "mtime": 1778772255.357598,
+    "hash": "cf46b4e9df4067c8352520f1ab96338f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_edit_single_task.py": {
+    "mtime": 1778772255.3581529,
+    "hash": "7b5a9c34e359ec1aae2c200b168ec8dd"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/tests/test_cost_calculator.py": {
+    "mtime": 1778772255.3577676,
+    "hash": "f03b63425d2cfcf76278ca957d8568d6"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/ooxml_pipeline.py": {
+    "mtime": 1778772255.3494456,
+    "hash": "258c3920f879894f6407833493004d15"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/raw_docx_pipeline.py": {
+    "mtime": 1778772255.3554194,
+    "hash": "e4593647a09921f4e2a96e954566f713"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/__init__.py": {
+    "mtime": 1778772255.3492212,
+    "hash": "c77d4de4416fcd94cd0e4c3b6f3c0cc9"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/sidedoc_pipeline.py": {
+    "mtime": 1778772255.355771,
+    "hash": "ada17535bdb9e9984da70d9b39ba0e46"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/pandoc_pipeline.py": {
+    "mtime": 1778772255.3495538,
+    "hash": "3179e49d012288cee95f4db4e8dba375"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/docint_pipeline.py": {
+    "mtime": 1778772255.3493845,
+    "hash": "e815a78a0a8a73ade97b312fc7b2807b"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/pipelines/base.py": {
+    "mtime": 1778772255.349281,
+    "hash": "5383c28f9e41e8fc1ee7836d1cd68e10"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/scripts/convert_corpus.py": {
+    "mtime": 1778772255.3568447,
+    "hash": "66e2467df79ea8d248536b853e5a9982"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/scripts/__init__.py": {
+    "mtime": 1778772255.3567488,
+    "hash": "be7992d96d43ef3c2c03205c4325596a"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/scripts/download_corpus.py": {
+    "mtime": 1778772255.356933,
+    "hash": "f898a89f02ceb6cf1fa24699e222169f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/scripts/create_hyperlinks_fixture.py": {
+    "mtime": 1778772255.3613286,
+    "hash": "3c1b50080508999e79432c0582ca77dc"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/package.py": {
+    "mtime": 1778772255.362337,
+    "hash": "d12788d33c832aced45ceb187cccdf02"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/sync.py": {
+    "mtime": 1778772255.3627217,
+    "hash": "f33151035b77f854b73cd1f276cf371a"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/store.py": {
+    "mtime": 1778772255.3625925,
+    "hash": "16c58e66ce597c2fba2e06860d3b8963"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/models.py": {
+    "mtime": 1778772255.3621454,
+    "hash": "fc8aa49182cad08eb8c06ee450886400"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/constants.py": {
+    "mtime": 1778772255.3618684,
+    "hash": "7c7fec44ddae81f934634462a9e08cde"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/__init__.py": {
+    "mtime": 1778772255.3615344,
+    "hash": "7b619bd5e771cbfc5659e2e2d1121521"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/cli.py": {
+    "mtime": 1778772255.361733,
+    "hash": "60a59aff8204267aea56ef3e09b06bf2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/utils.py": {
+    "mtime": 1778772255.3627963,
+    "hash": "2e58551335252c5828457bdd535857f7"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/reconstruct.py": {
+    "mtime": 1778772255.3624809,
+    "hash": "eb8b0ae432e47fb5f434f49f434aab43"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/extract.py": {
+    "mtime": 1778772255.362045,
+    "hash": "1644be9b09263740c0c31f9a295ec95d"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/src/sidedoc/__main__.py": {
+    "mtime": 1778772255.361636,
+    "hash": "930348b2479112ba0c9873461e55d11d"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/CODE_OF_CONDUCT.md": {
+    "mtime": 1778772255.3390427,
+    "hash": "360ecb63714b03e7e631033e754081a0"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/CHANGELOG.md": {
+    "mtime": 1778772255.3388498,
+    "hash": "b66cc09fca93356379a9c1746a8c27f5"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/progress.txt": {
+    "mtime": 1778772255.361117,
+    "hash": "f848ff462c192d2517b6bdfb2673c78c"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/README.md": {
+    "mtime": 1778772255.3393629,
+    "hash": "afe2a48f18b284ffacce0e15d67c54c2"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/CONTRIBUTING.md": {
+    "mtime": 1778772255.3391054,
+    "hash": "0c2502713d99941e2a3202d95ebc436f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/CLAUDE.md": {
+    "mtime": 1778772255.3312523,
+    "hash": "a303ca8092e8f616b21bb3521f4db943"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/mkdocs.yml": {
+    "mtime": 1778772255.3707576,
+    "hash": "11b62a4636e977b199c5b02a9b3aa500"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/benchmarks.md": {
+    "mtime": 1778772255.3699682,
+    "hash": "b7f26dd30a11ba1684e5e3f8986be6a8"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/status.md": {
+    "mtime": 1778772255.3705904,
+    "hash": "318698df274b40a6f7c093c04f678622"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/faq.md": {
+    "mtime": 1778772255.370118,
+    "hash": "c04d9f2900b83d6318e5307c28ecfbb6"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/getting-started.md": {
+    "mtime": 1778772255.3704028,
+    "hash": "b1d8e16d2805eba746a647f385884298"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/index.md": {
+    "mtime": 1778772255.3705125,
+    "hash": "ee1d8e0c7ad16c164d0bdb5badd27df1"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/website/docs/format-specification.md": {
+    "mtime": 1778772255.3702776,
+    "hash": "52ec38cd77f80a29eb7c6aae200e01df"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/tables-prd.md": {
+    "mtime": 1778772255.3610349,
+    "hash": "fae061a8c73902a0d194e6122d256046"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/format-examples.md": {
+    "mtime": 1778772255.360395,
+    "hash": "bf6bc6b7ac00cabb03cc8d8731a07b90"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/prd-hyperlinks.md": {
+    "mtime": 1778772255.3606446,
+    "hash": "e22e67c471f20ce2a505a8e0a8f8848f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/prd-track-changes.md": {
+    "mtime": 1778772255.3607223,
+    "hash": "10e1de5cff4d743f9e831c77eaa6ec51"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/research/2026-01-08-github-pages-best-practices.md": {
+    "mtime": 1778772255.360952,
+    "hash": "9608eb53f53cba142501fcd9870ce1b6"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/archive/2026-01-24-sidedoc-benchmark/progress.txt": {
+    "mtime": 1778772255.3600392,
+    "hash": "fba7b154a2f152aa11bd27e20e3a2411"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/archive/2026-01-22-sidedoc-mvp/progress.txt": {
+    "mtime": 1778772255.3596,
+    "hash": "9eb4adc80b2f20f2cbf6cfb8bdd3f54f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/archive/2026-01-22-sidedoc-mvp/slidedoc-prd.md": {
+    "mtime": 1778772255.3597183,
+    "hash": "06e51745fcb77d0375bf62cc399cc2ac"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/archive/2026-01-22-sidedoc-mvp/prd-sidedoc-benchmark.md": {
+    "mtime": 1778772255.359443,
+    "hash": "6972dc5191d2204bb26975f1db3b8847"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/docs/plans/2026-01-08-github-pages-setup.md": {
+    "mtime": 1778772255.3605475,
+    "hash": "093defe5baad9011dada1c5f6330c665"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/requirements.txt": {
+    "mtime": 1778772255.35586,
+    "hash": "d3370eb7380966942910b0091551e12f"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/README.md": {
+    "mtime": 1778772255.339494,
+    "hash": "f3e89f5dfc73990a037764e85b9c26bf"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/benchmarks/results/report-latest.md": {
+    "mtime": 1778772255.356613,
+    "hash": "c22d3250545d7cd9d20206c982ee1885"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/test_image1.png": {
+    "mtime": 1778772255.365724,
+    "hash": "9cd53a2f405bebbac4a21dded0f12e34"
+  },
+  "/Users/jogardn/git/sidedoc/.claude/worktrees/affectionate-mahavira-38af7c/tests/fixtures/test_image2.png": {
+    "mtime": 1778772255.3657694,
+    "hash": "25dfc04239161070065b169061339841"
+  }
+}

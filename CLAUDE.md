@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. The canonical format is a `.sidedoc/` directory containing markdown content and formatting metadata. A `.sdoc` ZIP archive is used for distribution and sharing.
 
-**Status:** MVP complete with hyperlink, track changes, table, headers/footers, chart, and PDF support (extraction, reconstruction).
+**Status:** MVP complete with hyperlink, track changes, table, headers/footers, chart, PDF, and paragraph format property support (extraction, reconstruction).
 
 ## Development Philosophy
 
@@ -106,99 +106,42 @@ src/sidedoc/
 
 ## Key Concepts
 
-- **Extract:** Convert a `.docx` or `.pdf` file into a Sidedoc container (content.md + formatting metadata). PDF extraction requires `pip install sidedoc[pdf]`.
-- **Reconstruct (build):** Rebuild the original document from the Sidedoc container. Output format (`.docx` or `.pdf`) is determined automatically from `manifest.json`'s `source_format` field.
-- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content. (DOCX only — PDF sync not yet supported.)
+- **Extract:** Convert a `.docx` or `.pdf` file into a Sidedoc container (`content.md` + formatting metadata). PDF extraction requires `pip install sidedoc[pdf]`.
+- **Reconstruct (build):** Rebuild the original document from the Sidedoc container. Output format (`.docx` or `.pdf`) is determined from `manifest.json`'s `source_format` field.
+- **Sync:** Update DOCX output after editing `content.md` while preserving original formatting. Sync is DOCX-only; PDF sync is not supported.
 
-### Block Types
+For durable format documentation, see [`docs/sidedoc-format.md`](docs/sidedoc-format.md).
 
-| Type | Markdown Format | Notes |
-|------|-----------------|-------|
-| `heading` | `# Title` | Levels 1-6 supported |
-| `paragraph` | Plain text | Inline formatting: `**bold**`, `*italic*` |
-| `list` | `- bullet` or `1. numbered` | |
-| `image` | `![alt](assets/image.png)` | |
-| `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
-| `hyperlink` | `[text](url)` | Inline within other blocks |
-| `chart` | `![Chart](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
+## Feature Documentation
 
-### Headers and Footers
+Detailed feature behavior belongs in project docs, not in this agent instruction file:
 
-Headers and footers are stored as section metadata in `structure.json` (not as blocks in `content.md`). Each section can have up to six variants: `header_default`, `header_first`, `header_even`, `footer_default`, `footer_first`, `footer_even`.
+- [Sidedoc format](docs/sidedoc-format.md) — container files, block types, headers/footers, manifest fields.
+- [Tables PRD](docs/tables-prd.md) — GFM table syntax, table metadata, styling, merged cells.
+- [Chart support](docs/charts.md) — chart detection, fallback behavior, OOXML archival, reconstruction limits.
+- [PDF support](docs/pdf-support.md) — optional Docling/WeasyPrint flow, limitations, dependency pitfalls.
+- [Style preservation](docs/style-preservation.md) — paragraph format fields, boolean guard rules, run-level formatting.
 
-**Limitation:** Header/footer content is extracted and reconstructed as **plain text only**. Inline formatting (bold, italic, hyperlinks) within header/footer paragraphs is silently dropped. Images in headers/footers are extracted to `assets/` and restored on build.
+## Agent Gotchas
 
-### Chart Support
-
-Charts are extracted using their cached PNG/EMF fallback image from the `mc:AlternateContent` OOXML wrapper. The live chart XML is not round-tripped in this phase.
-
-- **Detection:** `extract_chart_from_paragraph()` looks for `mc:AlternateContent` with `mc:Choice Requires="c"` containing `c:chart`, then extracts the blip from `mc:Fallback`. Also handles flat `w:drawing` charts (no `mc:AlternateContent`).
-- **Fallback behavior:** Charts with no cached image produce `[Chart: no preview available]` as a `paragraph` block (not a `chart` block).
-- **EMF/WMF:** These metafile formats are validated by checking magic bytes first, then skip PIL validation (since PIL cannot open them).
-- **Ordering rule:** Chart detection must run before image extraction in `_process_paragraph()`. Chart drawings contain both `c:chart` and an `a:blip` — running image extraction first silently consumes the chart as a regular image.
-- **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
-- **`chart_metadata`:** Currently stores `{"chart_rel_id": ...}` for charts with a resolved relationship ID. Degraded chart paragraphs (no preview / validation error) also preserve `chart_rel_id` in `chart_metadata` when one is available; `None` only when no relationship ID can be resolved. Full chart data (type, series, labels) reserved for JON-107.
-
-### PDF Support
-
-PDF extraction uses Docling (`extract_pdf.py`) and reconstruction uses WeasyPrint (`reconstruct_pdf.py`). Both require `pip install sidedoc[pdf]`.
-
-**Pitfalls to avoid:**
-
-- **`mistune.html()` is the correct API.** Use `mistune.html(content_md)` directly — do not wrap it in a custom class or use `mistune.create_markdown()`. The function returns a plain `str` and is the simplest correct approach.
-- **GFM separator double-insertion.** `_table_to_gfm()` has two code paths: one that appends a separator after a detected header row, and a fallback that inserts one after row 0 when no headers are detected. These must be `if/else` — never two independent `if` checks — or headerless tables will get two separator rows.
-- **Do not coerce `header_rows` to `max(1, ...)`** — Docling tables without any `column_header=True` cells legitimately have `header_rows=0`. Forcing it to 1 creates incorrect GFM (treats a data row as a header) and corrupts `table_metadata`.
-- **Guard optional heavy deps at module level.** `fitz` (PyMuPDF), `weasyprint`, and `docling` are all optional. Each module that needs them must use a top-level `try/except ImportError` block and set a `HAS_*` flag. Tests skip via `pytest.mark.skipif(not HAS_PYMUPDF, ...)`.
-- **Skip `PictureItem` blocks when image extraction is unimplemented.** Do not emit a block with a broken asset reference. Use `continue` to skip the item entirely; the block list stays clean and no dangling `![alt](assets/...)` references appear in `content.md`.
-- **WeasyPrint requires `base_url`.** `weasyprint.HTML(string=full_html)` cannot resolve relative paths to assets. Always pass `base_url=str(Path(sidedoc_path).resolve())` so embedded images in `assets/` resolve correctly.
-
-### Table Support (Phase 2)
-
-Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
-
-```markdown
-| Name | Role | Start Date |
-| --- | --- | --- |
-| Alice | Engineer | 2024-01-15 |
-```
-
-- **Alignment:** `---` (default left), `:---` (explicit left), `:---:` (center), `---:` (right)
-- **Escaping:** Pipe characters in content escaped as `\|`
-- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
-- **Styling:** `table_formatting` in Style stores column_widths, table_alignment, table_style, cell_styles (including background colors and pattern fills like `diagStripe`, `horzStripe`)
-
-## Sidedoc Format
-
-A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
-
-| File | Required (dir) | Required (ZIP) | Purpose |
-|------|:-:|:-:|---------|
-| `content.md` | Yes | Yes | Clean markdown that AI reads/writes |
-| `styles.json` | Yes | Yes | Formatting information per block |
-| `structure.json` | No* | Yes | Block structure, docx paragraph mappings, and section metadata (headers, footers, page setup) |
-| `manifest.json` | No* | Yes | Metadata and version info; includes `source_format` ("docx" or "pdf") |
-| `assets/` | No | No | Images and embedded files |
-
-\* `structure.json` is written during `sidedoc extract` and updated by `sidedoc sync`; `manifest.json` is written during `sidedoc extract` (for PDF sources) or `sidedoc sync` (for DOCX sources)
+- **TDD is mandatory.** Write a failing test before implementation changes.
+- **Chart detection must run before image extraction.** Chart drawings contain both `c:chart` and `a:blip`; image extraction first will consume charts as regular images. See [docs/charts.md](docs/charts.md).
+- **PDF dependencies are optional.** Do not import Docling, WeasyPrint, or PyMuPDF eagerly. Use lazy imports/guard helpers so base imports and non-PDF commands work without `sidedoc[pdf]`. See [docs/pdf-support.md](docs/pdf-support.md).
+- **Preserve explicit `False` style values.** Use `is not None`, not truthiness, when applying boolean paragraph formatting fields. See [docs/style-preservation.md](docs/style-preservation.md).
+- **Do not mutate shared DOCX style objects for per-block font overrides.** Apply font overrides to individual runs. See [docs/style-preservation.md](docs/style-preservation.md).
+- **Keep table metadata consistent with GFM content.** Table dimensions, header rows, merged cells, and cell formatting must round-trip together. See [docs/tables-prd.md](docs/tables-prd.md).
 
 ## Benchmarks
 
-Benchmarking suite compares Sidedoc against alternative document processing pipelines (sidedoc, pandoc, raw_docx, ooxml, docint) across LLM tasks.
+Benchmarking docs and commands live in [`benchmarks/README.md`](benchmarks/README.md). Published results live in [`website/docs/benchmarks.md`](website/docs/benchmarks.md).
+
+Common commands:
 
 ```bash
-# Run benchmarks
 python -m benchmarks.run_benchmark --pipeline sidedoc --corpus synthetic
-
-# Run with format fidelity scoring (round-trip preservation)
 python -m benchmarks.run_benchmark --pipeline sidedoc --pipeline pandoc --fidelity
-
-# Generate report
 python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
 ```
-
-**Format Fidelity**: Measures what each pipeline preserves on extract→rebuild round-trip across 5 dimensions: structure (heading levels, counts), formatting (bold/italic/font per run), tables (structure, merged cells, styles), hyperlinks (text+URL pairs), and track changes (insertions/deletions/authors). Only sidedoc and pandoc support rebuild.
-
-Full documentation: [`benchmarks/README.md`](benchmarks/README.md) | Published results: [`website/docs/benchmarks.md`](website/docs/benchmarks.md)
 
 ## Development Commands
 

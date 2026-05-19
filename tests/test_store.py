@@ -221,6 +221,50 @@ class TestSidedocStoreZip:
             store.read_text("nonexistent.txt")
 
 
+class TestListAssetsSubdirContract:
+    """list_assets() must return paths relative to assets/ that include
+    any subdirectory segments — not bare filenames. Chart archival relies
+    on this contract (drawing.xml lives at assets/chart_parts/chartN/).
+    """
+
+    def test_directory_store_returns_subdir_relative_path(self, tmp_path: Path) -> None:
+        sidedoc_dir = _create_dir_store(tmp_path)
+        nested = sidedoc_dir / "assets" / "chart_parts" / "chart1"
+        nested.mkdir(parents=True)
+        (nested / "drawing.xml").write_bytes(b"<w:r/>")
+
+        store = SidedocStore.open(sidedoc_dir)
+        result = store.list_assets()
+
+        assert "chart_parts/chart1/drawing.xml" in result, (
+            "DirectoryStore.list_assets() must return paths relative to "
+            f"assets/ including subdirs; got {result!r}"
+        )
+        assert "drawing.xml" not in result, (
+            "DirectoryStore.list_assets() must not strip subdir segments; "
+            f"got {result!r}"
+        )
+
+    def test_zip_store_returns_subdir_relative_path(self, tmp_path: Path) -> None:
+        zip_path = tmp_path / "test.sdoc"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("content.md", "# Hello")
+            zf.writestr("styles.json", '{"block_styles": {}, "document_defaults": {}}')
+            zf.writestr("assets/chart_parts/chart1/drawing.xml", b"<w:r/>")
+
+        store = SidedocStore.open(zip_path)
+        result = store.list_assets()
+
+        assert "chart_parts/chart1/drawing.xml" in result, (
+            "ZipStore.list_assets() must return paths relative to "
+            f"assets/ including subdirs; got {result!r}"
+        )
+        assert "drawing.xml" not in result, (
+            "ZipStore.list_assets() must not strip subdir segments; "
+            f"got {result!r}"
+        )
+
+
 class TestPathTraversalProtection:
     """Tests for path traversal protection in SidedocStore."""
 

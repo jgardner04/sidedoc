@@ -5,18 +5,22 @@ This is the PDF equivalent of reconstruct.py (which builds DOCX).
 """
 
 from pathlib import Path
-from typing import cast
+from typing import Any
 
 import mistune
 
-try:
-    import weasyprint
-except ImportError as e:
-    raise ImportError(
-        "PDF reconstruction requires weasyprint. Install with: pip install sidedoc[pdf]"
-    ) from e
-
 from sidedoc.store import SidedocStore
+
+
+def require_weasyprint() -> Any:
+    """Return the WeasyPrint module or raise an actionable error."""
+    try:
+        import weasyprint  # type: ignore[import-not-found]
+    except ImportError as e:
+        raise ImportError(
+            "PDF reconstruction requires weasyprint. Install with: pip install sidedoc[pdf]"
+        ) from e
+    return weasyprint
 
 
 _CSS = """\
@@ -64,7 +68,10 @@ img {
 
 def _markdown_to_html(content_md: str) -> str:
     """Convert sidedoc markdown content to HTML using mistune."""
-    return cast(str, mistune.html(content_md))
+    html = mistune.html(content_md)
+    if not isinstance(html, str):
+        raise TypeError("Expected mistune.html() to return a string")
+    return html
 
 
 def build_pdf_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
@@ -93,5 +100,6 @@ def build_pdf_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
 </html>
 """
 
+    weasyprint = require_weasyprint()
     doc = weasyprint.HTML(string=full_html, base_url=str(Path(sidedoc_path).resolve()))
     doc.write_pdf(output_path)
