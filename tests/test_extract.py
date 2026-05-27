@@ -1088,6 +1088,24 @@ def test_extract_italic_run_with_leading_space():
         Path(docx_path).unlink()
 
 
+def test_extract_w_tab_becomes_literal_tab():
+    """Issue #72: `<w:tab/>` was silently dropped; now surfaces as `\\t`."""
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("a")
+    p.add_run().add_tab()
+    p.add_run("b")
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+    doc.save(temp_file.name)
+    temp_file.close()
+
+    try:
+        blocks, _ = extract_blocks(temp_file.name)
+        assert blocks[0].content == "a\tb"
+    finally:
+        Path(temp_file.name).unlink()
+
+
 def test_extract_literal_asterisk_escaped_in_plain_text():
     """Literal * in source must be escaped on extract so it survives mistune."""
     docx_path = create_formatted_docx([

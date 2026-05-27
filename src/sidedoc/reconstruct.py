@@ -127,23 +127,61 @@ def apply_inline_formatting(
     """
     runs = _parse_inline_markdown(content)
 
+    plain_runs: list[tuple[Any, int, int]] = []
     if not runs:
-        paragraph.add_run(content)
-        plain_runs: list[tuple[Any, int, int]] = [(paragraph.runs[-1], 0, len(content))]
+        plain_runs.extend(_add_runs_with_tabs(paragraph, content, bold=False, italic=False, offset=0))
     else:
-        plain_runs = []
         offset = 0
         for text, bold, italic in runs:
-            run = paragraph.add_run(text)
-            if bold:
-                run.bold = True
-            if italic:
-                run.italic = True
-            plain_runs.append((run, offset, offset + len(text)))
+            for run, start, end in _add_runs_with_tabs(paragraph, text, bold, italic, offset):
+                plain_runs.append((run, start, end))
             offset += len(text)
 
     if inline_formatting:
         _overlay_inline_formatting(paragraph, plain_runs, inline_formatting)
+
+
+def _add_runs_with_tabs(
+    paragraph: Any,
+    text: str,
+    bold: bool,
+    italic: bool,
+    offset: int,
+) -> list[tuple[Any, int, int]]:
+    """Add runs for ``text``, splitting on tab characters into separate runs
+    with explicit ``<w:tab/>`` elements between them. Returns the produced
+    runs with their character ranges so inline_formatting overlays still align.
+    """
+    if "\t" not in text:
+        run = paragraph.add_run(text)
+        if bold:
+            run.bold = True
+        if italic:
+            run.italic = True
+        return [(run, offset, offset + len(text))]
+
+    produced: list[tuple[Any, int, int]] = []
+    cursor = offset
+    segments = text.split("\t")
+    for i, segment in enumerate(segments):
+        if segment:
+            run = paragraph.add_run(segment)
+            if bold:
+                run.bold = True
+            if italic:
+                run.italic = True
+            produced.append((run, cursor, cursor + len(segment)))
+            cursor += len(segment)
+        if i < len(segments) - 1:
+            tab_run = paragraph.add_run()
+            tab_run.add_tab()
+            if bold:
+                tab_run.bold = True
+            if italic:
+                tab_run.italic = True
+            produced.append((tab_run, cursor, cursor + 1))
+            cursor += 1
+    return produced
 
 
 def _overlay_inline_formatting(

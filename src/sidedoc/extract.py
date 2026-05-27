@@ -1190,6 +1190,8 @@ def extract_paragraph_content(
                 if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
                     if run_child.text:
                         text_parts.append(run_child.text)
+                elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}tab':
+                    text_parts.append('\t')
                 elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
                     br_type = run_child.get(qn('w:type'))
                     if br_type == 'column':

@@ -242,6 +242,79 @@ def test_roundtrip_underline_preserved():
         assert not any(r.underline and r.text.strip() == "plain" for p in rebuilt.paragraphs for r in p.runs)
 
 
+def _count_tab_elements(doc):
+    """Helper: count <w:tab/> elements in all paragraph bodies."""
+    from docx.oxml.ns import qn
+    return sum(
+        len(p._element.findall(f".//{qn('w:tab')}"))
+        for p in doc.paragraphs
+    )
+
+
+def test_roundtrip_tab_in_paragraph():
+    """Issue #72: w:tab elements were silently dropped on extract.
+
+    Signature lines, TOC dot leaders and form alignment all rely on
+    tabs. The reporter saw 78 tabs go to 0.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("name")
+        p.add_run().add_tab()
+        p.add_run("value")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 1
+        full = "".join(p.text for p in rebuilt.paragraphs)
+        # python-docx's Paragraph.text exposes tabs as "\t".
+        assert "name\tvalue" in full
+
+
+def test_roundtrip_consecutive_tabs():
+    """Multiple consecutive tabs (used for column-style alignment) must all survive."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("a")
+        for _ in range(3):
+            p.add_run().add_tab()
+        p.add_run("b")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 3
+
+
+def test_roundtrip_signature_line():
+    """Russian signature line from issue #72: 'Подпись:\\t\\t\\t____________'."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("Подпись:")
+        for _ in range(3):
+            p.add_run().add_tab()
+        p.add_run("____________")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 3
+        assert any("Подпись:" in p.text and "____________" in p.text for p in rebuilt.paragraphs)
+
+
 def test_roundtrip_underline_with_bold():
     """Bold (markdown) and underline (inline_formatting) on the same span."""
     runner = CliRunner()
