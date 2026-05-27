@@ -215,3 +215,52 @@ def test_roundtrip_bold_with_trailing_space():
         assert asterisks == 0
         # The Russian word survives intact.
         assert any("СОДЕРЖАНИЕ" in p.text for p in rebuilt.paragraphs)
+
+
+def test_roundtrip_underline_preserved():
+    """Issue #72: underline runs were extracted into inline_formatting but
+    reconstruct.apply_inline_formatting never consumed that array, so all 32
+    underlines in the reporter's document silently vanished."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("plain ")
+        r = p.add_run("underlined"); r.underline = True
+        p.add_run(" plain")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        _, _, underline, _ = _count_runs_by_format(rebuilt)
+        assert underline >= 1, "underline run lost on rebuild"
+        # Only the middle word is underlined; surrounding text is not.
+        underlined_runs = [r for p in rebuilt.paragraphs for r in p.runs if r.underline]
+        assert any("underlined" in r.text for r in underlined_runs)
+        assert not any(r.underline and r.text.strip() == "plain" for p in rebuilt.paragraphs for r in p.runs)
+
+
+def test_roundtrip_underline_with_bold():
+    """Bold (markdown) and underline (inline_formatting) on the same span."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        r = p.add_run("bold-underline")
+        r.bold = True
+        r.underline = True
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, underline, _ = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert underline >= 1
+        # Same run carries both.
+        assert any(r.bold and r.underline for p in rebuilt.paragraphs for r in p.runs)
+
+

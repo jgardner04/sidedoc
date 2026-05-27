@@ -104,7 +104,11 @@ def _extract_textbox_inner_content(content: str) -> str:
     return "\n".join(inner)
 
 
-def apply_inline_formatting(paragraph: Any, content: str) -> None:
+def apply_inline_formatting(
+    paragraph: Any,
+    content: str,
+    inline_formatting: Optional[list[dict[str, Any]]] = None,
+) -> None:
     """Apply inline formatting from markdown to a paragraph.
 
     Uses mistune for robust markdown parsing to handle:
@@ -115,18 +119,82 @@ def apply_inline_formatting(paragraph: Any, content: str) -> None:
     Args:
         paragraph: python-docx Paragraph object
         content: Text content with markdown formatting
+        inline_formatting: Optional list of run-level format overrides keyed by
+            character range in the post-mistune plain text. Used for properties
+            that aren't expressible as markdown (underline today; potentially
+            highlight/color in future). Each entry must have keys ``type``,
+            ``start``, ``end`` and the type-specific value (e.g. ``underline``).
     """
     runs = _parse_inline_markdown(content)
 
     if not runs:
         paragraph.add_run(content)
+        plain_runs: list[tuple[Any, int, int]] = [(paragraph.runs[-1], 0, len(content))]
     else:
+        plain_runs = []
+        offset = 0
         for text, bold, italic in runs:
             run = paragraph.add_run(text)
             if bold:
                 run.bold = True
             if italic:
                 run.italic = True
+            plain_runs.append((run, offset, offset + len(text)))
+            offset += len(text)
+
+    if inline_formatting:
+        _overlay_inline_formatting(paragraph, plain_runs, inline_formatting)
+
+
+def _overlay_inline_formatting(
+    paragraph: Any,
+    plain_runs: list[tuple[Any, int, int]],
+    inline_formatting: list[dict[str, Any]],
+) -> None:
+    """Overlay run-level properties (underline, ...) onto already-created runs.
+
+    Splits runs at format boundaries so each output run is either entirely
+    covered or entirely uncovered by each overlay entry. Reads from
+    ``Block.inline_formatting`` produced by extract.py.
+    """
+    boundaries: set[int] = set()
+    for entry in inline_formatting:
+        boundaries.add(entry["start"])
+        boundaries.add(entry["end"])
+
+    # First pass: split runs so no run straddles an overlay boundary.
+    new_plain_runs: list[tuple[Any, int, int]] = []
+    for run, start, end in plain_runs:
+        splits = sorted(b for b in boundaries if start < b < end)
+        if not splits:
+            new_plain_runs.append((run, start, end))
+            continue
+        cursor = start
+        text = run.text
+        # Mutate the original run to hold only the first segment; subsequent
+        # segments become brand-new runs cloned from this one.
+        first_len = splits[0] - start
+        run.text = text[:first_len]
+        new_plain_runs.append((run, cursor, splits[0]))
+        cursor = splits[0]
+        for i, b in enumerate(splits[1:] + [end], start=1):
+            seg_text = text[cursor - start : b - start]
+            new_run = paragraph.add_run(seg_text)
+            new_run.bold = run.bold
+            new_run.italic = run.italic
+            # Move the new run element to the position right after the previous one
+            run._element.addnext(new_run._element)
+            new_plain_runs.append((new_run, cursor, b))
+            cursor = b
+            run = new_run  # so the next clone is inserted after this one
+
+    # Second pass: apply overlay attributes.
+    for entry in inline_formatting:
+        e_start, e_end, e_type = entry["start"], entry["end"], entry.get("type")
+        for run, start, end in new_plain_runs:
+            if start >= e_start and end <= e_end:
+                if e_type == "underline" and entry.get("underline"):
+                    run.underline = True
 
 
 def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
@@ -1705,7 +1773,7 @@ def create_docx_from_blocks(
                 add_text_with_hyperlinks(para, text)
             else:
                 para = doc.add_paragraph(style=style_name)
-                apply_inline_formatting(para, text)
+                apply_inline_formatting(para, text, block.inline_formatting)
         elif block.type == "table":
             # For tables, use remapped ID for style lookup if available
             table_style_id = block.id
@@ -1778,7 +1846,7 @@ def create_docx_from_blocks(
                 add_text_with_hyperlinks(para, content)
             else:
                 para = doc.add_paragraph()
-                apply_inline_formatting(para, content)
+                apply_inline_formatting(para, content, block.inline_formatting)
 
         # Apply styling - use remapped ID if available
         if para is not None:
@@ -2043,6 +2111,12 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                 # Transfer text box metadata if present
                 if "text_box_metadata" in struct_block and struct_block["text_box_metadata"]:
                     block.text_box_metadata = struct_block["text_box_metadata"]
+
+                # Transfer inline_formatting (underline positions, etc.) so
+                # apply_inline_formatting can overlay run-level properties that
+                # aren't expressible as markdown.
+                if struct_block.get("inline_formatting"):
+                    block.inline_formatting = struct_block["inline_formatting"]
 
                 # Collect chart parts manifests for post-processing
                 if "chart_parts_manifest" in struct_block and struct_block["chart_parts_manifest"]:
