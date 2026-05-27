@@ -132,3 +132,86 @@ def test_complete_workflow():
         texts = [p.text for p in final.paragraphs]
         assert "Test Document" in texts
         assert "This is a test" in texts
+
+
+def _count_runs_by_format(doc):
+    """Helper: tally bold/italic/underline runs across all paragraphs."""
+    bold = italic = underline = 0
+    asterisks = 0
+    for p in doc.paragraphs:
+        for r in p.runs:
+            if r.bold:
+                bold += 1
+            if r.italic:
+                italic += 1
+            if r.underline:
+                underline += 1
+            asterisks += r.text.count("*")
+    return bold, italic, underline, asterisks
+
+
+def test_roundtrip_paragraph_preserves_bold_italic():
+    """Issue #72: bold/italic in plain paragraphs were rebuilt as literal **/* text.
+
+    The paragraph emission path (reconstruct.py) was calling add_paragraph(content)
+    directly, never parsing markdown emphasis into runs.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("Plain ")
+        r = p.add_run("bold"); r.bold = True
+        p.add_run(" and ")
+        r = p.add_run("italic"); r.italic = True
+        p.add_run(".")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, italic, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1, "bold run lost on rebuild"
+        assert italic >= 1, "italic run lost on rebuild"
+        assert asterisks == 0, "literal * leaked into rebuilt docx"
+
+
+def test_roundtrip_heading_preserves_bold():
+    """Bold inside a heading must survive rebuild as a bold run, not literal **."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        h = doc.add_paragraph(style="Heading 1")
+        h.add_run("Intro ")
+        r = h.add_run("Title"); r.bold = True
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert asterisks == 0
+
+
+def test_roundtrip_bold_with_trailing_space():
+    """The exact reporter symptom: bold run 'СОДЕРЖАНИЕ ' must rebuild as bold."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        r = p.add_run("СОДЕРЖАНИЕ "); r.bold = True
+        p.add_run("body")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert asterisks == 0
+        # The Russian word survives intact.
+        assert any("СОДЕРЖАНИЕ" in p.text for p in rebuilt.paragraphs)

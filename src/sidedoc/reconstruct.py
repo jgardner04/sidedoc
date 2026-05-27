@@ -1704,7 +1704,8 @@ def create_docx_from_blocks(
                 para = doc.add_paragraph(style=style_name)
                 add_text_with_hyperlinks(para, text)
             else:
-                para = doc.add_paragraph(text, style=style_name)
+                para = doc.add_paragraph(style=style_name)
+                apply_inline_formatting(para, text)
         elif block.type == "table":
             # For tables, use remapped ID for style lookup if available
             table_style_id = block.id
@@ -1776,7 +1777,8 @@ def create_docx_from_blocks(
                 para = doc.add_paragraph()
                 add_text_with_hyperlinks(para, content)
             else:
-                para = doc.add_paragraph(content)
+                para = doc.add_paragraph()
+                apply_inline_formatting(para, content)
 
         # Apply styling - use remapped ID if available
         if para is not None:
