@@ -292,10 +292,11 @@ def test_extract_mixed_inline_formatting():
 
 
 def test_extract_escaped_asterisks_in_text():
-    """Test that literal asterisks in text are preserved (not treated as markdown).
+    """Literal asterisks in source text are backslash-escaped on extract.
 
-    When docx contains text with asterisks but NO formatting applied,
-    those asterisks should appear in markdown as-is.
+    Without escaping, mistune would interpret them as emphasis markers on
+    rebuild and either drop them or produce nested-emphasis artifacts. See
+    issue #72.
     """
     docx_path = create_formatted_docx([
         ("This has ", False, False, False),
@@ -306,18 +307,17 @@ def test_extract_escaped_asterisks_in_text():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # No formatting was applied, so asterisks should be preserved literally
-        assert blocks[0].content == "This has *literal asterisks* in text"
+        assert blocks[0].content == "This has \\*literal asterisks\\* in text"
         assert blocks[0].type == "paragraph"
     finally:
         Path(docx_path).unlink()
 
 
 def test_extract_nested_formatting_bold_containing_italic():
-    """Test nested formatting: bold text containing italic text.
+    """Bold/italic runs with adjacent whitespace migrate the space outside markers.
 
-    In docx: "start BOLD_START normal ITALIC_START both ITALIC_END normal BOLD_END end"
-    Current implementation: treats each run separately, resulting in adjacent markers
+    Without migration the rebuilt content.md would have CommonMark-invalid
+    emphasis delimiters that mistune renders as literal asterisks (issue #72).
     """
     docx_path = create_formatted_docx([
         ("start ", False, False, False),
@@ -330,11 +330,7 @@ def test_extract_nested_formatting_bold_containing_italic():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # Current implementation: adjacent runs create adjacent markers
-        # "bold " is bold: **bold **
-        # "and italic" is bold+italic: ***and italic***
-        # " bold" is bold: ** bold**
-        assert blocks[0].content == "start **bold *****and italic***** bold** end"
+        assert blocks[0].content == "start **bold** ***and italic*** **bold** end"
         assert blocks[0].type == "paragraph"
     finally:
         Path(docx_path).unlink()
@@ -380,9 +376,11 @@ def test_extract_empty_formatting_runs():
 
 
 def test_extract_whitespace_only_formatted_runs():
-    """Test formatting on whitespace-only runs.
+    """A whitespace-only run cannot carry emphasis through CommonMark.
 
-    Edge case: what happens when only spaces are bold/italic?
+    Both `**   **` and `* *` violate flanking rules, so we drop the markers
+    rather than emit invalid markdown that mistune would render as literal
+    asterisks. Bold on whitespace has no visible effect in docx anyway.
     """
     docx_path = create_formatted_docx([
         ("word", False, False, False),
@@ -393,8 +391,7 @@ def test_extract_whitespace_only_formatted_runs():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # Spaces with formatting should preserve the formatting markers
-        assert blocks[0].content == "word**   **word"
+        assert blocks[0].content == "word   word"
         assert blocks[0].type == "paragraph"
     finally:
         Path(docx_path).unlink()
@@ -429,8 +426,8 @@ def test_extract_unicode_with_formatting():
     try:
         blocks, _ = extract_blocks(docx_path)
         assert len(blocks) == 1
-        # Each run is formatted separately, creating adjacent markers
-        assert blocks[0].content == "Hello **世界*** café**** 🎉***"
+        # Whitespace-flanking migration produces valid CommonMark per run.
+        assert blocks[0].content == "Hello **世界** *café* ***🎉***"
         assert blocks[0].type == "paragraph"
     finally:
         Path(docx_path).unlink()
@@ -1006,6 +1003,102 @@ def test_wrap_formatting_bold_italic():
     """Test wrap_formatting with bold and italic."""
     from sidedoc.extract import wrap_formatting
     assert wrap_formatting("hello", True, True) == "***hello***"
+
+
+def test_wrap_formatting_bold_trailing_space():
+    """CommonMark forbids a right-flanking ** preceded by whitespace.
+
+    Trailing space must be migrated outside the closing marker so mistune
+    can parse the emphasis on rebuild (issue #72).
+    """
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello ", True, False) == "**hello** "
+
+
+def test_wrap_formatting_italic_leading_space():
+    """CommonMark forbids a left-flanking * followed by whitespace."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting(" hello", False, True) == " *hello*"
+
+
+def test_wrap_formatting_bold_italic_both_sides_whitespace():
+    """Whitespace on both sides must move outside both markers."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting(" hello ", True, True) == " ***hello*** "
+
+
+def test_wrap_formatting_all_whitespace_run():
+    """A whitespace-only run must not produce empty emphasis markers."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("   ", True, False) == "   "
+
+
+def test_wrap_formatting_tab_adjacent_to_marker():
+    """Tabs count as Unicode whitespace under CommonMark flanking rules."""
+    from sidedoc.extract import wrap_formatting
+    assert wrap_formatting("hello\t", True, False) == "**hello**\t"
+
+
+def test_escape_markdown_inline_asterisk():
+    """Literal * in plain run text must be escaped so mistune passes it through."""
+    from sidedoc.extract import escape_markdown_inline
+    assert escape_markdown_inline("a*b") == "a\\*b"
+
+
+def test_escape_markdown_inline_backslash_first():
+    """Backslash must be escaped before * so escaping is idempotent on rebuild."""
+    from sidedoc.extract import escape_markdown_inline
+    assert escape_markdown_inline("a\\b") == "a\\\\b"
+
+
+def test_escape_markdown_inline_preserves_tab_and_newline():
+    """Escaping must not touch whitespace; tabs/newlines are real characters."""
+    from sidedoc.extract import escape_markdown_inline
+    assert escape_markdown_inline("a\tb\nc") == "a\tb\nc"
+
+
+def test_extract_bold_run_with_trailing_space():
+    """Issue #72: bold run 'СОДЕРЖАНИЕ ' was producing literal ** in rebuilt docx.
+
+    Trailing whitespace must be migrated outside the markers so mistune parses
+    the emphasis correctly on round-trip.
+    """
+    docx_path = create_formatted_docx([
+        ("СОДЕРЖАНИЕ ", True, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert blocks[0].content == "**СОДЕРЖАНИЕ** "
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_italic_run_with_leading_space():
+    """Leading whitespace on an italic run must move outside the markers."""
+    docx_path = create_formatted_docx([
+        ("intro ", False, False, False),
+        (" word", False, True, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert blocks[0].content == "intro  *word*"
+    finally:
+        Path(docx_path).unlink()
+
+
+def test_extract_literal_asterisk_escaped_in_plain_text():
+    """Literal * in source must be escaped on extract so it survives mistune."""
+    docx_path = create_formatted_docx([
+        ("He said *literally*", False, False, False),
+    ])
+
+    try:
+        blocks, _ = extract_blocks(docx_path)
+        assert blocks[0].content == "He said \\*literally\\*"
+    finally:
+        Path(docx_path).unlink()
 
 
 def test_format_hyperlink_md_plain():
