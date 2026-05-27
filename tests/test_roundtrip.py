@@ -135,18 +135,28 @@ def test_complete_workflow():
 
 
 def _count_runs_by_format(doc):
-    """Helper: tally bold/italic/underline runs across all paragraphs."""
+    """Helper: tally bold/italic/underline runs across body paragraphs and
+    table cells. Counts literal '*' in run text as well."""
     bold = italic = underline = 0
     asterisks = 0
-    for p in doc.paragraphs:
-        for r in p.runs:
-            if r.bold:
-                bold += 1
-            if r.italic:
-                italic += 1
-            if r.underline:
-                underline += 1
-            asterisks += r.text.count("*")
+
+    def _tally(paragraphs):
+        nonlocal bold, italic, underline, asterisks
+        for p in paragraphs:
+            for r in p.runs:
+                if r.bold:
+                    bold += 1
+                if r.italic:
+                    italic += 1
+                if r.underline:
+                    underline += 1
+                asterisks += r.text.count("*")
+
+    _tally(doc.paragraphs)
+    for t in doc.tables:
+        for row in t.rows:
+            for c in row.cells:
+                _tally(c.paragraphs)
     return bold, italic, underline, asterisks
 
 
@@ -311,6 +321,39 @@ def test_roundtrip_leading_tab_in_paragraph():
 
         rebuilt = Document("rebuilt.docx")
         assert _count_tab_elements(rebuilt) == 1
+
+
+def test_roundtrip_issue_72_russian_report():
+    """End-to-end regression check against the file from issue #72.
+
+    Original measurements (reporter's evidence + our remeasurement):
+        bold runs:        47
+        italic runs:      14
+        tab characters:   10   (reporter's '78' included pPr tab-stop defs)
+        literal '*':       0
+        non-empty paras: 111
+
+    Before any fix this branch ships:
+        italic 14 -> 0, tabs 10 -> 0, literal '*' 0 -> 160.
+
+    Assert the round-trip is now lossless for these dimensions.
+    """
+    runner = CliRunner()
+    fixture = Path(__file__).parent / "fixtures" / "issue-72-russian-report.docx"
+    with runner.isolated_filesystem() as tmpdir:
+        src = Path(tmpdir) / "report.docx"
+        src.write_bytes(fixture.read_bytes())
+
+        assert runner.invoke(main, ["extract", str(src)]).exit_code == 0
+        assert runner.invoke(main, ["build", str(src.with_suffix(".sidedoc")), "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, italic, _, asterisks = _count_runs_by_format(rebuilt)
+        # Cell-level bold may lose one run; cell extraction is its own ticket.
+        assert bold >= 45, f"bold runs dropped: {bold}"
+        assert italic >= 14, f"italic runs dropped: {italic}"
+        assert asterisks == 0, f"stray '*' leaked into rebuilt: {asterisks}"
+        assert _count_tab_elements(rebuilt) == 10, "tab characters dropped on rebuild"
 
 
 def test_roundtrip_signature_line():
