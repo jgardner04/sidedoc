@@ -295,6 +295,24 @@ def test_roundtrip_consecutive_tabs():
         assert _count_tab_elements(rebuilt) == 3
 
 
+def test_roundtrip_leading_tab_in_paragraph():
+    """Leading tab on a paragraph (e.g. '\\t____ Name') must not be stripped
+    by parse_markdown_to_blocks. Issue #72 had several such signature lines."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run().add_tab()
+        p.add_run("____ Лищук И.В.")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 1
+
+
 def test_roundtrip_signature_line():
     """Russian signature line from issue #72: 'Подпись:\\t\\t\\t____________'."""
     runner = CliRunner()

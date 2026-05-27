@@ -240,13 +240,25 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
 
     Handles nested formatting, escaped markers, and malformed markdown.
     Returns plain text on parse error.
+
+    Note: mistune follows CommonMark block-parsing semantics and strips
+    leading whitespace (and may treat 4+ leading spaces as a code block).
+    We're using it for inline-only parsing on already-segmented blocks, so
+    we strip leading whitespace ourselves and re-prepend it as a plain
+    text run. This preserves leading tabs (e.g. signature lines).
     """
+    leading_ws_len = len(content) - len(content.lstrip(" \t"))
+    leading_ws = content[:leading_ws_len]
+    body = content[leading_ws_len:]
+
     try:
-        tokens, _ = _MARKDOWN_PARSER.parse(content)
+        tokens, _ = _MARKDOWN_PARSER.parse(body)
     except Exception:
         return [(content, False, False)]
 
     runs: list[tuple[str, bool, bool]] = []
+    if leading_ws:
+        runs.append((leading_ws, False, False))
     token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
     for block_token in token_list:
         if block_token.get("type") == "paragraph":
@@ -989,14 +1001,19 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 level=level,
             )
         else:
+            # Use rstrip-only so leading whitespace (tabs, spaces) survives
+            # into the paragraph content. extract.py emits literal tabs for
+            # signature lines like "\t____ Name" and stripping them here
+            # silently drops the leading tab on rebuild. See issue #72.
+            paragraph_content = line.rstrip()
             block = Block(
                 id=f"block-{block_id}",
                 type="paragraph",
-                content=stripped_line,
+                content=paragraph_content,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
-                content_end=content_position + len(stripped_line),
-                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
+                content_end=content_position + len(paragraph_content),
+                content_hash=hashlib.sha256(paragraph_content.encode()).hexdigest(),
             )
 
         blocks.append(block)
