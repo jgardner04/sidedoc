@@ -875,17 +875,16 @@ def encode_url_for_markdown(url: str) -> str:
 
 
 def escape_markdown_link_text(text: str) -> str:
-    """Escape special markdown characters in link text.
+    """Escape special markdown characters in hyperlink display text.
 
-    Args:
-        text: The link text to escape
-
-    Returns:
-        Escaped text safe for markdown link syntax
+    Covers the full markdown-special set (``\\ * _ ` [ ]``), not just brackets:
+    ``[`` / ``]`` would break link syntax, while ``*`` / ``_`` / ``` ` ``` at the
+    edges of the display text would otherwise be mis-parsed as emphasis markers
+    on rebuild (e.g. display text ``*ab*`` stripped to ``ab`` + italic). Must be
+    kept symmetric with ``reconstruct.parse_link_text_formatting``, which
+    unescapes the same set. Delegates to :func:`escape_markdown_inline`.
     """
-    # Escape brackets which would break link syntax
-    result = text.replace("[", "\\[").replace("]", "\\]")
-    return result
+    return escape_markdown_inline(text)
 
 
 def get_hyperlink_url(hyperlink_elem: Any, doc_part: Any) -> Optional[str]:

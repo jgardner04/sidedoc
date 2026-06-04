@@ -734,8 +734,12 @@ def parse_link_text_formatting(link_text: str) -> tuple[str, bool, bool]:
         text = text[1:-1]
         is_italic = True
 
-    # Unescape brackets that were escaped during extraction
-    text = text.replace("\\[", "[").replace("\\]", "]")
+    # Unescape the markdown-special characters that extract.escape_markdown_link_text
+    # escaped (\\ * _ ` [ ]). Outer emphasis markers (added by wrap_formatting and
+    # stripped above) are unescaped real markers; literal markers in the display
+    # text arrive here as backslash escapes. A single backslash-collapsing pass
+    # reverses the escaping for the whole set, including escaped backslashes.
+    text = re.sub(r"\\(.)", r"\1", text)
 
     return text, is_bold, is_italic
 
