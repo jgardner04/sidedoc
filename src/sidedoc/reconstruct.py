@@ -734,12 +734,13 @@ def parse_link_text_formatting(link_text: str) -> tuple[str, bool, bool]:
         text = text[1:-1]
         is_italic = True
 
-    # Unescape the markdown-special characters that extract.escape_markdown_link_text
-    # escaped (\\ * _ ` [ ]). Outer emphasis markers (added by wrap_formatting and
-    # stripped above) are unescaped real markers; literal markers in the display
-    # text arrive here as backslash escapes. A single backslash-collapsing pass
-    # reverses the escaping for the whole set, including escaped backslashes.
-    text = re.sub(r"\\(.)", r"\1", text)
+    # Unescape only the markdown-special characters that
+    # extract.escape_markdown_link_text escapes (\\ * _ ` [ ]). The pattern is
+    # deliberately narrow: a non-special backslash sequence in a hand-authored
+    # content.md label (e.g. a Windows path "C:\Users") must survive verbatim
+    # rather than have its backslash swallowed. Outer emphasis markers were
+    # stripped above; literal edge markers arrive here as backslash escapes.
+    text = re.sub(r"\\([\\*_`\[\]])", r"\1", text)
 
     return text, is_bold, is_italic
 
