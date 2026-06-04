@@ -4,7 +4,7 @@
 
 An AI-native document format that separates content from formatting, enabling efficient AI interaction with documents while preserving rich formatting for human consumption.
 
-**Status:** ✅ MVP Complete with Table, Hyperlink, and Track Changes support
+**Status:** ✅ MVP Complete with Table, Hyperlink, Track Changes, Chart, and experimental PDF support
 
 ---
 
@@ -88,7 +88,7 @@ Changes to either should propagate to the other. Sidedoc makes this possible.
 
 ## How It Works
 
-Sidedoc extracts a `.docx` into a `.sidedoc/` directory:
+Sidedoc extracts a `.docx` (or, with optional PDF extras, a `.pdf`) into a `.sidedoc/` directory:
 
 ```
 document.sidedoc/
@@ -101,7 +101,7 @@ document.sidedoc/
 
 For sharing, `sidedoc pack` creates a `.sdoc` ZIP archive.
 
-The AI works with `content.md` — pure markdown with no metadata or special markers. The other files preserve formatting information so the original docx can be reconstructed with styling intact.
+The AI works with `content.md` — pure markdown with no metadata or special markers. The other files preserve formatting information so the original document can be reconstructed with styling intact. DOCX is the primary lossless workflow; PDF support is experimental and best-effort.
 
 ### The Sync Advantage
 
@@ -130,10 +130,13 @@ This means you can maintain a "golden master" document with perfect corporate st
 # Extract: Create sidedoc from docx
 sidedoc extract document.docx
 
-# Build: Generate docx from sidedoc
+# Optional PDF support (experimental; requires pip install 'sidedoc[pdf]')
+sidedoc extract document.pdf
+
+# Build: Generate docx or pdf from sidedoc based on manifest source_format
 sidedoc build document.sidedoc
 
-# Sync: After editing content.md, update the docx
+# Sync: After editing content.md, update the docx (DOCX only; PDF sync unsupported)
 sidedoc sync document.sidedoc
 
 # Validate: Check sidedoc integrity

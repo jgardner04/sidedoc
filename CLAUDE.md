@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Sidedoc is an AI-native document format that separates content from formatting. It enables efficient AI interaction with documents while preserving rich formatting for human consumption. The canonical format is a `.sidedoc/` directory containing markdown content and formatting metadata. A `.sdoc` ZIP archive is used for distribution and sharing.
 
-**Status:** MVP complete with hyperlink, track changes, table, headers/footers, chart, and paragraph format property support (extraction, reconstruction).
+**Status:** MVP complete with hyperlink, track changes, table, headers/footers, chart, PDF, and paragraph format property support (extraction, reconstruction).
 
 ## Development Philosophy
 
@@ -94,9 +94,11 @@ src/sidedoc/
 ├── cli.py              # CLI entry points (click), includes validate command
 ├── constants.py        # Shared constants (extensions, limits, patterns)
 ├── extract.py          # docx → sidedoc (paragraphs, tables, images, charts, headers/footers)
+├── extract_pdf.py      # pdf → sidedoc via Docling (optional, requires [pdf] extras)
 ├── models.py           # Block, Style, Manifest, TrackChange dataclasses
 ├── package.py          # Archive/directory creation helpers, block serialization
 ├── reconstruct.py      # sidedoc → docx; owns inline formatting, table creation, block styling, header/footer reconstruction
+├── reconstruct_pdf.py  # sidedoc → pdf via WeasyPrint (optional, requires [pdf] extras)
 ├── store.py            # Read-only abstraction over directory/ZIP
 ├── sync.py             # edited content → updated docx (imports formatting from reconstruct.py)
 └── utils.py            # shared utilities
@@ -104,129 +106,42 @@ src/sidedoc/
 
 ## Key Concepts
 
-- **Extract:** Convert a .docx file into a Sidedoc container (content.md + formatting metadata)
-- **Reconstruct (build):** Rebuild the original .docx from the Sidedoc container with formatting intact
-- **Sync:** After editing content.md, update the .docx while preserving original formatting. Non-block metadata (headers/footers, footnotes, columns, page setup) is carried forward from the existing `structure.json` — only the `blocks` array is rebuilt from content.
+- **Extract:** Convert a `.docx` or `.pdf` file into a Sidedoc container (`content.md` + formatting metadata). PDF extraction requires `pip install sidedoc[pdf]`.
+- **Reconstruct (build):** Rebuild the original document from the Sidedoc container. Output format (`.docx` or `.pdf`) is determined from `manifest.json`'s `source_format` field.
+- **Sync:** Update DOCX output after editing `content.md` while preserving original formatting. Sync is DOCX-only; PDF sync is not supported.
 
-### Block Types
+For durable format documentation, see [`docs/sidedoc-format.md`](docs/sidedoc-format.md).
 
-| Type | Markdown Format | Notes |
-|------|-----------------|-------|
-| `heading` | `# Title` | Levels 1-6 supported |
-| `paragraph` | Plain text | Inline formatting: `**bold**`, `*italic*` |
-| `list` | `- bullet` or `1. numbered` | |
-| `image` | `![alt](assets/image.png)` | |
-| `table` | GFM pipe tables | Merged cells, cell formatting, header rows preserved |
-| `hyperlink` | `[text](url)` | Inline within other blocks |
-| `chart` | `![Chart](assets/chart1.png)` | Alt text **must** start with `"Chart"` — this is how reconstruction distinguishes charts from images |
+## Feature Documentation
 
-### Headers and Footers
+Detailed feature behavior belongs in project docs, not in this agent instruction file:
 
-Headers and footers are stored as section metadata in `structure.json` (not as blocks in `content.md`). Each section can have up to six variants: `header_default`, `header_first`, `header_even`, `footer_default`, `footer_first`, `footer_even`.
+- [Sidedoc format](docs/sidedoc-format.md) — container files, block types, headers/footers, manifest fields.
+- [Tables PRD](docs/tables-prd.md) — GFM table syntax, table metadata, styling, merged cells.
+- [Chart support](docs/charts.md) — chart detection, fallback behavior, OOXML archival, reconstruction limits.
+- [PDF support](docs/pdf-support.md) — optional Docling/WeasyPrint flow, limitations, dependency pitfalls.
+- [Style preservation](docs/style-preservation.md) — paragraph format fields, boolean guard rules, run-level formatting.
 
-**Limitation:** Header/footer content is extracted and reconstructed as **plain text only**. Inline formatting (bold, italic, hyperlinks) within header/footer paragraphs is silently dropped. Images in headers/footers are extracted to `assets/` and restored on build.
+## Agent Gotchas
 
-### Chart Support
-
-Charts are extracted using their cached PNG/EMF fallback image from the `mc:AlternateContent` OOXML wrapper. The live chart XML is not round-tripped in this phase.
-
-- **Detection:** `extract_chart_from_paragraph()` looks for `mc:AlternateContent` with `mc:Choice Requires="c"` containing `c:chart`, then extracts the blip from `mc:Fallback`. Also handles flat `w:drawing` charts (no `mc:AlternateContent`).
-- **Fallback behavior:** Charts with no cached image produce `[Chart: no preview available]` as a `paragraph` block (not a `chart` block).
-- **EMF/WMF:** These metafile formats are validated by checking magic bytes first, then skip PIL validation (since PIL cannot open them).
-- **Ordering rule:** Chart detection must run before image extraction in `_process_paragraph()`. Chart drawings contain both `c:chart` and an `a:blip` — running image extraction first silently consumes the chart as a regular image.
-- **Reconstruction:** Chart blocks reconstruct as embedded images (the cached fallback). Full chart fidelity (JON-108) is not yet implemented.
-- **`chart_metadata`:** Currently stores `{"chart_rel_id": ...}` for charts with a resolved relationship ID. Degraded chart paragraphs (no preview / validation error) also preserve `chart_rel_id` in `chart_metadata` when one is available; `None` only when no relationship ID can be resolved. Full chart data (type, series, labels) reserved for JON-107.
-
-### Style Dataclass — Paragraph Format Fields
-
-The `Style` dataclass (in `models.py`) carries paragraph-level formatting alongside font and alignment:
-
-- **Indents/spacing** (`left_indent`, `right_indent`, `first_line_indent`, `space_before`, `space_after`): `Optional[int]` in EMUs
-- **`line_spacing`**: `Optional[int | float]` — proportional spacing is a float (e.g. `1.5` = 1.5× lines); exact/at-least spacing is an integer EMU value
-- **`line_spacing_rule`**: `Optional[str]` — JSON-safe `WD_LINE_SPACING` enum name (e.g. `"EXACTLY"`, `"AT_LEAST"`) needed to interpret integer `line_spacing` values during reconstruction
-- **Paragraph flags** (`keep_together`, `keep_with_next`, `page_break_before`): `Optional[bool]`
-
-**Guard rule:** Always check `is not None` (not truthiness) when applying boolean Style fields. `False` is a meaningful override (e.g. turn off keep_together) and must survive round-trip:
-
-```python
-# Correct
-if block_style.get("keep_together") is not None:
-    pf.keep_together = block_style["keep_together"]
-
-# Wrong — silently drops explicit False
-if block_style.get("keep_together"):
-    pf.keep_together = block_style["keep_together"]
-```
-
-### Per-Run Font Formatting vs. Shared Style Mutation
-
-When applying font overrides during reconstruction, **always write to individual runs** (`run.font.name`, `run.font.size`), not to `para.style.font`. The `para.style` object is shared across all paragraphs using the same docx style — mutating it changes every paragraph that uses that style, not just the current one:
-
-```python
-# Correct — direct run formatting is the override layer above style defaults
-for run in para.runs:
-    run.font.name = block_style["font_name"]
-
-# Wrong — mutates the shared style object, affecting all paragraphs with that style
-para.style.font.name = block_style["font_name"]
-```
-
-### `docx_style` Application
-
-`docx_style` is applied first in `_apply_block_formatting()` so style defaults take effect before direct overrides. Three values are intentionally skipped:
-- `"Normal"` — default style, no-op assignment can fail on read-only paragraphs
-- `"Table"` — table cell paragraphs use a separate `_apply_cell_styles` path
-- `"TextBox"` — text box paragraphs have their own reconstruction path
-
-When a custom style name is not found in the target document, a `UserWarning` is emitted and formatting falls back to Normal (no exception raised).
-
-### Table Support (Phase 2)
-
-Tables are extracted as GFM (GitHub Flavored Markdown) pipe table syntax:
-
-```markdown
-| Name | Role | Start Date |
-| --- | --- | --- |
-| Alice | Engineer | 2024-01-15 |
-```
-
-- **Alignment:** `---` (default left), `:---` (explicit left), `:---:` (center), `---:` (right)
-- **Escaping:** Pipe characters in content escaped as `\|`
-- **Metadata:** `table_metadata` in Block stores rows, cols, cells, column_alignments, docx_table_index, header_rows, merged_cells
-- **Styling:** `table_formatting` in Style stores column_widths, table_alignment, table_style, cell_styles (including background colors and pattern fills like `diagStripe`, `horzStripe`)
-
-## Sidedoc Format
-
-A `.sidedoc/` directory (or `.sdoc` ZIP for distribution) contains:
-
-| File | Required (dir) | Required (ZIP) | Purpose |
-|------|:-:|:-:|---------|
-| `content.md` | Yes | Yes | Clean markdown that AI reads/writes |
-| `styles.json` | Yes | Yes | Formatting information per block |
-| `structure.json` | No* | Yes | Block structure, docx paragraph mappings, and section metadata (headers, footers, page setup) |
-| `manifest.json` | No* | Yes | Metadata and version info |
-| `assets/` | No | No | Images and embedded files |
-
-\* `structure.json` is written during `sidedoc extract` and updated by `sidedoc sync`; `manifest.json` is generated by `sidedoc sync`
+- **TDD is mandatory.** Write a failing test before implementation changes.
+- **Chart detection must run before image extraction.** Chart drawings contain both `c:chart` and `a:blip`; image extraction first will consume charts as regular images. See [docs/charts.md](docs/charts.md).
+- **PDF dependencies are optional.** Do not import Docling, WeasyPrint, or PyMuPDF eagerly. Use lazy imports/guard helpers so base imports and non-PDF commands work without `sidedoc[pdf]`. See [docs/pdf-support.md](docs/pdf-support.md).
+- **Preserve explicit `False` style values.** Use `is not None`, not truthiness, when applying boolean paragraph formatting fields. See [docs/style-preservation.md](docs/style-preservation.md).
+- **Do not mutate shared DOCX style objects for per-block font overrides.** Apply font overrides to individual runs. See [docs/style-preservation.md](docs/style-preservation.md).
+- **Keep table metadata consistent with GFM content.** Table dimensions, header rows, merged cells, and cell formatting must round-trip together. See [docs/tables-prd.md](docs/tables-prd.md).
 
 ## Benchmarks
 
-Benchmarking suite compares Sidedoc against alternative document processing pipelines (sidedoc, pandoc, raw_docx, ooxml, docint) across LLM tasks.
+Benchmarking docs and commands live in [`benchmarks/README.md`](benchmarks/README.md). Published results live in [`website/docs/benchmarks.md`](website/docs/benchmarks.md).
+
+Common commands:
 
 ```bash
-# Run benchmarks
 python -m benchmarks.run_benchmark --pipeline sidedoc --corpus synthetic
-
-# Run with format fidelity scoring (round-trip preservation)
 python -m benchmarks.run_benchmark --pipeline sidedoc --pipeline pandoc --fidelity
-
-# Generate report
 python -m benchmarks.generate_report benchmarks/results/benchmark-latest.json
 ```
-
-**Format Fidelity**: Measures what each pipeline preserves on extract→rebuild round-trip across 5 dimensions: structure (heading levels, counts), formatting (bold/italic/font per run), tables (structure, merged cells, styles), hyperlinks (text+URL pairs), and track changes (insertions/deletions/authors). Only sidedoc and pandoc support rebuild.
-
-Full documentation: [`benchmarks/README.md`](benchmarks/README.md) | Published results: [`website/docs/benchmarks.md`](website/docs/benchmarks.md)
 
 ## Development Commands
 
@@ -237,6 +152,9 @@ pytest
 # Run tests with coverage
 pytest --cov=sidedoc
 
+# Run tests excluding PDF (skips tests requiring docling/weasyprint)
+pytest -m "not pdf"
+
 # Type checking
 mypy src/
 
@@ -246,8 +164,9 @@ sidedoc extract document.docx --pack             # Extract to document.sdoc ZIP
 sidedoc extract document.docx --force            # Overwrite existing output
 sidedoc extract document.docx --track-changes    # Force extract track changes
 sidedoc extract document.docx --no-track-changes # Accept all changes
-sidedoc build document.sidedoc                   # Build docx (accepts dir or ZIP)
-sidedoc sync document.sidedoc                    # Sync edited content.md (directory only)
+sidedoc extract document.pdf                     # Extract PDF (requires pip install sidedoc[pdf])
+sidedoc build document.sidedoc                   # Build document; auto-detects .docx or .pdf from manifest
+sidedoc sync document.sidedoc                    # Sync edited content.md (directory only, DOCX source only)
 sidedoc sync document.sidedoc -o out.docx        # Sync and build updated docx
 sidedoc sync document.sidedoc --author "AI"      # Sync with custom author for track changes
 sidedoc validate document.sidedoc                # Validate structure, table dimensions, merged cells, styles completeness
@@ -264,6 +183,12 @@ sidedoc unpack document.sdoc                     # Unpack .sdoc ZIP → .sidedoc
 - mistune — Markdown parsing
 - click — CLI framework
 - pytest — Testing
+- Pillow — Image validation
+
+**Optional (`pip install sidedoc[pdf]`):**
+- docling — PDF extraction (IBM; pulls in torch + transformers, ~900 MB)
+- weasyprint — PDF reconstruction (markdown → HTML → PDF; requires libpango system library)
+- pymupdf — PDF inspection utilities
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
