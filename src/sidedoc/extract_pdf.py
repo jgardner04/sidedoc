@@ -1,12 +1,22 @@
 """Extract content from PDF files into Sidedoc Block/Style format using Docling."""
 
 import hashlib
+import logging
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from sidedoc.extract import generate_block_id
 from sidedoc.models import Block, SectionProperties, Style
+
+logger = logging.getLogger(__name__)
+
+# Docling labels/class names that map to the text-block family (paragraphs,
+# list items, captions). Dispatch keys on these rather than ``isinstance`` so
+# the optional ``docling`` dependency is never imported at module level and the
+# duck-typed fakes in the test-suite continue to work.
+_TEXT_ITEM_TYPES = {"TextItem", "ListItem"}
+_TEXT_ITEM_LABELS = {"list_item", "caption", "text", "paragraph"}
 
 
 def require_docling() -> Any:
@@ -77,6 +87,10 @@ def _build_table_metadata(table_data: dict[str, Any]) -> dict[str, Any]:
     for cell in table_data.get("table_cells", []):
         row = cell["start_row_offset_idx"]
         col = cell["start_col_offset_idx"]
+        # Mirror the bounds guard in _table_to_gfm so the GFM grid and this
+        # metadata always agree on which cells exist (CLAUDE.md table rule).
+        if row >= num_rows or col >= num_cols:
+            continue
         row_span = cell.get("row_span", 1)
         col_span = cell.get("col_span", 1)
 
@@ -114,6 +128,12 @@ def extract_pdf_document(
 
     Returns:
         Tuple of (blocks, image_data, sections)
+
+    Content that cannot be faithfully extracted (unrecognized Docling items,
+    tables whose reference can't be resolved, skipped images) is reported via
+    ``logging.WARNING`` on this module's logger rather than dropped silently.
+    The CLI surfaces those warnings to stderr and ``--strict`` turns them into a
+    non-zero exit.
     """
     if not Path(pdf_path).exists():
         raise FileNotFoundError(pdf_path)
@@ -130,8 +150,15 @@ def extract_pdf_document(
 
     blocks: list[Block] = []
     image_data: dict[str, bytes] = {}
-    table_idx = 0
     ordered_list_index = 0
+    skipped_images = 0
+
+    # Resolve tables by Docling self_ref (e.g. "#/tables/0") so a dropped or
+    # furniture table can never desync subsequent tables. Fall back to a
+    # positional cursor only when self_ref is unavailable.
+    tables_by_ref = {t.get("self_ref"): t for t in tables_data if t.get("self_ref")}
+    table_cursor = 0
+    table_output_index = 0
 
     # Track markdown content position for content_start/content_end
     content_parts: list[str] = []
@@ -148,7 +175,15 @@ def extract_pdf_document(
 
         block_index = len(blocks)
 
-        if item_type == "SectionHeaderItem" and label == "section_header":
+        is_heading = (
+            label in ("section_header", "title")
+            or item_type in ("SectionHeaderItem", "TitleItem")
+        )
+        is_table = label == "table" or item_type == "TableItem"
+        is_picture = label == "picture" or item_type == "PictureItem"
+        is_text = item_type in _TEXT_ITEM_TYPES or label in _TEXT_ITEM_LABELS
+
+        if is_heading:
             ordered_list_index = 0
             doc_level = getattr(item, "level", 1) or 1
             text = getattr(item, "text", "")
@@ -167,36 +202,50 @@ def extract_pdf_document(
             content_parts.append(content)
             current_offset += len(content) + 1  # +1 for newline join
 
-        elif item_type == "TableItem" and label == "table":
+        elif is_table:
             ordered_list_index = 0
-            if table_idx < len(tables_data):
-                tbl = tables_data[table_idx]
-                tbl_data = tbl.get("data", {})
-                content = _table_to_gfm(tbl_data)
-                metadata = _build_table_metadata(tbl_data)
-                metadata["docx_table_index"] = table_idx
-
-                block = Block(
-                    id=generate_block_id(block_index),
-                    type="table",
-                    content=content,
-                    docx_paragraph_index=block_index,
-                    content_start=current_offset,
-                    content_end=current_offset + len(content),
-                    content_hash=_compute_content_hash(content),
-                    table_metadata=metadata,
+            self_ref = getattr(item, "self_ref", None)
+            tbl = None
+            if self_ref is not None and self_ref in tables_by_ref:
+                tbl = tables_by_ref[self_ref]
+            elif self_ref is None and table_cursor < len(tables_data):
+                tbl = tables_data[table_cursor]
+                table_cursor += 1
+            if tbl is None:
+                logger.warning(
+                    "Skipped table with unresolved reference %s "
+                    "(no matching Docling table data)", self_ref
                 )
-                blocks.append(block)
-                content_parts.append(content)
-                current_offset += len(content) + 1
-                table_idx += 1
+                continue
 
-        elif item_type == "PictureItem" and label == "picture":
-            # Image extraction not yet implemented — skip to avoid broken asset refs
+            tbl_data = tbl.get("data", {})
+            content = _table_to_gfm(tbl_data)
+            metadata = _build_table_metadata(tbl_data)
+            metadata["docx_table_index"] = table_output_index
+            table_output_index += 1
+
+            block = Block(
+                id=generate_block_id(block_index),
+                type="table",
+                content=content,
+                docx_paragraph_index=block_index,
+                content_start=current_offset,
+                content_end=current_offset + len(content),
+                content_hash=_compute_content_hash(content),
+                table_metadata=metadata,
+            )
+            blocks.append(block)
+            content_parts.append(content)
+            current_offset += len(content) + 1
+
+        elif is_picture:
+            # Image extraction not yet implemented — skip to avoid broken asset
+            # refs, but tally so the user is warned (never a silent drop).
             ordered_list_index = 0
+            skipped_images += 1
             continue
 
-        elif item_type == "TextItem":
+        elif is_text:
             text = getattr(item, "text", "")
             if not text.strip():
                 continue
@@ -231,6 +280,17 @@ def extract_pdf_document(
             blocks.append(block)
             content_parts.append(content)
             current_offset += len(content) + 1
+
+        else:
+            logger.warning(
+                "Skipped unsupported PDF element: %s/%s", item_type, label or "?"
+            )
+
+    if skipped_images:
+        logger.warning(
+            "%d image(s) skipped (PDF image extraction not yet supported)",
+            skipped_images,
+        )
 
     sections = [SectionProperties()]
     return blocks, image_data, sections

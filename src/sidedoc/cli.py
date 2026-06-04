@@ -1,10 +1,13 @@
 """CLI interface for sidedoc."""
 
 import json
+import logging
 import shutil
 import sys
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import click
 
@@ -37,6 +40,48 @@ EXIT_ERROR = 1
 EXIT_NOT_FOUND = 2
 EXIT_INVALID_FORMAT = 3
 EXIT_SYNC_CONFLICT = 4
+
+
+@contextmanager
+def _collect_pdf_warnings() -> Iterator[list[str]]:
+    """Capture WARNING+ records from the PDF pipeline (``sidedoc`` logger).
+
+    The PDF extract/build helpers report dropped or degraded content via their
+    module loggers (and re-emit captured WeasyPrint asset warnings). This
+    collects those messages so the command can print them to stderr and, under
+    ``--strict``, exit non-zero. The library stays pure; policy lives here.
+    """
+    messages: list[str] = []
+
+    class _Collector(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            if record.levelno >= logging.WARNING:
+                messages.append(record.getMessage())
+
+    handler = _Collector()
+    sidedoc_logger = logging.getLogger("sidedoc")
+    previous_level = sidedoc_logger.level
+    if previous_level == logging.NOTSET or previous_level > logging.WARNING:
+        sidedoc_logger.setLevel(logging.WARNING)
+    sidedoc_logger.addHandler(handler)
+    try:
+        yield messages
+    finally:
+        sidedoc_logger.removeHandler(handler)
+        sidedoc_logger.setLevel(previous_level)
+
+
+def _emit_pdf_warnings(messages: list[str], strict: bool) -> None:
+    """Print collected PDF warnings to stderr; exit non-zero under ``--strict``."""
+    for message in messages:
+        click.echo(f"Warning: {message}", err=True)
+    if strict and messages:
+        click.echo(
+            "Error: strict mode — aborting because the PDF pipeline reported "
+            f"{len(messages)} content warning(s).",
+            err=True,
+        )
+        sys.exit(EXIT_ERROR)
 
 
 def _reject_if_zip(input_path: Path, command_name: str) -> None:
@@ -166,7 +211,19 @@ def _convert_structure_to_blocks(old_structure: dict) -> list[Block]:
     default=None,
     help="Force enable/disable track changes extraction. Default: auto-detect",
 )
-def extract(input_file: str, output: str | None, force: bool, pack: bool, track_changes: bool | None) -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Treat PDF content-loss warnings (dropped items/tables/images) as errors.",
+)
+def extract(
+    input_file: str,
+    output: str | None,
+    force: bool,
+    pack: bool,
+    track_changes: bool | None,
+    strict: bool,
+) -> None:
     """Extract a document into a sidedoc directory.
 
     Supports .docx and .pdf input files.
@@ -185,11 +242,13 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
             click.echo("Warning: --track-changes/--no-track-changes ignored for PDF input.", err=True)
 
         # Extract based on input format
+        pdf_warnings: list[str] = []
         if is_pdf:
             from sidedoc.extract_pdf import extract_pdf_document, extract_pdf_styles
 
-            blocks, image_data, sections = extract_pdf_document(input_file)
-            styles = extract_pdf_styles(input_file, blocks)
+            with _collect_pdf_warnings() as pdf_warnings:
+                blocks, image_data, sections = extract_pdf_document(input_file)
+                styles = extract_pdf_styles(input_file, blocks)
             hf_sections: list[dict] = []
             source_format = "pdf"
         else:
@@ -241,6 +300,7 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
                 source_format=source_format,
             )
 
+        _emit_pdf_warnings(pdf_warnings, strict)
         click.echo(f"✓ Extracted to {output}")
         sys.exit(EXIT_SUCCESS)
     except FileNotFoundError:
@@ -254,7 +314,12 @@ def extract(input_file: str, output: str | None, force: bool, pack: bool, track_
 @main.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option("-o", "--output", help="Output path for document file")
-def build(input_file: str, output: str | None) -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Treat PDF build warnings (table drift, missing assets) as errors.",
+)
+def build(input_file: str, output: str | None, strict: bool) -> None:
     """Reconstruct a document from a sidedoc directory or archive.
 
     Accepts both .sidedoc/ directories and .sdoc ZIP archives.
@@ -275,7 +340,9 @@ def build(input_file: str, output: str | None) -> None:
 
             if output is None:
                 output = str(input_path.parent / (input_path.stem + ".pdf"))
-            build_pdf_from_sidedoc(input_file, output)
+            with _collect_pdf_warnings() as pdf_warnings:
+                build_pdf_from_sidedoc(input_file, output)
+            _emit_pdf_warnings(pdf_warnings, strict)
         else:
             if output is None:
                 output = str(input_path.parent / (input_path.stem + ".docx"))
