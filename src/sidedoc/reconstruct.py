@@ -104,7 +104,11 @@ def _extract_textbox_inner_content(content: str) -> str:
     return "\n".join(inner)
 
 
-def apply_inline_formatting(paragraph: Any, content: str) -> None:
+def apply_inline_formatting(
+    paragraph: Any,
+    content: str,
+    inline_formatting: Optional[list[dict[str, Any]]] = None,
+) -> None:
     """Apply inline formatting from markdown to a paragraph.
 
     Uses mistune for robust markdown parsing to handle:
@@ -115,18 +119,131 @@ def apply_inline_formatting(paragraph: Any, content: str) -> None:
     Args:
         paragraph: python-docx Paragraph object
         content: Text content with markdown formatting
+        inline_formatting: Optional list of run-level format overrides keyed by
+            character range in the post-mistune plain text. Used for properties
+            that aren't expressible as markdown (underline today; potentially
+            highlight/color in future). Each entry must have keys ``type``,
+            ``start``, ``end`` and the type-specific value (e.g. ``underline``).
     """
     runs = _parse_inline_markdown(content)
 
+    plain_runs: list[tuple[Any, int, int]] = []
     if not runs:
-        paragraph.add_run(content)
+        plain_runs.extend(_add_runs_with_tabs(paragraph, content, bold=False, italic=False, offset=0))
     else:
+        offset = 0
         for text, bold, italic in runs:
-            run = paragraph.add_run(text)
+            for run, start, end in _add_runs_with_tabs(paragraph, text, bold, italic, offset):
+                plain_runs.append((run, start, end))
+            offset += len(text)
+
+    if inline_formatting:
+        _overlay_inline_formatting(paragraph, plain_runs, inline_formatting)
+
+
+def _add_runs_with_tabs(
+    paragraph: Any,
+    text: str,
+    bold: bool,
+    italic: bool,
+    offset: int,
+) -> list[tuple[Any, int, int]]:
+    """Add runs for ``text``, splitting on tab characters into separate runs
+    with explicit ``<w:tab/>`` elements between them. Returns the produced
+    runs with their character ranges so inline_formatting overlays still align.
+    """
+    if not text:
+        return []
+    if "\t" not in text:
+        run = paragraph.add_run(text)
+        if bold:
+            run.bold = True
+        if italic:
+            run.italic = True
+        return [(run, offset, offset + len(text))]
+
+    produced: list[tuple[Any, int, int]] = []
+    cursor = offset
+    segments = text.split("\t")
+    for i, segment in enumerate(segments):
+        if segment:
+            run = paragraph.add_run(segment)
             if bold:
                 run.bold = True
             if italic:
                 run.italic = True
+            produced.append((run, cursor, cursor + len(segment)))
+            cursor += len(segment)
+        if i < len(segments) - 1:
+            tab_run = paragraph.add_run()
+            tab_run.add_tab()
+            if bold:
+                tab_run.bold = True
+            if italic:
+                tab_run.italic = True
+            produced.append((tab_run, cursor, cursor + 1))
+            cursor += 1
+    return produced
+
+
+def _overlay_inline_formatting(
+    paragraph: Any,
+    plain_runs: list[tuple[Any, int, int]],
+    inline_formatting: list[dict[str, Any]],
+) -> None:
+    """Overlay run-level properties (underline, ...) onto already-created runs.
+
+    Splits runs at format boundaries so each output run is either entirely
+    covered or entirely uncovered by each overlay entry. Reads from
+    ``Block.inline_formatting`` produced by extract.py.
+    """
+    boundaries: set[int] = set()
+    for entry in inline_formatting:
+        boundaries.add(entry["start"])
+        boundaries.add(entry["end"])
+
+    # First pass: split runs so no run straddles an overlay boundary.
+    new_plain_runs: list[tuple[Any, int, int]] = []
+    for run, start, end in plain_runs:
+        splits = sorted(b for b in boundaries if start < b < end)
+        if not splits:
+            new_plain_runs.append((run, start, end))
+            continue
+        cursor = start
+        text = run.text
+        # Mutate the original run to hold only the first segment; subsequent
+        # segments become brand-new runs cloned from this one.
+        first_len = splits[0] - start
+        run.text = text[:first_len]
+        new_plain_runs.append((run, cursor, splits[0]))
+        cursor = splits[0]
+        for i, b in enumerate(splits[1:] + [end], start=1):
+            seg_text = text[cursor - start : b - start]
+            # Ordering contract: paragraph.add_run() appends the new <w:r> at the
+            # END of the paragraph, so we immediately relocate it to sit right
+            # after the previous segment via addnext(). `run` is advanced to the
+            # just-placed run each iteration so consecutive clones stay in
+            # left-to-right order. This relies on add_run() appending at the end;
+            # if that ever changes, switch to an explicit positional insert.
+            new_run = paragraph.add_run(seg_text)
+            new_run.bold = run.bold
+            new_run.italic = run.italic
+            run._element.addnext(new_run._element)
+            new_plain_runs.append((new_run, cursor, b))
+            cursor = b
+            run = new_run
+
+    # Second pass: apply overlay attributes.
+    for entry in inline_formatting:
+        e_start, e_end, e_type = entry["start"], entry["end"], entry.get("type")
+        for run, start, end in new_plain_runs:
+            if start >= e_start and end <= e_end:
+                if e_type == "underline" and entry.get("underline"):
+                    # TODO: only single underline is restored. extract records a
+                    # bool (is_formatting_enabled rPr 'u'), so WD_UNDERLINE
+                    # variants (double/dotted/dashed/wavy) are lost. To restore
+                    # them, capture the w:u w:val in extract and map it here.
+                    run.underline = True
 
 
 def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
@@ -134,13 +251,25 @@ def _parse_inline_markdown(content: str) -> list[tuple[str, bool, bool]]:
 
     Handles nested formatting, escaped markers, and malformed markdown.
     Returns plain text on parse error.
+
+    Note: mistune follows CommonMark block-parsing semantics and strips
+    leading whitespace (and may treat 4+ leading spaces as a code block).
+    We're using it for inline-only parsing on already-segmented blocks, so
+    we strip leading whitespace ourselves and re-prepend it as a plain
+    text run. This preserves leading tabs (e.g. signature lines).
     """
+    leading_ws_len = len(content) - len(content.lstrip(" \t"))
+    leading_ws = content[:leading_ws_len]
+    body = content[leading_ws_len:]
+
     try:
-        tokens, _ = _MARKDOWN_PARSER.parse(content)
+        tokens, _ = _MARKDOWN_PARSER.parse(body)
     except Exception:
         return [(content, False, False)]
 
     runs: list[tuple[str, bool, bool]] = []
+    if leading_ws:
+        runs.append((leading_ws, False, False))
     token_list: list[dict[str, Any]] = list(tokens) if isinstance(tokens, list) else []
     for block_token in token_list:
         if block_token.get("type") == "paragraph":
@@ -605,8 +734,13 @@ def parse_link_text_formatting(link_text: str) -> tuple[str, bool, bool]:
         text = text[1:-1]
         is_italic = True
 
-    # Unescape brackets that were escaped during extraction
-    text = text.replace("\\[", "[").replace("\\]", "]")
+    # Unescape only the markdown-special characters that
+    # extract.escape_markdown_link_text escapes (\\ * _ ` [ ]). The pattern is
+    # deliberately narrow: a non-special backslash sequence in a hand-authored
+    # content.md label (e.g. a Windows path "C:\Users") must survive verbatim
+    # rather than have its backslash swallowed. Outer emphasis markers were
+    # stripped above; literal edge markers arrive here as backslash escapes.
+    text = re.sub(r"\\([\\*_`\[\]])", r"\1", text)
 
     return text, is_bold, is_italic
 
@@ -883,14 +1017,19 @@ def parse_markdown_to_blocks(markdown_content: str) -> list[Block]:
                 level=level,
             )
         else:
+            # Use rstrip-only so leading whitespace (tabs, spaces) survives
+            # into the paragraph content. extract.py emits literal tabs for
+            # signature lines like "\t____ Name" and stripping them here
+            # silently drops the leading tab on rebuild. See issue #72.
+            paragraph_content = line.rstrip()
             block = Block(
                 id=f"block-{block_id}",
                 type="paragraph",
-                content=stripped_line,
+                content=paragraph_content,
                 docx_paragraph_index=block_id,
                 content_start=content_position,
-                content_end=content_position + len(stripped_line),
-                content_hash=hashlib.sha256(stripped_line.encode()).hexdigest(),
+                content_end=content_position + len(paragraph_content),
+                content_hash=hashlib.sha256(paragraph_content.encode()).hexdigest(),
             )
 
         blocks.append(block)
@@ -1704,7 +1843,8 @@ def create_docx_from_blocks(
                 para = doc.add_paragraph(style=style_name)
                 add_text_with_hyperlinks(para, text)
             else:
-                para = doc.add_paragraph(text, style=style_name)
+                para = doc.add_paragraph(style=style_name)
+                apply_inline_formatting(para, text, block.inline_formatting)
         elif block.type == "table":
             # For tables, use remapped ID for style lookup if available
             table_style_id = block.id
@@ -1776,7 +1916,8 @@ def create_docx_from_blocks(
                 para = doc.add_paragraph()
                 add_text_with_hyperlinks(para, content)
             else:
-                para = doc.add_paragraph(content)
+                para = doc.add_paragraph()
+                apply_inline_formatting(para, content, block.inline_formatting)
 
         # Apply styling - use remapped ID if available
         if para is not None:
@@ -2041,6 +2182,12 @@ def build_docx_from_sidedoc(sidedoc_path: str, output_path: str) -> None:
                 # Transfer text box metadata if present
                 if "text_box_metadata" in struct_block and struct_block["text_box_metadata"]:
                     block.text_box_metadata = struct_block["text_box_metadata"]
+
+                # Transfer inline_formatting (underline positions, etc.) so
+                # apply_inline_formatting can overlay run-level properties that
+                # aren't expressible as markdown.
+                if struct_block.get("inline_formatting"):
+                    block.inline_formatting = struct_block["inline_formatting"]
 
                 # Collect chart parts manifests for post-processing
                 if "chart_parts_manifest" in struct_block and struct_block["chart_parts_manifest"]:

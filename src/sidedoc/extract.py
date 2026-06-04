@@ -41,21 +41,34 @@ logger = logging.getLogger(__name__)
 def wrap_formatting(text: str, bold: bool, italic: bool) -> str:
     """Wrap text with markdown bold/italic markers.
 
-    Args:
-        text: Plain text to wrap
-        bold: Whether to apply bold
-        italic: Whether to apply italic
-
-    Returns:
-        Text wrapped with appropriate markdown markers
+    CommonMark forbids an emphasis opener that is followed by Unicode whitespace
+    and a closer that is preceded by Unicode whitespace. If the run text has
+    leading or trailing whitespace, we migrate it outside the markers so the
+    rebuilt content.md round-trips through mistune. See issue #72.
     """
-    if bold and italic:
-        return f"***{text}***"
-    elif bold:
-        return f"**{text}**"
-    elif italic:
-        return f"*{text}*"
-    return text
+    if not (bold or italic):
+        return text
+    stripped = text.strip()
+    if not stripped:
+        return text
+    lead = text[: len(text) - len(text.lstrip())]
+    trail = text[len(text.rstrip()) :]
+    marker = "***" if bold and italic else ("**" if bold else "*")
+    return f"{lead}{marker}{stripped}{marker}{trail}"
+
+
+def escape_markdown_inline(text: str) -> str:
+    """Escape markdown special characters in plain run text.
+
+    Applied to extracted run text before ``wrap_formatting`` so literal
+    asterisks, underscores, backticks, and brackets in the source document
+    survive a round-trip through mistune on rebuild. Backslash is escaped
+    first so the escape pass is idempotent. Whitespace is left alone.
+    """
+    result = text.replace("\\", "\\\\")
+    for ch in ("*", "_", "`", "[", "]"):
+        result = result.replace(ch, "\\" + ch)
+    return result
 
 
 def format_hyperlink_md(text: str, url: str, bold: bool, italic: bool) -> str:
@@ -862,17 +875,16 @@ def encode_url_for_markdown(url: str) -> str:
 
 
 def escape_markdown_link_text(text: str) -> str:
-    """Escape special markdown characters in link text.
+    """Escape special markdown characters in hyperlink display text.
 
-    Args:
-        text: The link text to escape
-
-    Returns:
-        Escaped text safe for markdown link syntax
+    Covers the full markdown-special set (``\\ * _ ` [ ]``), not just brackets:
+    ``[`` / ``]`` would break link syntax, while ``*`` / ``_`` / ``` ` ``` at the
+    edges of the display text would otherwise be mis-parsed as emphasis markers
+    on rebuild (e.g. display text ``*ab*`` stripped to ``ab`` + italic). Must be
+    kept symmetric with ``reconstruct.parse_link_text_formatting``, which
+    unescapes the same set. Delegates to :func:`escape_markdown_inline`.
     """
-    # Escape brackets which would break link syntax
-    result = text.replace("[", "\\[").replace("]", "\\]")
-    return result
+    return escape_markdown_inline(text)
 
 
 def get_hyperlink_url(hyperlink_elem: Any, doc_part: Any) -> Optional[str]:
@@ -1177,6 +1189,8 @@ def extract_paragraph_content(
                 if run_child_tag == f'{{{WORDPROCESSINGML_NS}}}t':
                     if run_child.text:
                         text_parts.append(run_child.text)
+                elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}tab':
+                    text_parts.append('\t')
                 elif run_child_tag == f'{{{WORDPROCESSINGML_NS}}}br':
                     br_type = run_child.get(qn('w:type'))
                     if br_type == 'column':
@@ -1193,7 +1207,7 @@ def extract_paragraph_content(
             is_italic = is_formatting_enabled(rPr, 'i')
             is_underline = is_formatting_enabled(rPr, 'u')
 
-            markdown_text = wrap_formatting(text, is_bold, is_italic)
+            markdown_text = wrap_formatting(escape_markdown_inline(text), is_bold, is_italic)
 
             if is_underline:
                 inline_formatting.append({
@@ -1318,14 +1332,14 @@ def _extract_cell_text_with_formatting(cell: Any, doc_part: Any = None) -> str:
                 if doc_part is None:
                     text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
                     if text:
-                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                        para_parts.append(wrap_formatting(escape_markdown_inline(text), is_bold, is_italic))
                     continue
 
                 url = get_hyperlink_url(child, doc_part)
                 if url is None:
                     text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
                     if text:
-                        para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                        para_parts.append(wrap_formatting(escape_markdown_inline(text), is_bold, is_italic))
                     continue
 
                 text, is_bold, is_italic = extract_hyperlink_text_and_formatting(child)
@@ -1348,7 +1362,7 @@ def _extract_cell_text_with_formatting(cell: Any, doc_part: Any = None) -> str:
                 is_bold = is_formatting_enabled(rPr, 'b')
                 is_italic = is_formatting_enabled(rPr, 'i')
 
-                para_parts.append(wrap_formatting(text, is_bold, is_italic))
+                para_parts.append(wrap_formatting(escape_markdown_inline(text), is_bold, is_italic))
 
         if para_parts:
             parts.append("".join(para_parts))
@@ -2045,7 +2059,7 @@ def _extract_note_text(note_elem: Any, ns: dict[str, str]) -> str:
                 if i is not None and i.get(f"{{{ns['w']}}}val", "true") != "false":
                     is_italic = True
 
-            formatted = wrap_formatting(run_text, is_bold, is_italic)
+            formatted = wrap_formatting(escape_markdown_inline(run_text), is_bold, is_italic)
             text_parts.append(formatted)
 
     return "".join(text_parts)

@@ -132,3 +132,326 @@ def test_complete_workflow():
         texts = [p.text for p in final.paragraphs]
         assert "Test Document" in texts
         assert "This is a test" in texts
+
+
+def _count_runs_by_format(doc):
+    """Helper: tally bold/italic/underline runs across body paragraphs and
+    table cells. Counts literal '*' in run text as well."""
+    bold = italic = underline = 0
+    asterisks = 0
+
+    def _tally(paragraphs):
+        nonlocal bold, italic, underline, asterisks
+        for p in paragraphs:
+            for r in p.runs:
+                if r.bold:
+                    bold += 1
+                if r.italic:
+                    italic += 1
+                if r.underline:
+                    underline += 1
+                asterisks += r.text.count("*")
+
+    _tally(doc.paragraphs)
+    for t in doc.tables:
+        for row in t.rows:
+            for c in row.cells:
+                _tally(c.paragraphs)
+    return bold, italic, underline, asterisks
+
+
+def test_roundtrip_paragraph_preserves_bold_italic():
+    """Issue #72: bold/italic in plain paragraphs were rebuilt as literal **/* text.
+
+    The paragraph emission path (reconstruct.py) was calling add_paragraph(content)
+    directly, never parsing markdown emphasis into runs.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("Plain ")
+        r = p.add_run("bold"); r.bold = True
+        p.add_run(" and ")
+        r = p.add_run("italic"); r.italic = True
+        p.add_run(".")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, italic, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1, "bold run lost on rebuild"
+        assert italic >= 1, "italic run lost on rebuild"
+        assert asterisks == 0, "literal * leaked into rebuilt docx"
+
+
+def test_roundtrip_heading_preserves_bold():
+    """Bold inside a heading must survive rebuild as a bold run, not literal **."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        h = doc.add_paragraph(style="Heading 1")
+        h.add_run("Intro ")
+        r = h.add_run("Title"); r.bold = True
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert asterisks == 0
+
+
+def test_roundtrip_bold_with_trailing_space():
+    """The exact reporter symptom: bold run 'СОДЕРЖАНИЕ ' must rebuild as bold."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        r = p.add_run("СОДЕРЖАНИЕ "); r.bold = True
+        p.add_run("body")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, _, asterisks = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert asterisks == 0
+        # The Russian word survives intact.
+        assert any("СОДЕРЖАНИЕ" in p.text for p in rebuilt.paragraphs)
+
+
+def test_roundtrip_underline_preserved():
+    """Issue #72: underline runs were extracted into inline_formatting but
+    reconstruct.apply_inline_formatting never consumed that array, so all 32
+    underlines in the reporter's document silently vanished."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("plain ")
+        r = p.add_run("underlined"); r.underline = True
+        p.add_run(" plain")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        _, _, underline, _ = _count_runs_by_format(rebuilt)
+        assert underline >= 1, "underline run lost on rebuild"
+        # Only the middle word is underlined; surrounding text is not.
+        underlined_runs = [r for p in rebuilt.paragraphs for r in p.runs if r.underline]
+        assert any("underlined" in r.text for r in underlined_runs)
+        assert not any(r.underline and r.text.strip() == "plain" for p in rebuilt.paragraphs for r in p.runs)
+
+
+def _count_tab_elements(doc):
+    """Helper: count <w:tab/> elements in all paragraph bodies."""
+    from docx.oxml.ns import qn
+    return sum(
+        len(p._element.findall(f".//{qn('w:tab')}"))
+        for p in doc.paragraphs
+    )
+
+
+def test_roundtrip_tab_in_paragraph():
+    """Issue #72: w:tab elements were silently dropped on extract.
+
+    Signature lines, TOC dot leaders and form alignment all rely on
+    tabs. The reporter saw 78 tabs go to 0.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("name")
+        p.add_run().add_tab()
+        p.add_run("value")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 1
+        full = "".join(p.text for p in rebuilt.paragraphs)
+        # python-docx's Paragraph.text exposes tabs as "\t".
+        assert "name\tvalue" in full
+
+
+def test_roundtrip_consecutive_tabs():
+    """Multiple consecutive tabs (used for column-style alignment) must all survive."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("a")
+        for _ in range(3):
+            p.add_run().add_tab()
+        p.add_run("b")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 3
+
+
+def test_roundtrip_leading_tab_in_paragraph():
+    """Leading tab on a paragraph (e.g. '\\t____ Name') must not be stripped
+    by parse_markdown_to_blocks. Issue #72 had several such signature lines."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run().add_tab()
+        p.add_run("____ Лищук И.В.")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 1
+
+
+def test_roundtrip_issue_72_russian_report():
+    """End-to-end regression check against the file from issue #72.
+
+    Original measurements (reporter's evidence + our remeasurement):
+        bold runs:        47
+        italic runs:      14
+        tab characters:   10   (reporter's '78' included pPr tab-stop defs)
+        literal '*':       0
+        non-empty paras: 111
+
+    Before any fix this branch ships:
+        italic 14 -> 0, tabs 10 -> 0, literal '*' 0 -> 160.
+
+    Assert the round-trip is now lossless for these dimensions.
+    """
+    runner = CliRunner()
+    fixture = Path(__file__).parent / "fixtures" / "issue-72-russian-report.docx"
+    with runner.isolated_filesystem() as tmpdir:
+        src = Path(tmpdir) / "report.docx"
+        src.write_bytes(fixture.read_bytes())
+
+        assert runner.invoke(main, ["extract", str(src)]).exit_code == 0
+        assert runner.invoke(main, ["build", str(src.with_suffix(".sidedoc")), "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, italic, _, asterisks = _count_runs_by_format(rebuilt)
+        # Cell-level bold may lose one run; cell extraction is its own ticket.
+        assert bold >= 45, f"bold runs dropped: {bold}"
+        assert italic >= 14, f"italic runs dropped: {italic}"
+        assert asterisks == 0, f"stray '*' leaked into rebuilt: {asterisks}"
+        assert _count_tab_elements(rebuilt) == 10, "tab characters dropped on rebuild"
+
+
+def test_roundtrip_signature_line():
+    """Russian signature line from issue #72: 'Подпись:\\t\\t\\t____________'."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("Подпись:")
+        for _ in range(3):
+            p.add_run().add_tab()
+        p.add_run("____________")
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        assert _count_tab_elements(rebuilt) == 3
+        assert any("Подпись:" in p.text and "____________" in p.text for p in rebuilt.paragraphs)
+
+
+def test_add_runs_with_tabs_skips_empty_text():
+    """Review finding #3 (PR #73): an empty-string segment must not emit a
+    spurious empty <w:r><w:t/></w:r> element into the paragraph."""
+    from docx.oxml.ns import qn
+    from sidedoc.reconstruct import _add_runs_with_tabs
+
+    doc = Document()
+    p = doc.add_paragraph()
+    produced = _add_runs_with_tabs(p, "", bold=False, italic=False, offset=0)
+
+    assert produced == [], "empty text should produce no runs"
+    assert len(p._element.findall(qn("w:r"))) == 0, "spurious empty run emitted"
+
+
+def test_roundtrip_underline_after_escaped_asterisk():
+    """Review finding #1 (PR #73): an underlined run preceded by text containing
+    a markdown-special character.
+
+    The leading run's literal '*' is escaped to '\\*' in content.md, doubling its
+    byte length there. The concern was that inline_formatting underline positions
+    (recorded in extract against the *raw* text) would drift relative to the
+    escaped content.md, landing the underline on the wrong characters.
+
+    Both sides actually operate in the unescaped coordinate space (extract counts
+    len(raw_text); reconstruct counts len(mistune_output), and mistune unescapes
+    '\\*' back to '*'), so the underline must land on exactly 'under' and not on
+    the surrounding plain text.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("a*b ")                        # literal '*' -> '\\*' in content.md
+        r = p.add_run("un*er"); r.underline = True  # escaped char INSIDE the span too
+        p.add_run(" c*d")                         # trailing literal '*' too
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        underlined = "".join(
+            r.text for p in rebuilt.paragraphs for r in p.runs if r.underline
+        )
+        not_underlined = "".join(
+            r.text for p in rebuilt.paragraphs for r in p.runs if not r.underline
+        )
+        # The underline must cover exactly "un*er" -- no drift onto neighbours.
+        assert underlined == "un*er", f"underline drifted: {underlined!r}"
+        # Surrounding text survives unescaped and is NOT underlined.
+        assert "a*b" in not_underlined and "c*d" in not_underlined
+        # No literal backslash or stray asterisk leaked anywhere.
+        full = "".join(p.text for p in rebuilt.paragraphs)
+        assert "\\" not in full, f"backslash leaked: {full!r}"
+        assert full == "a*b un*er c*d", f"text corrupted: {full!r}"
+
+
+def test_roundtrip_underline_with_bold():
+    """Bold (markdown) and underline (inline_formatting) on the same span."""
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        r = p.add_run("bold-underline")
+        r.bold = True
+        r.underline = True
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        bold, _, underline, _ = _count_runs_by_format(rebuilt)
+        assert bold >= 1
+        assert underline >= 1
+        # Same run carries both.
+        assert any(r.bold and r.underline for p in rebuilt.paragraphs for r in p.runs)
+
+

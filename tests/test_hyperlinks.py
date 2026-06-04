@@ -4,11 +4,17 @@ import json
 import tempfile
 import zipfile
 from pathlib import Path
+import pytest
 from docx import Document
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
-from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown
-from sidedoc.reconstruct import build_docx_from_sidedoc, parse_markdown_to_blocks
+from sidedoc.extract import extract_blocks, extract_styles, blocks_to_markdown, format_hyperlink_md
+from sidedoc.reconstruct import (
+    build_docx_from_sidedoc,
+    parse_markdown_to_blocks,
+    HYPERLINK_PATTERN,
+    parse_link_text_formatting,
+)
 from sidedoc.package import create_sidedoc_archive
 
 
@@ -1117,3 +1123,66 @@ def test_reconstruct_bold_italic_hyperlink():
     finally:
         Path(sidedoc_path).unlink()
         Path(output_docx.name).unlink()
+
+
+# =============================================================================
+# Test: markdown-special characters in hyperlink display text round-trip
+# =============================================================================
+
+def _hyperlink_display_roundtrip(text: str):
+    """Drive display text through format_hyperlink_md -> HYPERLINK_PATTERN ->
+    parse_link_text_formatting and return (recovered_text, is_bold, is_italic)."""
+    md = format_hyperlink_md(text, "https://example.com", bold=False, italic=False)
+    match = HYPERLINK_PATTERN.search(md)
+    assert match is not None, f"link markdown did not parse: {md!r}"
+    return parse_link_text_formatting(match.group(1))
+
+
+@pytest.mark.parametrize("display", [
+    "foo]bar",          # already worked (bracket escaping) -- regression guard
+    "a*b*c",            # interior emphasis markers
+    "*ab*",             # leading+trailing markers: was stripped to 'ab'+italic
+    "**bold**",         # literal double markers
+    "under_score_x",    # underscores
+    "back\\slash",      # literal backslash
+    "tilde~`code`",     # backtick
+])
+def test_hyperlink_display_text_special_chars_roundtrip(display):
+    """Markdown-special characters in hyperlink display text must survive the
+    extract -> rebuild round-trip without loss, spurious formatting, or stray
+    backslashes. Requires symmetric escaping (escape on extract, unescape on
+    rebuild) across the full markdown-special set, not just brackets."""
+    recovered, is_bold, is_italic = _hyperlink_display_roundtrip(display)
+    assert recovered == display, f"display text corrupted: {recovered!r} != {display!r}"
+    assert not is_bold, f"spurious bold for literal text {display!r}"
+    assert not is_italic, f"spurious italic for literal text {display!r}"
+
+
+def test_hyperlink_genuine_emphasis_still_detected():
+    """The two-sided escaping must not break real bold/italic detection: a
+    hyperlink that is genuinely italic (wrap markers added by extract) must
+    still round-trip to italic with clean display text."""
+    md = format_hyperlink_md("plain text", "https://example.com", bold=False, italic=True)
+    match = HYPERLINK_PATTERN.search(md)
+    assert match is not None
+    recovered, is_bold, is_italic = parse_link_text_formatting(match.group(1))
+    assert recovered == "plain text"
+    assert is_italic and not is_bold
+
+    md_bi = format_hyperlink_md("xyz", "https://example.com", bold=True, italic=True)
+    m2 = HYPERLINK_PATTERN.search(md_bi)
+    recovered2, b2, i2 = parse_link_text_formatting(m2.group(1))
+    assert recovered2 == "xyz" and b2 and i2
+
+
+def test_parse_link_text_only_unescapes_markdown_specials():
+    """Unescaping must be narrow: only `\\` before a markdown-special char is
+    collapsed. A hand-authored content.md hyperlink whose display label contains
+    a non-special backslash sequence (e.g. a Windows path) must be left intact,
+    not silently swallowed."""
+    # `\U` and `\D` are not escapes we ever emit; they must survive verbatim.
+    recovered, is_bold, is_italic = parse_link_text_formatting(r"C:\Users\Docs")
+    assert recovered == r"C:\Users\Docs", f"non-special backslash consumed: {recovered!r}"
+    assert not is_bold and not is_italic
+    # A genuine escape (`\*`) is still unescaped.
+    assert parse_link_text_formatting(r"a\*b")[0] == "a*b"
