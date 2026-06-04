@@ -152,6 +152,8 @@ def _add_runs_with_tabs(
     with explicit ``<w:tab/>`` elements between them. Returns the produced
     runs with their character ranges so inline_formatting overlays still align.
     """
+    if not text:
+        return []
     if "\t" not in text:
         run = paragraph.add_run(text)
         if bold:
@@ -217,14 +219,19 @@ def _overlay_inline_formatting(
         cursor = splits[0]
         for i, b in enumerate(splits[1:] + [end], start=1):
             seg_text = text[cursor - start : b - start]
+            # Ordering contract: paragraph.add_run() appends the new <w:r> at the
+            # END of the paragraph, so we immediately relocate it to sit right
+            # after the previous segment via addnext(). `run` is advanced to the
+            # just-placed run each iteration so consecutive clones stay in
+            # left-to-right order. This relies on add_run() appending at the end;
+            # if that ever changes, switch to an explicit positional insert.
             new_run = paragraph.add_run(seg_text)
             new_run.bold = run.bold
             new_run.italic = run.italic
-            # Move the new run element to the position right after the previous one
             run._element.addnext(new_run._element)
             new_plain_runs.append((new_run, cursor, b))
             cursor = b
-            run = new_run  # so the next clone is inserted after this one
+            run = new_run
 
     # Second pass: apply overlay attributes.
     for entry in inline_formatting:
@@ -232,6 +239,10 @@ def _overlay_inline_formatting(
         for run, start, end in new_plain_runs:
             if start >= e_start and end <= e_end:
                 if e_type == "underline" and entry.get("underline"):
+                    # TODO: only single underline is restored. extract records a
+                    # bool (is_formatting_enabled rPr 'u'), so WD_UNDERLINE
+                    # variants (double/dotted/dashed/wavy) are lost. To restore
+                    # them, capture the w:u w:val in extract and map it here.
                     run.underline = True
 
 

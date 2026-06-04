@@ -376,6 +376,63 @@ def test_roundtrip_signature_line():
         assert any("Подпись:" in p.text and "____________" in p.text for p in rebuilt.paragraphs)
 
 
+def test_add_runs_with_tabs_skips_empty_text():
+    """Review finding #3 (PR #73): an empty-string segment must not emit a
+    spurious empty <w:r><w:t/></w:r> element into the paragraph."""
+    from docx.oxml.ns import qn
+    from sidedoc.reconstruct import _add_runs_with_tabs
+
+    doc = Document()
+    p = doc.add_paragraph()
+    produced = _add_runs_with_tabs(p, "", bold=False, italic=False, offset=0)
+
+    assert produced == [], "empty text should produce no runs"
+    assert len(p._element.findall(qn("w:r"))) == 0, "spurious empty run emitted"
+
+
+def test_roundtrip_underline_after_escaped_asterisk():
+    """Review finding #1 (PR #73): an underlined run preceded by text containing
+    a markdown-special character.
+
+    The leading run's literal '*' is escaped to '\\*' in content.md, doubling its
+    byte length there. The concern was that inline_formatting underline positions
+    (recorded in extract against the *raw* text) would drift relative to the
+    escaped content.md, landing the underline on the wrong characters.
+
+    Both sides actually operate in the unescaped coordinate space (extract counts
+    len(raw_text); reconstruct counts len(mistune_output), and mistune unescapes
+    '\\*' back to '*'), so the underline must land on exactly 'under' and not on
+    the surrounding plain text.
+    """
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("a*b ")                        # literal '*' -> '\\*' in content.md
+        r = p.add_run("un*er"); r.underline = True  # escaped char INSIDE the span too
+        p.add_run(" c*d")                         # trailing literal '*' too
+        doc.save("src.docx")
+
+        assert runner.invoke(main, ["extract", "src.docx"]).exit_code == 0
+        assert runner.invoke(main, ["build", "src.sidedoc", "-o", "rebuilt.docx"]).exit_code == 0
+
+        rebuilt = Document("rebuilt.docx")
+        underlined = "".join(
+            r.text for p in rebuilt.paragraphs for r in p.runs if r.underline
+        )
+        not_underlined = "".join(
+            r.text for p in rebuilt.paragraphs for r in p.runs if not r.underline
+        )
+        # The underline must cover exactly "un*er" -- no drift onto neighbours.
+        assert underlined == "un*er", f"underline drifted: {underlined!r}"
+        # Surrounding text survives unescaped and is NOT underlined.
+        assert "a*b" in not_underlined and "c*d" in not_underlined
+        # No literal backslash or stray asterisk leaked anywhere.
+        full = "".join(p.text for p in rebuilt.paragraphs)
+        assert "\\" not in full, f"backslash leaked: {full!r}"
+        assert full == "a*b un*er c*d", f"text corrupted: {full!r}"
+
+
 def test_roundtrip_underline_with_bold():
     """Bold (markdown) and underline (inline_formatting) on the same span."""
     runner = CliRunner()
