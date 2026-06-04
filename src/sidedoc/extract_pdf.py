@@ -43,8 +43,12 @@ def _detect_header_rows(table_data: dict[str, Any]) -> int:
     return 0
 
 
-def _table_to_gfm(table_data: dict[str, Any]) -> str:
-    """Convert Docling table data to GFM pipe table syntax."""
+def _table_to_gfm(table_data: dict[str, Any], header_rows: int | None = None) -> str:
+    """Convert Docling table data to GFM pipe table syntax.
+
+    ``header_rows`` may be passed in to avoid recomputing it via
+    ``_detect_header_rows`` when the caller already has it.
+    """
     num_rows = table_data["num_rows"]
     num_cols = table_data["num_cols"]
 
@@ -59,7 +63,8 @@ def _table_to_gfm(table_data: dict[str, Any]) -> str:
         if row < num_rows and col < num_cols:
             grid[row][col] = cell.get("text", "").replace("|", "\\|")
 
-    header_rows = _detect_header_rows(table_data)
+    if header_rows is None:
+        header_rows = _detect_header_rows(table_data)
 
     lines = []
     for i, row in enumerate(grid):
@@ -76,10 +81,18 @@ def _table_to_gfm(table_data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _build_table_metadata(table_data: dict[str, Any]) -> dict[str, Any]:
-    """Build Sidedoc table_metadata from Docling table data."""
+def _build_table_metadata(
+    table_data: dict[str, Any], header_rows: int | None = None
+) -> dict[str, Any]:
+    """Build Sidedoc table_metadata from Docling table data.
+
+    ``header_rows`` may be passed in to avoid recomputing it via
+    ``_detect_header_rows`` when the caller already has it.
+    """
     num_rows = table_data["num_rows"]
     num_cols = table_data["num_cols"]
+    if header_rows is None:
+        header_rows = _detect_header_rows(table_data)
 
     cells = []
     merged_cells = []
@@ -113,7 +126,7 @@ def _build_table_metadata(table_data: dict[str, Any]) -> dict[str, Any]:
         "cols": num_cols,
         "cells": cells,
         "column_alignments": ["left"] * num_cols,
-        "header_rows": _detect_header_rows(table_data),
+        "header_rows": header_rows,
         "merged_cells": merged_cells,
     }
 
@@ -219,8 +232,9 @@ def extract_pdf_document(
                 continue
 
             tbl_data = tbl.get("data", {})
-            content = _table_to_gfm(tbl_data)
-            metadata = _build_table_metadata(tbl_data)
+            header_rows = _detect_header_rows(tbl_data)
+            content = _table_to_gfm(tbl_data, header_rows)
+            metadata = _build_table_metadata(tbl_data, header_rows)
             metadata["docx_table_index"] = table_output_index
             table_output_index += 1
 

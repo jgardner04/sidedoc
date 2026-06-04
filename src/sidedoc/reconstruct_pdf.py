@@ -156,39 +156,43 @@ def _content_md_to_html(
         else:
             segments.append((kind, [line]))
 
-    # A run of contiguous pipe lines may contain several tables back-to-back
-    # (blocks_to_markdown joins blocks with a single "\n"). Split each run into
-    # individual tables by their separator lines so the per-table metadata lines
-    # up one-to-one — otherwise adjacent tables collapse into one and trip the
-    # drift fallback.
-    table_groups: list[list[str]] = []
+    # Prepare each segment once. A run of contiguous pipe lines may contain
+    # several tables back-to-back (blocks_to_markdown joins blocks with a single
+    # "\n"), so split each table run into individual tables by their separator
+    # lines — otherwise adjacent tables collapse into one and trip the drift
+    # fallback. Text segments are pre-joined. Both results are reused below so
+    # _split_gfm_tables is never recomputed.
+    prepared: list[tuple[str, Any]] = []  # ("table", list[table-lines]) | ("text", str)
+    table_count = 0
     for kind, seg_lines in segments:
         if kind == "table":
-            table_groups.extend(_split_gfm_tables(seg_lines))
+            tables = _split_gfm_tables(seg_lines)
+            table_count += len(tables)
+            prepared.append(("table", tables))
+        else:
+            prepared.append(("text", "\n".join(seg_lines)))
 
-    if not table_groups:
+    if table_count == 0:
         return _markdown_to_html(content_md)
 
-    if not has_structure or len(table_groups) != len(table_metas):
+    if not has_structure or table_count != len(table_metas):
         logger.warning(
             "Rendering %d PDF table(s) without structure overlay "
             "(table metadata missing or out of sync with content.md); "
             "header and merged-cell fidelity may be reduced.",
-            len(table_groups),
+            table_count,
         )
         return _markdown_to_html(content_md)
 
     out: list[str] = []
     meta_iter = iter(table_metas)
-    for kind, seg_lines in segments:
+    for kind, payload in prepared:
         if kind == "table":
-            for tbl_lines in _split_gfm_tables(seg_lines):
+            for tbl_lines in payload:
                 rows, _aligns = parse_gfm_table("\n".join(tbl_lines))
                 out.append(_render_table_html(rows, next(meta_iter)))
-        else:
-            text = "\n".join(seg_lines)
-            if text.strip():
-                out.append(_markdown_to_html(text))
+        elif payload.strip():
+            out.append(_markdown_to_html(payload))
     return "\n".join(out)
 
 
