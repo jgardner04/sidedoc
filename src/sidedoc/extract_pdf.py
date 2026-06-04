@@ -282,6 +282,9 @@ def extract_pdf_document(
             current_offset += len(content) + 1
 
         else:
+            # An unrecognized item interrupts any in-progress ordered list, so
+            # the next ordered item restarts numbering rather than continuing.
+            ordered_list_index = 0
             logger.warning(
                 "Skipped unsupported PDF element: %s/%s", item_type, label or "?"
             )

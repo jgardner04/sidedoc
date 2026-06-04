@@ -64,6 +64,38 @@ def test_list_item_round_trips(tmp_path, monkeypatch):
     assert [b.content for b in blocks] == ["- Apples", "- Oranges"]
 
 
+def test_unsupported_item_restarts_ordered_list_numbering(tmp_path, monkeypatch):
+    """An unsupported item interrupting a list must reset ordered numbering."""
+    import sidedoc.extract_pdf as extract_pdf
+
+    class ListItem:
+        def __init__(self, text):
+            self.text = text
+            self.label = "list_item"
+            self.enumerated = True
+            self.content_layer = "body"
+
+    class FormulaItem:
+        text = "E=mc^2"
+        label = "formula"
+        content_layer = "body"
+
+    class FakeDoc:
+        def export_to_dict(self):
+            return {"tables": []}
+
+        def iterate_items(self):
+            yield ListItem("First"), 0      # 1. First
+            yield FormulaItem(), 0          # interrupts the list (skipped)
+            yield ListItem("Second"), 0     # should restart at 1.
+
+    monkeypatch.setattr(extract_pdf, "require_docling", lambda: _fake_converter(FakeDoc()))
+    blocks, _img, _sec = extract_pdf.extract_pdf_document(str(_write_pdf(tmp_path)))
+
+    list_contents = [b.content for b in blocks if b.type == "list"]
+    assert list_contents == ["1. First", "1. Second"]
+
+
 def test_unsupported_item_warns_and_is_omitted(tmp_path, monkeypatch, caplog):
     """An unrecognized Docling item must warn and be omitted (not silently dropped)."""
     import sidedoc.extract_pdf as extract_pdf
